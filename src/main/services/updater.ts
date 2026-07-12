@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron';
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from 'electron-updater';
-import { IPC_CHANNELS } from '../../shared/constants';
+import { UPDATER_CHANNELS } from '../../shared/constants';
 import type { UpdateState } from '../../shared/types';
 
 // electron-updater は dev 実行ではアップデート情報を取得しないので、本番ビルドのみで動作させる
@@ -31,7 +31,7 @@ function broadcastState(next: UpdateState) {
     currentState = next;
     for (const win of BrowserWindow.getAllWindows()) {
         if (win.isDestroyed()) continue;
-        win.webContents.send(IPC_CHANNELS.UPDATER_STATE_CHANGED, currentState);
+        win.webContents.send(UPDATER_CHANNELS.STATE_CHANGED, currentState);
     }
 }
 

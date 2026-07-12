@@ -1,33 +1,39 @@
-import type { AppInfo, AppLanguage, AppTheme, UpdateState } from './types';
+// renderer に公開する API（window.agentCliDevkit）の型定義。
+// agent 固有の API 型は shared/agents/<agent>/ipc.ts に定義し、
+// ここでは agent 名のキーで束ねるだけにする（agent 追加時はここに 1 行追加する）。
+import type { UpdateState } from './types';
+import type { ClaudeIpcApi } from './agents/claude/ipc';
+import type { CodexIpcApi } from './agents/codex/ipc';
 
-// IPC APIの型定義
 export type IpcApi = {
-    // アプリ情報・設定
-    getAppInfo(): Promise<AppInfo>;
-    setTheme(theme: AppTheme): Promise<{ theme: AppTheme }>;
-    setLanguage(language: AppLanguage): Promise<{ language: AppLanguage }>;
+    // システム情報
+    system: {
+        getTheme(): Promise<'light' | 'dark'>;
+        getLocale(): Promise<string>;
+        getVersion(): Promise<string>;
+    };
     // ウィンドウ制御
-    minimize(): Promise<void>;
-    maximizeOrRestore(): Promise<boolean>;
-    isMaximized(): Promise<boolean>;
-    close(): Promise<void>;
-    // 自動アップデート (electron-updater)
+    window: {
+        minimize(): Promise<void>;
+        maximize(): Promise<void>;
+        close(): Promise<void>;
+        isMaximized(): Promise<boolean>;
+    };
+    // 自動アップデート
     updater: {
-        // 起動時の状態を取得 (UI 初期化に利用)
         getState(): Promise<UpdateState>;
-        // GitHub Releases に新しいバージョンがあるかチェック (ダウンロードはしない)
-        check(): Promise<UpdateState>;
-        // 利用可能なアップデートのダウンロードを開始
-        download(): Promise<UpdateState>;
-        // ダウンロード済みのアップデートを適用してアプリを再起動
+        check(): Promise<void>;
+        download(): Promise<void>;
         quitAndInstall(): Promise<void>;
-        // アップデート状態の変化を購読 (戻り値は購読解除関数)
         onStateChanged(listener: (state: UpdateState) => void): () => void;
     };
+    // ===== agent 別 API（agent 追加時はここに 1 エントリ追加）=====
+    claude: ClaudeIpcApi;
+    codex: CodexIpcApi;
 };
 
 declare global {
     interface Window {
-        dfapp: IpcApi;
+        agentCliDevkit: IpcApi;
     }
 }

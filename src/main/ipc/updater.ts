@@ -1,12 +1,12 @@
 import { ipcMain } from 'electron';
-import { IPC_CHANNELS } from '../../shared/constants';
+import { UPDATER_CHANNELS } from '../../shared/constants';
 import { checkForUpdates, downloadUpdate, getUpdateState, quitAndInstall } from '../services/updater';
 
 export function registerUpdaterIpcHandlers() {
-    ipcMain.handle(IPC_CHANNELS.UPDATER_GET_STATE, () => getUpdateState());
-    ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK, () => checkForUpdates());
-    ipcMain.handle(IPC_CHANNELS.UPDATER_DOWNLOAD, () => downloadUpdate());
-    ipcMain.handle(IPC_CHANNELS.UPDATER_QUIT_AND_INSTALL, () => {
+    ipcMain.handle(UPDATER_CHANNELS.GET_STATE, () => getUpdateState());
+    ipcMain.handle(UPDATER_CHANNELS.CHECK, () => checkForUpdates());
+    ipcMain.handle(UPDATER_CHANNELS.DOWNLOAD, () => downloadUpdate());
+    ipcMain.handle(UPDATER_CHANNELS.QUIT_AND_INSTALL, () => {
         quitAndInstall();
     });
 }

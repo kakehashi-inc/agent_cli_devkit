@@ -1,74 +1,49 @@
+// renderer に公開する API（window.agentCliDevkit）のエントリポイント。
+// アプリ共通（system / window / updater）のブリッジをここに定義し、
+// agent 固有の API は preload/agents/<agent>.ts から取り込む。
+// agent を追加する場合は preload/agents/<agent>.ts を作成し、ここに 1 行追加する。
 import { contextBridge, ipcRenderer } from 'electron';
+import { SYSTEM_CHANNELS, UPDATER_CHANNELS, WINDOW_CHANNELS } from '../shared/constants';
 import type { IpcApi } from '../shared/ipc';
 import type { UpdateState } from '../shared/types';
-
-// IPCチャンネル定義（ランタイムでsharedからインポートを避けるためローカルコピー）
-const IPC_CHANNELS = {
-    APP_GET_INFO: 'app:getInfo',
-    APP_SET_THEME: 'app:setTheme',
-    APP_SET_LANGUAGE: 'app:setLanguage',
-    WINDOW_MINIMIZE: 'window:minimize',
-    WINDOW_MAXIMIZE_OR_RESTORE: 'window:maximizeOrRestore',
-    WINDOW_CLOSE: 'window:close',
-    WINDOW_IS_MAXIMIZED: 'window:isMaximized',
-    MAIN_CONSOLE: 'main:console',
-    UPDATER_CHECK: 'updater:check',
-    UPDATER_DOWNLOAD: 'updater:download',
-    UPDATER_QUIT_AND_INSTALL: 'updater:quitAndInstall',
-    UPDATER_GET_STATE: 'updater:getState',
-    UPDATER_STATE_CHANGED: 'updater:stateChanged',
-} as const;
+import { claudeApi } from './agents/claude';
+import { codexApi } from './agents/codex';
 
 const api: IpcApi = {
-    async getAppInfo() {
-        return ipcRenderer.invoke(IPC_CHANNELS.APP_GET_INFO);
+    system: {
+        getTheme: () => ipcRenderer.invoke(SYSTEM_CHANNELS.GET_THEME),
+        getLocale: () => ipcRenderer.invoke(SYSTEM_CHANNELS.GET_LOCALE),
+        getVersion: () => ipcRenderer.invoke(SYSTEM_CHANNELS.GET_VERSION),
     },
-    async setTheme(theme) {
-        return ipcRenderer.invoke(IPC_CHANNELS.APP_SET_THEME, theme);
-    },
-    async setLanguage(language) {
-        return ipcRenderer.invoke(IPC_CHANNELS.APP_SET_LANGUAGE, language);
-    },
-    async minimize() {
-        return ipcRenderer.invoke(IPC_CHANNELS.WINDOW_MINIMIZE);
-    },
-    async maximizeOrRestore() {
-        return ipcRenderer.invoke(IPC_CHANNELS.WINDOW_MAXIMIZE_OR_RESTORE);
-    },
-    async isMaximized() {
-        return ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED);
-    },
-    async close() {
-        return ipcRenderer.invoke(IPC_CHANNELS.WINDOW_CLOSE);
+    window: {
+        minimize: () => ipcRenderer.invoke(WINDOW_CHANNELS.MINIMIZE),
+        maximize: () => ipcRenderer.invoke(WINDOW_CHANNELS.MAXIMIZE),
+        close: () => ipcRenderer.invoke(WINDOW_CHANNELS.CLOSE),
+        isMaximized: () => ipcRenderer.invoke(WINDOW_CHANNELS.IS_MAXIMIZED),
     },
     updater: {
-        async getState() {
-            return ipcRenderer.invoke(IPC_CHANNELS.UPDATER_GET_STATE);
-        },
-        async check() {
-            return ipcRenderer.invoke(IPC_CHANNELS.UPDATER_CHECK);
-        },
-        async download() {
-            return ipcRenderer.invoke(IPC_CHANNELS.UPDATER_DOWNLOAD);
-        },
-        async quitAndInstall() {
-            return ipcRenderer.invoke(IPC_CHANNELS.UPDATER_QUIT_AND_INSTALL);
-        },
-        onStateChanged(listener: (state: UpdateState) => void) {
+        getState: () => ipcRenderer.invoke(UPDATER_CHANNELS.GET_STATE),
+        check: () => ipcRenderer.invoke(UPDATER_CHANNELS.CHECK),
+        download: () => ipcRenderer.invoke(UPDATER_CHANNELS.DOWNLOAD),
+        quitAndInstall: () => ipcRenderer.invoke(UPDATER_CHANNELS.QUIT_AND_INSTALL),
+        onStateChanged: (listener: (state: UpdateState) => void) => {
             const handler = (_event: Electron.IpcRendererEvent, state: UpdateState) => listener(state);
-            ipcRenderer.on(IPC_CHANNELS.UPDATER_STATE_CHANGED, handler);
+            ipcRenderer.on(UPDATER_CHANNELS.STATE_CHANGED, handler);
             return () => {
-                ipcRenderer.removeListener(IPC_CHANNELS.UPDATER_STATE_CHANGED, handler);
+                ipcRenderer.removeListener(UPDATER_CHANNELS.STATE_CHANGED, handler);
             };
         },
     },
+    // ===== agent 別 API =====
+    claude: claudeApi,
+    codex: codexApi,
 };
 
-contextBridge.exposeInMainWorld('dfapp', api);
+contextBridge.exposeInMainWorld('agentCliDevkit', api);
 
 // メインプロセスのコンソールメッセージを受信してDevToolsに転送
 ipcRenderer.on(
-    IPC_CHANNELS.MAIN_CONSOLE,
+    'main:console',
     (
         _event,
         data: {
