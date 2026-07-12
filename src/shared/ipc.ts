@@ -4,6 +4,7 @@
 import type { UpdateState } from './types';
 import type { ClaudeIpcApi } from './agents/claude/ipc';
 import type { CodexIpcApi } from './agents/codex/ipc';
+import type { GrokIpcApi } from './agents/grok/ipc';
 
 export type IpcApi = {
     // システム情報
@@ -30,6 +31,7 @@ export type IpcApi = {
     // ===== agent 別 API（agent 追加時はここに 1 エントリ追加）=====
     claude: ClaudeIpcApi;
     codex: CodexIpcApi;
+    grok: GrokIpcApi;
 };
 
 declare global {

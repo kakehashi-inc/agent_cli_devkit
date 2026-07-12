@@ -2,7 +2,7 @@
 
 ## 1. System Overview
 
-Agent CLI DevKit is an Electron desktop tool that manages the development environments of AI agent CLIs (Claude Code / Codex CLI, etc.) in a single application. It merges all features of Claude Developer Tool and Codex Developer Tool, presented in a UI grouped by agent (Claude / Codex).
+Agent CLI DevKit is an Electron desktop tool that manages the development environments of AI agent CLIs (Claude Code / Codex CLI / Grok CLI, etc.) in a single application. It merges all features of Claude Developer Tool and Codex Developer Tool, adds support for Grok CLI (Grok Build), and presents everything in a UI grouped by agent (Claude / Codex / Grok).
 
 ### Features
 
@@ -19,7 +19,13 @@ Agent CLI DevKit is an Electron desktop tool that manages the development enviro
 - **Codex Agent / Skill Manager** — Manage Codex custom agents (~/.codex/agents) and skills (~/.agents/skills), import official OpenAI skills, and edit config.toml settings.
 - **Codex Cleanup** — Reclaim disk space by deleting history, caches, temporary files, logs, and sessions under ~/.codex.
 
-The dashboard and the title-bar navigation display every feature grouped by Claude / Codex. The internal structure is also split into per-agent files, making it easy to add new agent CLIs (see `Documents/システム仕様.md` for details).
+**Grok group**
+
+- **Grok MCP Manager** — Enable, disable, and reorder Grok (CLI) MCP servers (~/.grok/config.toml). Supports both the native OS and WSL distributions.
+- **Grok Agent / Skill Manager** — Manage Grok custom agents (~/.grok/agents) and skills (~/.grok/skills), import official xAI skills, and edit config.toml settings.
+- **Grok Cleanup** — Reclaim disk space by deleting history, memory, and logs under ~/.grok, plus old executable versions (about 130 MB each) left behind by updates.
+
+The dashboard and the title-bar navigation display every feature grouped by Claude / Codex / Grok. The internal structure is also split into per-agent files, making it easy to add new agent CLIs (see `Documents/システム仕様.md` for details).
 
 ### Naming / Distribution
 
@@ -113,18 +119,20 @@ src/
 │   ├── index.ts             # Startup, window creation, service initialization
 │   ├── ipc/                 # IPC handlers
 │   │   ├── claude/          #   Claude handlers
-│   │   └── codex/           #   Codex handlers
+│   │   ├── codex/           #   Codex handlers
+│   │   └── grok/            #   Grok handlers
 │   ├── services/            # Services
 │   │   ├── claude/          #   Claude managers
 │   │   ├── codex/           #   Codex managers
+│   │   ├── grok/            #   Grok managers
 │   │   └── common/          #   Agent-agnostic shared implementations (WSL/git)
 │   └── utils/               # Utilities
 ├── preload/                 # Safely bridges APIs to the renderer
-│   └── agents/              #   Per-agent bridges (claude.ts / codex.ts)
+│   └── agents/              #   Per-agent bridges (claude.ts / codex.ts / grok.ts)
 ├── renderer/                # React + MUI UI
-│   ├── agents/              #   Per-agent screens (claude/ codex/) and registry
+│   ├── agents/              #   Per-agent screens (claude/ codex/ grok/) and registry
 │   ├── components/          #   Shared components (TitleBar/Dashboard, etc.)
-│   └── i18n/locales/        #   Locales (ja/ en/ × app/claude/codex)
+│   └── i18n/locales/        #   Locales (ja/ en/ × app/claude/codex/grok)
 ├── shared/                  # Type definitions / constants
 │   └── agents/              #   Agent-common types and per-agent constants/types
 └── public/                  # Icons, etc.

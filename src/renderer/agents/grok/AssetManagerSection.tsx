@@ -22,24 +22,22 @@ import {
     DeleteOutlined as DeleteIcon,
     CloudDownloadOutlined as CloudDownloadIcon,
 } from '@mui/icons-material';
-import type { AssetEntry, AssetKind, AssetListReport, CodexEnvironment } from '@shared/agents/codex/types';
+import type { AssetEntry, AssetKind, AssetListReport, GrokEnvironment } from '@shared/agents/grok/types';
 import { AssetEntriesTable, computeFitWidth, type FmColumn } from './AssetEntriesTable';
 import { SettingsSection } from './SettingsSection';
 
 // セクションのタブ値: エージェント / スキル（AssetKind）に加え、設定タブを持つ。
 type SectionTab = AssetKind | 'settings';
-// 単体ファイルアップロードの種別（zip 以外）。skills=md、agents=toml。
-type UploadKind = 'zip' | 'md' | 'toml';
 
 interface Props {
-    env: CodexEnvironment;
+    env: GrokEnvironment;
     onNotify: (message: string, severity: 'success' | 'error' | 'warning') => void;
 }
 
 const FRONTMATTER_COLUMNS: Record<AssetKind, FmColumn[]> = {
     agents: [
         { key: 'name', fit: true, maxWidthPct: 0.3 },
-        { key: 'model', width: 120 },
+        { key: 'model', width: 90 },
         { key: 'description', flex: true },
     ],
     skills: [
@@ -53,12 +51,15 @@ const OFFICIAL_COLUMNS: FmColumn[] = FRONTMATTER_COLUMNS.skills;
 
 /**
  * 1 環境分の Agent・Skill 管理セクション。
- * 「エージェント」「スキル」「設定」をタブで分離する。
- * スキルタブでは公式スキル（openai/skills）の取り込みも行える（git が必要）。
+ * 「エージェント」「スキル」をタブで分離し、各タブで一覧 / ダウンロード / アップロードを行う。
+ * スキルタブでは公式スキル（anthropics/skills）の取り込みも行える（git が必要）。
+ * 各エントリの frontmatter（ヘッダー部）を固定列で展開表示し、「参照」で生のヘッダー部全体を見られる。
  */
 export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     const { t } = useTranslation();
+    // 表示中のタブ。'settings' のときは設定セクションを表示する。
     const [tab, setTab] = useState<SectionTab>('agents');
+    // 資産（エージェント/スキル）操作で使う種別。設定タブでは直前の種別を保持する。
     const kind: AssetKind = tab === 'settings' ? 'agents' : tab;
     const [reports, setReports] = useState<Record<AssetKind, AssetListReport | null>>({
         agents: null,
@@ -70,19 +71,22 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         skills: new Set(),
     });
     const [busy, setBusy] = useState(false);
+    // 上書き確認: zip / md 共通。uploadKind で確定 IPC を呼び分ける。
     const [confirm, setConfirm] = useState<{
         srcPath: string;
         conflicts: string[];
-        uploadKind: UploadKind;
+        uploadKind: 'zip' | 'md';
     } | null>(null);
+    // 種別不一致の警告（続行 / キャンセル）。続行時は通常フロー（衝突確認 → アップロード）へ進む。
     const [kindWarn, setKindWarn] = useState<{
         srcPath: string;
         conflicts: string[];
-        uploadKind: UploadKind;
+        uploadKind: 'zip' | 'md';
         reason: string;
     } | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [viewEntry, setViewEntry] = useState<AssetEntry | null>(null);
+    // name 列の最大幅をウィンドウ幅の割合で算出するため、ウィンドウ幅を監視する。
     const [windowWidth, setWindowWidth] = useState<number>(() => window.innerWidth);
 
     // 公式スキルインポート関連。
@@ -101,8 +105,8 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     const load = async () => {
         try {
             const [agents, skills] = await Promise.all([
-                window.agentCliDevkit.codex.asset.list(env, 'agents').catch(() => null),
-                window.agentCliDevkit.codex.asset.list(env, 'skills').catch(() => null),
+                window.agentCliDevkit.grok.asset.list(env, 'agents').catch(() => null),
+                window.agentCliDevkit.grok.asset.list(env, 'skills').catch(() => null),
             ]);
             setReports({ agents, skills });
             setChecked({ agents: new Set(), skills: new Set() });
@@ -113,10 +117,12 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
 
     useEffect(() => {
         load();
-        window.agentCliDevkit.codex.asset
+        // git の利用可否を判定（公式スキルインポートボタンの活性に使う）。
+        window.agentCliDevkit.grok.asset
             .isGitAvailable()
             .then(setGitAvailable)
             .catch(() => setGitAvailable(false));
+        // env は安定参照（親で固定）。マウント時に一度ロードする。
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -124,6 +130,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     const checkedKeys = checked[kind];
     const entries = useMemo(() => report?.entries ?? [], [report]);
     const columns = FRONTMATTER_COLUMNS[kind];
+    // name（fit 列）の幅を実データから見積もる（内容に合わせて伸縮・最大幅はウィンドウ幅の割合でクランプ）。
     const fitWidth = useMemo(() => {
         const fitCol = columns.find(c => c.fit);
         if (!fitCol) {
@@ -132,6 +139,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         const maxWidthPx = Math.round(windowWidth * (fitCol.maxWidthPct ?? 0.25));
         return computeFitWidth(entries, maxWidthPx);
     }, [columns, entries, windowWidth]);
+    // 公式ダイアログ用の fit 幅（skills 列構成）。
     const officialFitWidth = useMemo(() => {
         const fitCol = OFFICIAL_COLUMNS.find(c => c.fit);
         if (!fitCol) {
@@ -174,17 +182,17 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         }
         setBusy(true);
         try {
-            const result = await window.agentCliDevkit.codex.asset.download(env, kind, relPaths);
+            const result = await window.agentCliDevkit.grok.asset.download(env, kind, relPaths);
             if (result.canceled) {
                 return;
             }
             if (result.ok) {
-                onNotify(t('codex.assetManager.downloadSuccess'), 'success');
+                onNotify(t('grok.assetManager.downloadSuccess'), 'success');
             } else {
-                onNotify(t('codex.assetManager.downloadError'), 'error');
+                onNotify(t('grok.assetManager.downloadError'), 'error');
             }
         } catch {
-            onNotify(t('codex.assetManager.downloadError'), 'error');
+            onNotify(t('grok.assetManager.downloadError'), 'error');
         } finally {
             setBusy(false);
         }
@@ -193,42 +201,47 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     const handleUploadClick = async () => {
         setBusy(true);
         try {
-            const result = await window.agentCliDevkit.codex.asset.inspectUpload(env, kind);
+            const result = await window.agentCliDevkit.grok.asset.inspectUpload(env, kind);
             if (result.canceled) {
                 return;
             }
+            // 検査エラー。種別不一致のブロック（kind-block-*）は専用メッセージを出す。
             if (!result.ok) {
                 const msg = result.message ?? '';
                 if (msg.startsWith('kind-block-')) {
-                    onNotify(t(`codex.assetManager.kindBlock.${msg.slice('kind-block-'.length)}`), 'error');
+                    onNotify(t(`grok.assetManager.kindBlock.${msg.slice('kind-block-'.length)}`), 'error');
                 } else {
                     onNotify(
-                        t(msg === 'md-no-name' ? 'codex.assetManager.mdNoName' : 'codex.assetManager.uploadError'),
+                        t(msg === 'md-no-name' ? 'grok.assetManager.mdNoName' : 'grok.assetManager.uploadError'),
                         'error'
                     );
                 }
                 return;
             }
-            const uploadKind = (result.uploadKind ?? 'zip') as UploadKind;
-            const srcPath = uploadKind === 'zip' ? result.zipPath : result.srcPath;
+            // 共通型 AssetOpResult の uploadKind は 'toml' も取り得るが、Grok 側の
+            // inspectUpload は 'zip' | 'md' のみ返すためここで絞り込む。
+            const uploadKind = (result.uploadKind ?? 'zip') as 'zip' | 'md';
+            const srcPath = uploadKind === 'md' ? result.srcPath : result.zipPath;
             if (!srcPath) {
-                onNotify(t('codex.assetManager.uploadError'), 'error');
+                onNotify(t('grok.assetManager.uploadError'), 'error');
                 return;
             }
             const conflicts = result.conflicts ?? [];
+            // 種別不一致の疑い → 続行/キャンセルの確認を先に挟む。
             if (result.kindCheck === 'warn') {
                 setKindWarn({ srcPath, conflicts, uploadKind, reason: result.kindMessage ?? '' });
                 return;
             }
             await proceedUpload(srcPath, uploadKind, conflicts);
         } catch {
-            onNotify(t('codex.assetManager.uploadError'), 'error');
+            onNotify(t('grok.assetManager.uploadError'), 'error');
         } finally {
             setBusy(false);
         }
     };
 
-    const proceedUpload = async (srcPath: string, uploadKind: UploadKind, conflicts: string[]) => {
+    // 検査後の通常フロー: 衝突があれば上書き確認、無ければそのまま取り込む。
+    const proceedUpload = async (srcPath: string, uploadKind: 'zip' | 'md', conflicts: string[]) => {
         if (conflicts.length > 0) {
             setConfirm({ srcPath, conflicts, uploadKind });
             return;
@@ -236,6 +249,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         await runUpload(srcPath, uploadKind, false);
     };
 
+    // 種別不一致の警告で「続行」 → 通常フローへ。
     const handleConfirmKindWarn = async () => {
         if (!kindWarn) {
             return;
@@ -246,23 +260,23 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         try {
             await proceedUpload(srcPath, uploadKind, conflicts);
         } catch {
-            onNotify(t('codex.assetManager.uploadError'), 'error');
+            onNotify(t('grok.assetManager.uploadError'), 'error');
         } finally {
             setBusy(false);
         }
     };
 
-    const runUpload = async (srcPath: string, uploadKind: UploadKind, overwrite: boolean) => {
+    const runUpload = async (srcPath: string, uploadKind: 'zip' | 'md', overwrite: boolean) => {
         const result =
-            uploadKind === 'zip'
-                ? await window.agentCliDevkit.codex.asset.upload(env, kind, srcPath, overwrite)
-                : await window.agentCliDevkit.codex.asset.uploadFile(env, kind, srcPath, overwrite);
+            uploadKind === 'md'
+                ? await window.agentCliDevkit.grok.asset.uploadMd(env, kind, srcPath, overwrite)
+                : await window.agentCliDevkit.grok.asset.upload(env, kind, srcPath, overwrite);
         if (result.ok) {
-            onNotify(t('codex.assetManager.uploadSuccess', { count: result.importedCount ?? 0 }), 'success');
+            onNotify(t('grok.assetManager.uploadSuccess', { count: result.importedCount ?? 0 }), 'success');
             await load();
         } else {
             onNotify(
-                t(result.message === 'md-no-name' ? 'codex.assetManager.mdNoName' : 'codex.assetManager.uploadError'),
+                t(result.message === 'md-no-name' ? 'grok.assetManager.mdNoName' : 'grok.assetManager.uploadError'),
                 'error'
             );
         }
@@ -278,7 +292,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         try {
             await runUpload(srcPath, uploadKind, true);
         } catch {
-            onNotify(t('codex.assetManager.uploadError'), 'error');
+            onNotify(t('grok.assetManager.uploadError'), 'error');
         } finally {
             setBusy(false);
         }
@@ -292,22 +306,24 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         }
         setBusy(true);
         try {
-            const result = await window.agentCliDevkit.codex.asset.deleteSelected(env, kind, relPaths);
+            const result = await window.agentCliDevkit.grok.asset.deleteSelected(env, kind, relPaths);
             if (result.ok) {
-                onNotify(t('codex.assetManager.deleteSuccess', { count: result.deletedCount ?? 0 }), 'success');
+                onNotify(t('grok.assetManager.deleteSuccess', { count: result.deletedCount ?? 0 }), 'success');
             } else if ((result.deletedCount ?? 0) > 0 || (result.skipped?.length ?? 0) > 0) {
-                onNotify(t('codex.assetManager.deletePartial'), 'warning');
+                // 一部のみ削除できた（使用中などでスキップ）
+                onNotify(t('grok.assetManager.deletePartial'), 'warning');
             } else {
-                onNotify(t('codex.assetManager.deleteError'), 'error');
+                onNotify(t('grok.assetManager.deleteError'), 'error');
             }
             await load();
         } catch {
-            onNotify(t('codex.assetManager.deleteError'), 'error');
+            onNotify(t('grok.assetManager.deleteError'), 'error');
         } finally {
             setBusy(false);
         }
     };
 
+    // 公式スキルインポート: リポジトリを更新して一覧を取得し、ダイアログを開く。
     const handleOpenOfficial = async () => {
         setBusy(true);
         setOfficialLoading(true);
@@ -315,15 +331,15 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         setOfficialEntries([]);
         setOfficialChecked(new Set());
         try {
-            const result = await window.agentCliDevkit.codex.asset.listOfficialSkills();
+            const result = await window.agentCliDevkit.grok.asset.listOfficialSkills();
             if (result.ok && result.entries) {
                 setOfficialEntries(result.entries);
             } else {
-                onNotify(t('codex.assetManager.officialListError'), 'error');
+                onNotify(t('grok.assetManager.officialListError'), 'error');
                 setOfficialOpen(false);
             }
         } catch {
-            onNotify(t('codex.assetManager.officialListError'), 'error');
+            onNotify(t('grok.assetManager.officialListError'), 'error');
             setOfficialOpen(false);
         } finally {
             setOfficialLoading(false);
@@ -350,6 +366,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         }
     };
 
+    // 公式スキルを取り込む（公式同士は確認なしで置換）。
     const handleImportOfficial = async () => {
         const relPaths = officialEntries.filter(e => officialChecked.has(e.relPath)).map(e => e.relPath);
         if (relPaths.length === 0) {
@@ -357,19 +374,16 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         }
         setBusy(true);
         try {
-            const result = await window.agentCliDevkit.codex.asset.importOfficialSkills(env, relPaths);
+            const result = await window.agentCliDevkit.grok.asset.importOfficialSkills(env, relPaths);
             if (result.ok) {
-                onNotify(
-                    t('codex.assetManager.officialImportSuccess', { count: result.importedCount ?? 0 }),
-                    'success'
-                );
+                onNotify(t('grok.assetManager.officialImportSuccess', { count: result.importedCount ?? 0 }), 'success');
                 setOfficialOpen(false);
                 await load();
             } else {
-                onNotify(t('codex.assetManager.officialImportError'), 'error');
+                onNotify(t('grok.assetManager.officialImportError'), 'error');
             }
         } catch {
-            onNotify(t('codex.assetManager.officialImportError'), 'error');
+            onNotify(t('grok.assetManager.officialImportError'), 'error');
         } finally {
             setBusy(false);
         }
@@ -390,16 +404,16 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 onChange={(_, v: SectionTab) => setTab(v)}
                 sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
-                <Tab value='agents' label={t('codex.assetManager.tabAgents')} />
-                <Tab value='skills' label={t('codex.assetManager.tabSkills')} />
-                <Tab value='settings' label={t('codex.assetManager.tabSettings')} />
+                <Tab value='agents' label={t('grok.assetManager.tabAgents')} />
+                <Tab value='skills' label={t('grok.assetManager.tabSkills')} />
+                <Tab value='settings' label={t('grok.assetManager.tabSettings')} />
             </Tabs>
 
             <Box sx={{ p: 2 }}>
                 {tab === 'settings' ? (
                     <SettingsSection env={env} onNotify={onNotify} />
                 ) : report && !report.available ? (
-                    <Alert severity='info'>{t('codex.assetManager.unavailable')}</Alert>
+                    <Alert severity='info'>{t('grok.assetManager.unavailable')}</Alert>
                 ) : (
                     <>
                         <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center' }}>
@@ -410,7 +424,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 disabled={busy || !someChecked}
                                 onClick={handleDownload}
                             >
-                                {t('codex.assetManager.download')}
+                                {t('grok.assetManager.download')}
                             </Button>
                             <Button
                                 variant='outlined'
@@ -419,7 +433,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 disabled={busy}
                                 onClick={handleUploadClick}
                             >
-                                {t('codex.assetManager.upload')}
+                                {t('grok.assetManager.upload')}
                             </Button>
                             <Button
                                 variant='outlined'
@@ -429,12 +443,13 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 disabled={busy || !someChecked}
                                 onClick={() => setDeleteConfirmOpen(true)}
                             >
-                                {t('codex.assetManager.delete')}
+                                {t('grok.assetManager.delete')}
                             </Button>
+                            {/* スキルタブのみ: 公式スキルインポートを右寄せで配置 */}
                             {kind === 'skills' && (
                                 <>
                                     <Box sx={{ flexGrow: 1 }} />
-                                    <Tooltip title={gitAvailable ? '' : t('codex.assetManager.gitRequired')}>
+                                    <Tooltip title={gitAvailable ? '' : t('grok.assetManager.gitRequired')}>
                                         <span>
                                             <Button
                                                 variant='outlined'
@@ -443,7 +458,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                                 disabled={busy || !gitAvailable}
                                                 onClick={handleOpenOfficial}
                                             >
-                                                {t('codex.assetManager.importOfficial')}
+                                                {t('grok.assetManager.importOfficial')}
                                             </Button>
                                         </span>
                                     </Tooltip>
@@ -453,7 +468,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
 
                         {entries.length === 0 ? (
                             <Typography color='text.secondary' sx={{ py: 1 }}>
-                                {t('codex.assetManager.noEntries')}
+                                {t('grok.assetManager.noEntries')}
                             </Typography>
                         ) : (
                             <AssetEntriesTable
@@ -474,58 +489,58 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
 
             {/* 種別不一致の警告ダイアログ（続行 / キャンセル） */}
             <Dialog open={kindWarn !== null} onClose={() => setKindWarn(null)}>
-                <DialogTitle>{t('codex.assetManager.kindWarnTitle')}</DialogTitle>
+                <DialogTitle>{t('grok.assetManager.kindWarnTitle')}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        {kindWarn ? t(`codex.assetManager.kindWarn.${kindWarn.reason}`) : ''}
+                        {kindWarn ? t(`grok.assetManager.kindWarn.${kindWarn.reason}`) : ''}
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setKindWarn(null)}>{t('codex.assetManager.cancel')}</Button>
+                    <Button onClick={() => setKindWarn(null)}>{t('grok.assetManager.cancel')}</Button>
                     <Button color='warning' variant='contained' onClick={handleConfirmKindWarn}>
-                        {t('codex.assetManager.kindWarnContinue')}
+                        {t('grok.assetManager.kindWarnContinue')}
                     </Button>
                 </DialogActions>
             </Dialog>
 
-            {/* 上書き確認ダイアログ */}
+            {/* 上書き確認ダイアログ（zip / md 共通） */}
             <Dialog open={confirm !== null} onClose={() => setConfirm(null)}>
-                <DialogTitle>{t('codex.assetManager.overwriteConfirmTitle')}</DialogTitle>
+                <DialogTitle>{t('grok.assetManager.overwriteConfirmTitle')}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        {t('codex.assetManager.overwriteConfirmBody', {
+                        {t('grok.assetManager.overwriteConfirmBody', {
                             count: confirm?.conflicts.length ?? 0,
                             names: (confirm?.conflicts ?? []).join(', '),
                         })}
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setConfirm(null)}>{t('codex.assetManager.cancel')}</Button>
+                    <Button onClick={() => setConfirm(null)}>{t('grok.assetManager.cancel')}</Button>
                     <Button color='error' variant='contained' onClick={handleConfirmOverwrite}>
-                        {t('codex.assetManager.overwrite')}
+                        {t('grok.assetManager.overwrite')}
                     </Button>
                 </DialogActions>
             </Dialog>
 
             {/* 削除確認ダイアログ */}
             <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
-                <DialogTitle>{t('codex.assetManager.deleteConfirmTitle')}</DialogTitle>
+                <DialogTitle>{t('grok.assetManager.deleteConfirmTitle')}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        {t('codex.assetManager.deleteConfirmBody', { count: checkedKeys.size })}
+                        {t('grok.assetManager.deleteConfirmBody', { count: checkedKeys.size })}
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setDeleteConfirmOpen(false)}>{t('codex.assetManager.cancel')}</Button>
+                    <Button onClick={() => setDeleteConfirmOpen(false)}>{t('grok.assetManager.cancel')}</Button>
                     <Button color='error' variant='contained' onClick={handleConfirmDelete}>
-                        {t('codex.assetManager.delete')}
+                        {t('grok.assetManager.delete')}
                     </Button>
                 </DialogActions>
             </Dialog>
 
-            {/* メタ情報（ヘッダー）参照ダイアログ */}
+            {/* frontmatter 参照ダイアログ */}
             <Dialog open={viewEntry !== null} onClose={() => setViewEntry(null)} maxWidth='md' fullWidth>
-                <DialogTitle>{t('codex.assetManager.viewTitle', { name: viewEntry?.name ?? '' })}</DialogTitle>
+                <DialogTitle>{t('grok.assetManager.viewTitle', { name: viewEntry?.name ?? '' })}</DialogTitle>
                 <DialogContent>
                     <Box
                         component='pre'
@@ -544,23 +559,23 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                     </Box>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setViewEntry(null)}>{t('codex.assetManager.close')}</Button>
+                    <Button onClick={() => setViewEntry(null)}>{t('grok.assetManager.close')}</Button>
                 </DialogActions>
             </Dialog>
 
             {/* 公式スキルインポートダイアログ */}
             <Dialog open={officialOpen} onClose={() => !busy && setOfficialOpen(false)} maxWidth='lg' fullWidth>
-                <DialogTitle>{t('codex.assetManager.importOfficialTitle')}</DialogTitle>
+                <DialogTitle>{t('grok.assetManager.importOfficialTitle')}</DialogTitle>
                 <DialogContent>
-                    <DialogContentText sx={{ mb: 2 }}>{t('codex.assetManager.importOfficialDesc')}</DialogContentText>
+                    <DialogContentText sx={{ mb: 2 }}>{t('grok.assetManager.importOfficialDesc')}</DialogContentText>
                     {officialLoading ? (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2 }}>
                             <CircularProgress size={20} />
-                            <Typography color='text.secondary'>{t('codex.assetManager.repoUpdating')}</Typography>
+                            <Typography color='text.secondary'>{t('grok.assetManager.repoUpdating')}</Typography>
                         </Box>
                     ) : officialEntries.length === 0 ? (
                         <Typography color='text.secondary' sx={{ py: 1 }}>
-                            {t('codex.assetManager.noEntries')}
+                            {t('grok.assetManager.noEntries')}
                         </Typography>
                     ) : (
                         <AssetEntriesTable
@@ -577,7 +592,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setOfficialOpen(false)} disabled={busy}>
-                        {t('codex.assetManager.cancel')}
+                        {t('grok.assetManager.cancel')}
                     </Button>
                     <Button
                         variant='contained'
@@ -585,7 +600,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                         onClick={handleImportOfficial}
                         disabled={busy || officialChecked.size === 0}
                     >
-                        {t('codex.assetManager.import')}
+                        {t('grok.assetManager.import')}
                     </Button>
                 </DialogActions>
             </Dialog>

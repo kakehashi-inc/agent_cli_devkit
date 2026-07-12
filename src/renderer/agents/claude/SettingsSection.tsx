@@ -147,7 +147,11 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                 await load();
             } else {
                 onNotify(
-                    t(result.message === 'invalid-existing-json' ? 'claude.settings.invalidExisting' : 'claude.settings.saveError'),
+                    t(
+                        result.message === 'invalid-existing-json'
+                            ? 'claude.settings.invalidExisting'
+                            : 'claude.settings.saveError'
+                    ),
                     'error'
                 );
             }
@@ -199,7 +203,10 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                 setRawOpen(false);
                 await load();
             } else {
-                onNotify(t(result.message === 'invalid-json' ? 'claude.settings.invalidJson' : 'claude.settings.saveError'), 'error');
+                onNotify(
+                    t(result.message === 'invalid-json' ? 'claude.settings.invalidJson' : 'claude.settings.saveError'),
+                    'error'
+                );
             }
         } catch {
             onNotify(t('claude.settings.saveError'), 'error');

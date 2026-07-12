@@ -26,20 +26,15 @@ import {
     KeyboardArrowDown as ExpandIcon,
     KeyboardArrowRight as CollapseIcon,
 } from '@mui/icons-material';
-import type {
-    CodexEnvironment,
-    SettingsFieldSpec,
-    SettingsFieldValue,
-    SettingsValues,
-} from '@shared/agents/codex/types';
+import type { GrokEnvironment, SettingsFieldSpec, SettingsFieldValue, SettingsValues } from '@shared/agents/grok/types';
 
 interface Props {
-    env: CodexEnvironment;
+    env: GrokEnvironment;
     onNotify: (message: string, severity: 'success' | 'error' | 'warning') => void;
 }
 
 /**
- * 1 環境分の Codex 設定（~/.codex/config.toml）編集セクション。
+ * 1 環境分の Grok 設定（~/.grok/config.toml）編集セクション。
  *
  * - read() が返す項目定義（result.fields）だけをテーブルに展開して編集する。
  *   各項目はトグル（boolean）・セレクト（string + choices）・テキスト / 数値（string / number）で表示する。
@@ -93,17 +88,17 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
 
     const unsetLabel = (f: SettingsFieldSpec): string => {
         if (typeof f.defaultOn === 'boolean') {
-            return t('codex.settings.unsetWithDefault', {
-                default: f.defaultOn ? t('codex.settings.enabled') : t('codex.settings.disabled'),
+            return t('grok.settings.unsetWithDefault', {
+                default: f.defaultOn ? t('grok.settings.enabled') : t('grok.settings.disabled'),
             });
         }
-        return t('codex.settings.unset');
+        return t('grok.settings.unset');
     };
 
     const load = async () => {
         setLoading(true);
         try {
-            const result = await window.agentCliDevkit.codex.config.read(env);
+            const result = await window.agentCliDevkit.grok.config.read(env);
             setAvailable(result.available);
             setFields(result.fields);
             const next: Record<string, SettingsFieldValue> = {};
@@ -113,7 +108,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
             setEditValues(next);
         } catch (error) {
             console.error('Failed to read settings:', error);
-            onNotify(t('codex.settings.readError'), 'error');
+            onNotify(t('grok.settings.readError'), 'error');
         } finally {
             setLoading(false);
         }
@@ -129,22 +124,22 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
     const handleSave = async () => {
         setBusy(true);
         try {
-            const result = await window.agentCliDevkit.codex.config.write(env, collectValues());
+            const result = await window.agentCliDevkit.grok.config.write(env, collectValues());
             if (result.ok) {
-                onNotify(t('codex.settings.saveSuccess'), 'success');
+                onNotify(t('grok.settings.saveSuccess'), 'success');
                 await load();
             } else {
                 onNotify(
                     t(
                         result.message === 'invalid-existing-toml'
-                            ? 'codex.settings.invalidExisting'
-                            : 'codex.settings.saveError'
+                            ? 'grok.settings.invalidExisting'
+                            : 'grok.settings.saveError'
                     ),
                     'error'
                 );
             }
         } catch {
-            onNotify(t('codex.settings.saveError'), 'error');
+            onNotify(t('grok.settings.saveError'), 'error');
         } finally {
             setBusy(false);
         }
@@ -157,12 +152,12 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
     const handleOpenRaw = async () => {
         setBusy(true);
         try {
-            const result = await window.agentCliDevkit.codex.config.read(env);
+            const result = await window.agentCliDevkit.grok.config.read(env);
             const text = result.raw ?? '';
             setRawText(text);
             setRawOpen(true);
         } catch {
-            onNotify(t('codex.settings.readError'), 'error');
+            onNotify(t('grok.settings.readError'), 'error');
         } finally {
             setBusy(false);
         }
@@ -171,19 +166,19 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
     const handleSaveRaw = async () => {
         setBusy(true);
         try {
-            const result = await window.agentCliDevkit.codex.config.writeRaw(env, rawText);
+            const result = await window.agentCliDevkit.grok.config.writeRaw(env, rawText);
             if (result.ok) {
-                onNotify(t('codex.settings.saveSuccess'), 'success');
+                onNotify(t('grok.settings.saveSuccess'), 'success');
                 setRawOpen(false);
                 await load();
             } else {
                 onNotify(
-                    t(result.message === 'invalid-toml' ? 'codex.settings.invalidToml' : 'codex.settings.saveError'),
+                    t(result.message === 'invalid-toml' ? 'grok.settings.invalidToml' : 'grok.settings.saveError'),
                     'error'
                 );
             }
         } catch {
-            onNotify(t('codex.settings.saveError'), 'error');
+            onNotify(t('grok.settings.saveError'), 'error');
         } finally {
             setBusy(false);
         }
@@ -202,7 +197,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
     }
 
     if (!available) {
-        return <Alert severity='info'>{t('codex.settings.unavailable')}</Alert>;
+        return <Alert severity='info'>{t('grok.settings.unavailable')}</Alert>;
     }
 
     return (
@@ -211,8 +206,8 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                 <Table size='small'>
                     <TableHead>
                         <TableRow>
-                            <TableCell sx={{ width: '40%' }}>{t('codex.settings.colItem')}</TableCell>
-                            <TableCell>{t('codex.settings.colValue')}</TableCell>
+                            <TableCell sx={{ width: '40%' }}>{t('grok.settings.colItem')}</TableCell>
+                            <TableCell>{t('grok.settings.colValue')}</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -241,7 +236,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                 ) : (
                                                     <CollapseIcon fontSize='small' />
                                                 )}
-                                                {t(`codex.settings.group.${group}`)}
+                                                {t(`grok.settings.group.${group}`)}
                                             </Box>
                                         </TableCell>
                                     </TableRow>
@@ -250,10 +245,10 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                             <TableRow key={f.key}>
                                                 <TableCell sx={{ verticalAlign: 'top', pl: 3 }}>
                                                     <Typography variant='body2' sx={{ fontWeight: 600 }}>
-                                                        {t(`codex.settings.field.${f.key}.label`)}
+                                                        {t(`grok.settings.field.${f.key}.label`)}
                                                     </Typography>
                                                     <Typography variant='caption' color='text.secondary'>
-                                                        {t(`codex.settings.field.${f.key}.desc`)}
+                                                        {t(`grok.settings.field.${f.key}.desc`)}
                                                     </Typography>
                                                 </TableCell>
                                                 <TableCell>
@@ -271,10 +266,10 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                                 <em>{unsetLabel(f)}</em>
                                                             </MenuItem>
                                                             <MenuItem value='true'>
-                                                                {t('codex.settings.enabled')}
+                                                                {t('grok.settings.enabled')}
                                                             </MenuItem>
                                                             <MenuItem value='false'>
-                                                                {t('codex.settings.disabled')}
+                                                                {t('grok.settings.disabled')}
                                                             </MenuItem>
                                                         </Select>
                                                     ) : f.choices ? (
@@ -291,7 +286,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                             sx={{ minWidth: 200 }}
                                                         >
                                                             <MenuItem value=''>
-                                                                <em>{t('codex.settings.unset')}</em>
+                                                                <em>{t('grok.settings.unset')}</em>
                                                             </MenuItem>
                                                             {f.choices.map(c => (
                                                                 <MenuItem key={c} value={c}>
@@ -303,7 +298,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                         <TextField
                                                             size='small'
                                                             type='number'
-                                                            placeholder={t('codex.settings.unset')}
+                                                            placeholder={t('grok.settings.unset')}
                                                             value={
                                                                 typeof editValues[f.key] === 'number'
                                                                     ? String(editValues[f.key])
@@ -327,7 +322,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                         <TextField
                                                             size='small'
                                                             placeholder={t(
-                                                                `codex.settings.field.${f.key}.placeholder`,
+                                                                `grok.settings.field.${f.key}.placeholder`,
                                                                 ''
                                                             )}
                                                             value={(editValues[f.key] as string | undefined) ?? ''}
@@ -353,7 +348,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
             {/* テーブル下部: 左に 保存 / キャンセル、右端に 直接編集 */}
             <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'center' }}>
                 <Button variant='contained' size='small' startIcon={<SaveIcon />} disabled={busy} onClick={handleSave}>
-                    {t('codex.settings.save')}
+                    {t('grok.settings.save')}
                 </Button>
                 <Button
                     variant='outlined'
@@ -362,7 +357,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                     disabled={busy}
                     onClick={handleCancel}
                 >
-                    {t('codex.settings.cancel')}
+                    {t('grok.settings.cancel')}
                 </Button>
                 <Box sx={{ flexGrow: 1 }} />
                 <Button
@@ -372,16 +367,16 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                     disabled={busy}
                     onClick={handleOpenRaw}
                 >
-                    {t('codex.settings.directEdit')}
+                    {t('grok.settings.directEdit')}
                 </Button>
             </Box>
 
             {/* 直接編集ダイアログ */}
             <Dialog open={rawOpen} onClose={() => !busy && setRawOpen(false)} maxWidth='md' fullWidth>
-                <DialogTitle>{t('codex.settings.directEditTitle')}</DialogTitle>
+                <DialogTitle>{t('grok.settings.directEditTitle')}</DialogTitle>
                 <DialogContent>
                     <Typography variant='body2' color='text.secondary' sx={{ mb: 1.5 }}>
-                        {t('codex.settings.directEditDesc')}
+                        {t('grok.settings.directEditDesc')}
                     </Typography>
                     <TextField
                         multiline
@@ -395,10 +390,10 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setRawOpen(false)} disabled={busy}>
-                        {t('codex.settings.cancel')}
+                        {t('grok.settings.cancel')}
                     </Button>
                     <Button variant='contained' startIcon={<SaveIcon />} onClick={handleSaveRaw} disabled={busy}>
-                        {t('codex.settings.save')}
+                        {t('grok.settings.save')}
                     </Button>
                 </DialogActions>
             </Dialog>

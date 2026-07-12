@@ -8,6 +8,7 @@ import type { IpcApi } from '../shared/ipc';
 import type { UpdateState } from '../shared/types';
 import { claudeApi } from './agents/claude';
 import { codexApi } from './agents/codex';
+import { grokApi } from './agents/grok';
 
 const api: IpcApi = {
     system: {
@@ -37,6 +38,7 @@ const api: IpcApi = {
     // ===== agent 別 API =====
     claude: claudeApi,
     codex: codexApi,
+    grok: grokApi,
 };
 
 contextBridge.exposeInMainWorld('agentCliDevkit', api);

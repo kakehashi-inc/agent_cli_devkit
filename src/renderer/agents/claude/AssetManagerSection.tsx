@@ -211,7 +211,10 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 if (msg.startsWith('kind-block-')) {
                     onNotify(t(`claude.assetManager.kindBlock.${msg.slice('kind-block-'.length)}`), 'error');
                 } else {
-                    onNotify(t(msg === 'md-no-name' ? 'claude.assetManager.mdNoName' : 'claude.assetManager.uploadError'), 'error');
+                    onNotify(
+                        t(msg === 'md-no-name' ? 'claude.assetManager.mdNoName' : 'claude.assetManager.uploadError'),
+                        'error'
+                    );
                 }
                 return;
             }

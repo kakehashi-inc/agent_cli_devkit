@@ -4,5 +4,6 @@
 import type { AgentModule } from './types';
 import { claudeModule } from './claude/index';
 import { codexModule } from './codex/index';
+import { grokModule } from './grok/index';
 
-export const AGENT_MODULES: AgentModule[] = [claudeModule, codexModule];
+export const AGENT_MODULES: AgentModule[] = [claudeModule, codexModule, grokModule];

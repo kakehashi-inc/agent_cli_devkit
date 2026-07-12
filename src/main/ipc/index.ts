@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron';
 import { WslDetector } from '../services/common/wsl/WslDetector';
 import { registerClaudeIpcHandlers } from './claude/index';
 import { registerCodexIpcHandlers } from './codex/index';
+import { registerGrokIpcHandlers } from './grok/index';
 import { registerSystemHandlers } from './systemHandlers';
 import { registerWindowHandlers } from './windowHandlers';
 import { registerUpdaterIpcHandlers } from './updater';
@@ -17,6 +18,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null) {
     // ===== agent 別 IPC ハンドラ =====
     registerClaudeIpcHandlers(detector, getMainWindow);
     registerCodexIpcHandlers(detector, getMainWindow);
+    registerGrokIpcHandlers(detector, getMainWindow);
 
     // ===== アプリ共通 IPC ハンドラ =====
     registerSystemHandlers();
