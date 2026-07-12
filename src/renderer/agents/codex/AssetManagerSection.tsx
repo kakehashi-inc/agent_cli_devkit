@@ -82,6 +82,22 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     } | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [viewEntry, setViewEntry] = useState<AssetEntry | null>(null);
+    // 「全体」参照ダイアログ（ファイル内容全体）。
+    const [viewFull, setViewFull] = useState<{ name: string; content: string } | null>(null);
+
+    // エントリの内容全体（agents=ファイル本体 / skills=SKILL.md）を読み込んで表示する。
+    const handleViewFull = async (entry: AssetEntry) => {
+        try {
+            const result = await window.agentCliDevkit.codex.asset.readEntry(env, kind, entry.relPath);
+            if (!result.ok || result.content === undefined) {
+                onNotify(t('codex.assetManager.viewFullError'), 'error');
+                return;
+            }
+            setViewFull({ name: entry.name, content: result.content });
+        } catch {
+            onNotify(t('codex.assetManager.viewFullError'), 'error');
+        }
+    };
     const [windowWidth, setWindowWidth] = useState<number>(() => window.innerWidth);
 
     // 公式スキルインポート関連。
@@ -462,6 +478,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 onToggle={toggle}
                                 onToggleAll={toggleAll}
                                 onView={setViewEntry}
+                                onViewFull={handleViewFull}
                             />
                         )}
                     </>
@@ -541,6 +558,31 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setViewEntry(null)}>{t('codex.assetManager.close')}</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* 内容全体参照ダイアログ */}
+            <Dialog open={viewFull !== null} onClose={() => setViewFull(null)} maxWidth='md' fullWidth>
+                <DialogTitle>{t('codex.assetManager.viewFullTitle', { name: viewFull?.name ?? '' })}</DialogTitle>
+                <DialogContent>
+                    <Box
+                        component='pre'
+                        sx={{
+                            m: 0,
+                            p: 2,
+                            bgcolor: 'action.hover',
+                            borderRadius: 1,
+                            fontFamily: 'monospace',
+                            fontSize: '0.85rem',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                        }}
+                    >
+                        {viewFull?.content ?? ''}
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setViewFull(null)}>{t('codex.assetManager.close')}</Button>
                 </DialogActions>
             </Dialog>
 

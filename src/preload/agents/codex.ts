@@ -32,6 +32,8 @@ export const codexApi: CodexIpcApi = {
     asset: {
         getEnvironments: () => ipcRenderer.invoke(CODEX_ASSET_CHANNELS.GET_ENVIRONMENTS),
         list: (env: CodexEnvironment, kind: AssetKind) => ipcRenderer.invoke(CODEX_ASSET_CHANNELS.LIST, env, kind),
+        readEntry: (env: CodexEnvironment, kind: AssetKind, relPath: string) =>
+            ipcRenderer.invoke(CODEX_ASSET_CHANNELS.READ_ENTRY, env, kind, relPath),
         download: (env: CodexEnvironment, kind: AssetKind, relPaths: string[]) =>
             ipcRenderer.invoke(CODEX_ASSET_CHANNELS.DOWNLOAD, env, kind, relPaths),
         inspectUpload: (env: CodexEnvironment, kind: AssetKind) =>

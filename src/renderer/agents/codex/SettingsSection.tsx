@@ -377,20 +377,40 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
             </Box>
 
             {/* 直接編集ダイアログ */}
-            <Dialog open={rawOpen} onClose={() => !busy && setRawOpen(false)} maxWidth='md' fullWidth>
+            <Dialog
+                open={rawOpen}
+                onClose={() => !busy && setRawOpen(false)}
+                maxWidth='md'
+                fullWidth
+                // ダイアログを固定高にし、スクロールはテキストエリア内の 1 本のみにする
+                slotProps={{ paper: { sx: { height: '85vh' } } }}
+            >
                 <DialogTitle>{t('codex.settings.directEditTitle')}</DialogTitle>
-                <DialogContent>
-                    <Typography variant='body2' color='text.secondary' sx={{ mb: 1.5 }}>
+                <DialogContent sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <Typography variant='body2' color='text.secondary' sx={{ mb: 1.5, flexShrink: 0 }}>
                         {t('codex.settings.directEditDesc')}
                     </Typography>
                     <TextField
                         multiline
                         fullWidth
-                        minRows={14}
-                        maxRows={28}
                         value={rawText}
                         onChange={e => setRawText(e.target.value)}
-                        slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.85rem' } } }}
+                        sx={{ flexGrow: 1, minHeight: 0 }}
+                        slotProps={{
+                            input: {
+                                sx: {
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.85rem',
+                                    height: '100%',
+                                    alignItems: 'flex-start',
+                                    // TextareaAutosize の自動高さを無効化し、固定高＋内部スクロールにする
+                                    '& textarea': {
+                                        height: '100% !important',
+                                        overflow: 'auto !important',
+                                    },
+                                },
+                            },
+                        }}
                     />
                 </DialogContent>
                 <DialogActions>

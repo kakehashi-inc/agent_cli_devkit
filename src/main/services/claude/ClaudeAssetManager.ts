@@ -199,6 +199,25 @@ export class ClaudeAssetManager {
      * 複数選択でも 1 ファイルにまとめる。保存先はダイアログで指定。
      * relPaths は list() が返した AssetEntry.relPath（skills=ディレクトリ名 / agents=.md の相対パス）。
      */
+    /**
+     * 1 エントリの内容全体を読み取る（参照ダイアログの「全体」表示用）。
+     * - agents: relPath のファイルそのもの
+     * - skills: <relPath>/SKILL.md
+     */
+    async readEntry(env: ClaudeEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult> {
+        if (this.isUnsafeRelPath(relPath)) {
+            return { ok: false, message: 'not-found' };
+        }
+        const fs = this.fsFor(env);
+        const parentRel = this.parentRel(kind);
+        const fileRel = kind === 'skills' ? `${parentRel}/${relPath}/SKILL.md` : `${parentRel}/${relPath}`;
+        const content = await fs.readText(fileRel);
+        if (content === null) {
+            return { ok: false, message: 'not-found' };
+        }
+        return { ok: true, content };
+    }
+
     async download(
         env: ClaudeEnvironment,
         kind: AssetKind,
@@ -218,7 +237,7 @@ export class ClaudeAssetManager {
         }
 
         const distroSuffix = env.kind === 'wsl' && env.distro ? `-${env.distro}` : '';
-        const defaultName = `${kind}${distroSuffix}.zip`;
+        const defaultName = `claude_${kind}${distroSuffix}.zip`;
 
         const saveResult = window
             ? await dialog.showSaveDialog(window, {

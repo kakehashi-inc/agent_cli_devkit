@@ -49,6 +49,7 @@ export type ClaudeIpcApi = {
     asset: {
         getEnvironments(): Promise<{ env: ClaudeEnvironment; label: string }[]>;
         list(env: ClaudeEnvironment, kind: AssetKind): Promise<AssetListReport>;
+        readEntry(env: ClaudeEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
         download(env: ClaudeEnvironment, kind: AssetKind, relPaths: string[]): Promise<AssetOpResult>;
         inspectUpload(env: ClaudeEnvironment, kind: AssetKind): Promise<AssetOpResult>;
         upload(env: ClaudeEnvironment, kind: AssetKind, zipPath: string, overwrite: boolean): Promise<AssetOpResult>;

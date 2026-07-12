@@ -71,7 +71,7 @@ export default {
     assetManager: {
         title: 'Codex Agent・Skill 管理',
         description:
-            'Codex のカスタムエージェント（~/.codex/agents）とスキル（~/.agents/skills）を一覧表示し、選択したものを ZIP でまとめてダウンロード、または ZIP／ファイルをアップロードして取り込みます。',
+            'Codex のカスタムエージェント・スキルを一覧表示し、選択したものを ZIP でまとめてダウンロード、または ZIP／ファイルをアップロードして取り込みます。',
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'エージェント',
         tabSkills: 'スキル',
@@ -82,7 +82,7 @@ export default {
         },
         columnFiles: 'ファイル数',
         columnLastModified: '最終更新日時',
-        columnView: 'ヘッダー',
+        columnView: '参照',
         newBadge: 'NEW',
         relative: {
             today: '今日',
@@ -96,8 +96,11 @@ export default {
         download: 'ダウンロード',
         upload: 'アップロード',
         delete: '削除',
-        view: '参照',
+        viewHeader: 'ヘッダ',
+        viewFull: '全体',
         viewTitle: 'ヘッダー: {{name}}',
+        viewFullTitle: '全体: {{name}}',
+        viewFullError: '内容の読み込みに失敗しました',
         close: '閉じる',
         cancel: 'キャンセル',
         overwrite: '上書き',
@@ -261,15 +264,12 @@ export default {
         },
     },
     nav: {
-        dashboard: 'ダッシュボード',
         codexMcp: 'Codex MCP 管理',
         codexAgentSkill: 'Codex Agent・Skill 管理',
         codexCleanup: 'Codex クリーンアップ',
         codexSettings: 'Codex 設定',
     },
     dashboard: {
-        title: 'ダッシュボード',
-        subtitle: '利用する機能を選択してください。',
         codexMcpDesc: 'Codex（CLI）の MCP サーバーを有効化/無効化/並べ替えします。',
         codexAgentSkillDesc: 'Codex のエージェント・スキルを管理します。',
         codexCleanupDesc: '~/.codex 配下のディレクトリをクリーンアップして容量を回収します。',

@@ -21,9 +21,6 @@ export const GROK_DISABLED_MCP_REL = `${GROK_DIR}/config-disabled-mcp.toml`;
 export const GROK_AGENTS_REL = `${GROK_DIR}/agents`;
 // ユーザースキルのディレクトリ（~/.grok/skills、<skill>/SKILL.md）
 export const GROK_SKILLS_REL = `${GROK_DIR}/skills`;
-// Serena のデータディレクトリ（ホーム直下）
-export const SERENA_DIR = '.serena';
-
 // AssetKind → 親ディレクトリ（HOME 相対）
 export const ASSET_PARENT_REL: Record<AssetKind, string> = {
     agents: GROK_AGENTS_REL,
@@ -52,6 +49,7 @@ export const GROK_MCP_CHANNELS = {
 export const GROK_ASSET_CHANNELS = {
     GET_ENVIRONMENTS: 'grok-asset:get-environments',
     LIST: 'grok-asset:list',
+    READ_ENTRY: 'grok-asset:read-entry',
     DOWNLOAD: 'grok-asset:download',
     INSPECT_UPLOAD: 'grok-asset:inspect-upload',
     UPLOAD: 'grok-asset:upload',

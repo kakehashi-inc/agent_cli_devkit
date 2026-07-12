@@ -207,6 +207,8 @@ export interface AssetOpResult {
     kindCheck?: 'warn';
     // kindCheck の理由コード（i18n キーの末尾。例 'agent-md-into-skill'）。
     kindMessage?: string;
+    // readEntry の返却用: エントリの内容全体（agents=ファイル本体 / skills=SKILL.md）。
+    content?: string;
 }
 
 // ============================================================

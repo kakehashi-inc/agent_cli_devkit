@@ -110,7 +110,7 @@ export default {
         },
         columnFiles: 'ファイル数',
         columnLastModified: '最終更新日時',
-        columnView: 'ヘッダー',
+        columnView: '参照',
         newBadge: 'NEW',
         relative: {
             today: '今日',
@@ -124,8 +124,11 @@ export default {
         download: 'ダウンロード',
         upload: 'アップロード',
         delete: '削除',
-        view: '参照',
+        viewHeader: 'ヘッダ',
+        viewFull: '全体',
         viewTitle: 'ヘッダー: {{name}}',
+        viewFullTitle: '全体: {{name}}',
+        viewFullError: '内容の読み込みに失敗しました',
         close: '閉じる',
         cancel: 'キャンセル',
         overwrite: '上書き',
@@ -290,7 +293,6 @@ export default {
         },
     },
     nav: {
-        dashboard: 'ダッシュボード',
         claudeDesktop: 'Claude Desktop MCP 管理',
         claudeCode: 'Claude Code MCP 管理',
         assetManager: 'Claude Code Agent・Skill管理',
@@ -298,8 +300,6 @@ export default {
         claudeSettings: 'Claude Code 設定',
     },
     dashboard: {
-        title: 'ダッシュボード',
-        subtitle: '利用する機能を選択してください。',
         claudeDesktopDesc: 'Claude Desktop の MCP サーバーを有効化/無効化/並べ替えします。',
         claudeCodeDesc: 'Claude Code（CLI）のプロファイル MCP を管理します。',
         assetManagerDesc: 'Claude Code のエージェント・スキルを ZIP でダウンロード／アップロードします。',

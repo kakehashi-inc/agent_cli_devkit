@@ -71,7 +71,7 @@ export default {
     assetManager: {
         title: 'Codex Agent / Skill Management',
         description:
-            'List Codex custom agents (~/.codex/agents) and skills (~/.agents/skills), download selected items as a ZIP, or upload a ZIP/file to import.',
+            'List your Codex custom agents and skills, download selected ones together as a ZIP, or upload a ZIP/file to import them.',
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'Agents',
         tabSkills: 'Skills',
@@ -82,7 +82,7 @@ export default {
         },
         columnFiles: 'Files',
         columnLastModified: 'Last modified',
-        columnView: 'Header',
+        columnView: 'View',
         newBadge: 'NEW',
         relative: {
             today: 'today',
@@ -96,8 +96,11 @@ export default {
         download: 'Download',
         upload: 'Upload',
         delete: 'Delete',
-        view: 'View',
+        viewHeader: 'Header',
+        viewFull: 'Full',
         viewTitle: 'Header: {{name}}',
+        viewFullTitle: 'Full: {{name}}',
+        viewFullError: 'Failed to load the content',
         close: 'Close',
         cancel: 'Cancel',
         overwrite: 'Overwrite',
@@ -260,15 +263,12 @@ export default {
         },
     },
     nav: {
-        dashboard: 'Dashboard',
         codexMcp: 'Codex MCP Management',
         codexAgentSkill: 'Codex Agent / Skill Management',
         codexCleanup: 'Codex Cleanup',
         codexSettings: 'Codex Settings',
     },
     dashboard: {
-        title: 'Dashboard',
-        subtitle: 'Select a feature to use.',
         codexMcpDesc: 'Enable/disable/reorder MCP servers for Codex (CLI).',
         codexAgentSkillDesc: 'Manage Codex agents and skills.',
         codexCleanupDesc: 'Clean up directories under ~/.codex to reclaim space.',

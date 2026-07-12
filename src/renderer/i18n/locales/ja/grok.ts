@@ -72,7 +72,7 @@ export default {
     assetManager: {
         title: 'Grok Agent・Skill 管理',
         description:
-            'Grok のカスタムエージェント（~/.grok/agents）とスキル（~/.grok/skills）を一覧表示し、選択したものを ZIP でまとめてダウンロード、または ZIP／md をアップロードして取り込みます。',
+            'Grok のカスタムエージェント・スキルを一覧表示し、選択したものを ZIP でまとめてダウンロード、または ZIP／md をアップロードして取り込みます。',
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'エージェント',
         tabSkills: 'スキル',
@@ -83,7 +83,7 @@ export default {
         },
         columnFiles: 'ファイル数',
         columnLastModified: '最終更新日時',
-        columnView: 'ヘッダー',
+        columnView: '参照',
         newBadge: 'NEW',
         relative: {
             today: '今日',
@@ -97,8 +97,11 @@ export default {
         download: 'ダウンロード',
         upload: 'アップロード',
         delete: '削除',
-        view: '参照',
+        viewHeader: 'ヘッダ',
+        viewFull: '全体',
         viewTitle: 'ヘッダー: {{name}}',
+        viewFullTitle: '全体: {{name}}',
+        viewFullError: '内容の読み込みに失敗しました',
         close: '閉じる',
         cancel: 'キャンセル',
         overwrite: '上書き',
@@ -138,6 +141,8 @@ export default {
                 'このファイルは SKILL.md（スキル）の可能性があります。エージェントとして取り込みますか？',
         },
         kindBlock: {
+            'agent-nested-dirs':
+                'この ZIP はサブディレクトリ内に .md を含んでいます。Grok はエージェント定義を agents 直下の .md しか認識しないため、フォルダ階層のない ZIP を使用してください。',
             'agent-into-skill':
                 'このアーカイブはエージェント（.md ファイル）のようです。スキルタブには取り込めません。エージェントタブを使用してください。',
             'skill-into-agent':

@@ -17,9 +17,6 @@ export const CODEX_DISABLED_MCP_REL = `${CODEX_DIR}/config-disabled-mcp.toml`;
 export const CODEX_AGENTS_REL = `${CODEX_DIR}/agents`;
 // ユーザースキルのディレクトリ（~/.agents/skills、<skill>/SKILL.md）
 export const AGENTS_SKILLS_REL = '.agents/skills';
-// Serena のデータディレクトリ（ホーム直下）
-export const SERENA_DIR = '.serena';
-
 // AssetKind → 親ディレクトリ（HOME 相対）
 export const ASSET_PARENT_REL: Record<AssetKind, string> = {
     agents: CODEX_AGENTS_REL,
@@ -48,6 +45,7 @@ export const CODEX_MCP_CHANNELS = {
 export const CODEX_ASSET_CHANNELS = {
     GET_ENVIRONMENTS: 'codex-asset:get-environments',
     LIST: 'codex-asset:list',
+    READ_ENTRY: 'codex-asset:read-entry',
     DOWNLOAD: 'codex-asset:download',
     INSPECT_UPLOAD: 'codex-asset:inspect-upload',
     UPLOAD: 'codex-asset:upload',

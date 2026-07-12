@@ -53,6 +53,8 @@ export const claudeApi: ClaudeIpcApi = {
     asset: {
         getEnvironments: () => ipcRenderer.invoke(CLAUDE_ASSET_CHANNELS.GET_ENVIRONMENTS),
         list: (env: ClaudeEnvironment, kind: AssetKind) => ipcRenderer.invoke(CLAUDE_ASSET_CHANNELS.LIST, env, kind),
+        readEntry: (env: ClaudeEnvironment, kind: AssetKind, relPath: string) =>
+            ipcRenderer.invoke(CLAUDE_ASSET_CHANNELS.READ_ENTRY, env, kind, relPath),
         download: (env: ClaudeEnvironment, kind: AssetKind, relPaths: string[]) =>
             ipcRenderer.invoke(CLAUDE_ASSET_CHANNELS.DOWNLOAD, env, kind, relPaths),
         inspectUpload: (env: ClaudeEnvironment, kind: AssetKind) =>

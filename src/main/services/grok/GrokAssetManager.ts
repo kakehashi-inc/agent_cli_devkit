@@ -201,6 +201,25 @@ export class GrokAssetManager {
      * 複数選択でも 1 ファイルにまとめる。保存先はダイアログで指定。
      * relPaths は list() が返した AssetEntry.relPath（skills=ディレクトリ名 / agents=.md の相対パス）。
      */
+    /**
+     * 1 エントリの内容全体を読み取る（参照ダイアログの「全体」表示用）。
+     * - agents: relPath のファイルそのもの
+     * - skills: <relPath>/SKILL.md
+     */
+    async readEntry(env: GrokEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult> {
+        if (this.isUnsafeRelPath(relPath)) {
+            return { ok: false, message: 'not-found' };
+        }
+        const fs = this.fsFor(env);
+        const parentRel = this.parentRel(kind);
+        const fileRel = kind === 'skills' ? `${parentRel}/${relPath}/SKILL.md` : `${parentRel}/${relPath}`;
+        const content = await fs.readText(fileRel);
+        if (content === null) {
+            return { ok: false, message: 'not-found' };
+        }
+        return { ok: true, content };
+    }
+
     async download(
         env: GrokEnvironment,
         kind: AssetKind,
@@ -220,7 +239,7 @@ export class GrokAssetManager {
         }
 
         const distroSuffix = env.kind === 'wsl' && env.distro ? `-${env.distro}` : '';
-        const defaultName = `${kind}${distroSuffix}.zip`;
+        const defaultName = `grok_${kind}${distroSuffix}.zip`;
 
         const saveResult = window
             ? await dialog.showSaveDialog(window, {
@@ -318,6 +337,12 @@ export class GrokAssetManager {
         const cls = this.classifyZipKind(zip, kind);
         if (cls.verdict === 'block') {
             return { ok: false, message: `kind-block-${cls.reason}` };
+        }
+
+        // Grok はエージェント定義を agents 直下の .md しか認識しない（サブディレクトリは無視される）。
+        // ネストした構成の ZIP を展開すると UI からも CLI からも見えない孤児ファイルになるため拒否する。
+        if (kind === 'agents' && this.zipFileEntries(zip).some(f => f.includes('/'))) {
+            return { ok: false, message: 'kind-block-agent-nested-dirs' };
         }
 
         const conflicts = await this.computeConflicts(fs, parentRel, zip, kind);
@@ -466,6 +491,11 @@ export class GrokAssetManager {
         const allEntries = zip.getEntries();
         if (allEntries.length === 0) {
             return { ok: false, message: 'empty-archive' };
+        }
+
+        // 防御的チェック: agents はネスト構成の ZIP を受け付けない（inspectUpload と同条件）。
+        if (kind === 'agents' && this.zipFileEntries(zip).some(f => f.includes('/'))) {
+            return { ok: false, message: 'invalid-archive' };
         }
 
         // パストラバーサル対策: 不正なエントリ名を含む ZIP は拒否する。

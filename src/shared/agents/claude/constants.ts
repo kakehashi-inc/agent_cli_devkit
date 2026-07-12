@@ -77,6 +77,7 @@ export const CLAUDE_CLEANUP_CHANNELS = {
 export const CLAUDE_ASSET_CHANNELS = {
     GET_ENVIRONMENTS: 'claude-asset:get-environments',
     LIST: 'claude-asset:list',
+    READ_ENTRY: 'claude-asset:read-entry',
     DOWNLOAD: 'claude-asset:download',
     INSPECT_UPLOAD: 'claude-asset:inspect-upload',
     UPLOAD: 'claude-asset:upload',
@@ -117,12 +118,6 @@ export const CLEANUP_CANDIDATES: CleanupCandidateSpec[] = [
     { key: 'tasks', defaultChecked: false },
     { key: 'backups', defaultChecked: false },
 ];
-
-// projects ディレクトリのキー（特別扱い用）
-export const CLEANUP_PROJECTS_KEY = 'projects';
-
-// Serena のデータディレクトリ（ホーム直下）
-export const SERENA_DIR = '.serena';
 
 // 「その他のツール」クリーンアップ項目の registry。
 // 新しい外部ツール項目はここに 1 つ定義を追加するだけで UI まで反映される。

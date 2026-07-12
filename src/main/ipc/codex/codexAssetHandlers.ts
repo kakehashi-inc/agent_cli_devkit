@@ -19,6 +19,11 @@ export function registerCodexAssetHandlers(
         return manager.list(env, kind);
     });
 
+    // エントリ内容全体の読み取り（「全体」参照）
+    ipcMain.handle(CODEX_ASSET_CHANNELS.READ_ENTRY, (_, env: CodexEnvironment, kind: AssetKind, relPath: string) => {
+        return manager.readEntry(env, kind, relPath);
+    });
+
     ipcMain.handle(CODEX_ASSET_CHANNELS.DOWNLOAD, (_, env: CodexEnvironment, kind: AssetKind, relPaths: string[]) => {
         return manager.download(env, kind, relPaths, getMainWindow());
     });

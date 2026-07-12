@@ -12,7 +12,7 @@ import {
     Button,
     Tooltip,
 } from '@mui/material';
-import { Visibility as ViewIcon } from '@mui/icons-material';
+import { Visibility as ViewIcon, Article as FullViewIcon } from '@mui/icons-material';
 import type { AssetEntry } from '@shared/agents/grok/types';
 import { formatCount, formatDateTime, isRecent, relativeTimeParts } from '../../utils/format';
 
@@ -78,6 +78,8 @@ interface Props {
     onToggle: (relPath: string) => void;
     onToggleAll: () => void;
     onView: (entry: AssetEntry) => void;
+    // 「全体」参照（ファイル内容全体の表示）。未指定なら「全体」ボタンを表示しない（公式ダイアログ用）。
+    onViewFull?: (entry: AssetEntry) => void;
 }
 
 // 最終更新日時列の幅（px）。'YYYY-MM-DD HH:mm' ＋ NEW バッジが収まる固定幅。
@@ -97,6 +99,7 @@ export const AssetEntriesTable: React.FC<Props> = ({
     onToggle,
     onToggleAll,
     onView,
+    onViewFull,
 }) => {
     const { t } = useTranslation();
     const allChecked = entries.length > 0 && entries.every(e => checkedKeys.has(e.relPath));
@@ -274,9 +277,20 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                         startIcon={<ViewIcon />}
                                         disabled={!entry.frontmatterRaw}
                                         onClick={() => onView(entry)}
+                                        sx={{ display: 'flex', mx: 'auto', py: 0, minWidth: 0 }}
                                     >
-                                        {t('grok.assetManager.view')}
+                                        {t('grok.assetManager.viewHeader')}
                                     </Button>
+                                    {onViewFull && (
+                                        <Button
+                                            size='small'
+                                            startIcon={<FullViewIcon />}
+                                            onClick={() => onViewFull(entry)}
+                                            sx={{ display: 'flex', mx: 'auto', py: 0, minWidth: 0, mt: 0.5 }}
+                                        >
+                                            {t('grok.assetManager.viewFull')}
+                                        </Button>
+                                    )}
                                 </TableCell>
                             </TableRow>
                         );

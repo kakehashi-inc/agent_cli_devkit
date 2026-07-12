@@ -72,7 +72,7 @@ export default {
     assetManager: {
         title: 'Grok Agent / Skill Management',
         description:
-            'List Grok custom agents (~/.grok/agents) and skills (~/.grok/skills), download selected items as a ZIP, or upload a ZIP/md file to import.',
+            'List your Grok custom agents and skills, download selected ones together as a ZIP, or upload a ZIP/md file to import them.',
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'Agents',
         tabSkills: 'Skills',
@@ -83,7 +83,7 @@ export default {
         },
         columnFiles: 'Files',
         columnLastModified: 'Last modified',
-        columnView: 'Header',
+        columnView: 'View',
         newBadge: 'NEW',
         relative: {
             today: 'today',
@@ -97,8 +97,11 @@ export default {
         download: 'Download',
         upload: 'Upload',
         delete: 'Delete',
-        view: 'View',
+        viewHeader: 'Header',
+        viewFull: 'Full',
         viewTitle: 'Header: {{name}}',
+        viewFullTitle: 'Full: {{name}}',
+        viewFullError: 'Failed to load the content',
         close: 'Close',
         cancel: 'Cancel',
         overwrite: 'Overwrite',
@@ -136,6 +139,8 @@ export default {
             'skillmd-into-agent': 'This file looks like a SKILL.md (a skill). Import it as an agent anyway?',
         },
         kindBlock: {
+            'agent-nested-dirs':
+                'This archive contains .md files inside subdirectories. Grok only recognizes agent definitions placed directly under the agents folder, so use a ZIP without nested folders.',
             'agent-into-skill':
                 'This archive looks like an agent (.md files). It cannot be imported on the Skills tab. Use the Agents tab.',
             'skill-into-agent':

@@ -22,6 +22,11 @@ export function registerClaudeAssetHandlers(
         return manager.list(env, kind);
     });
 
+    // エントリ内容全体の読み取り（「全体」参照）
+    ipcMain.handle(CLAUDE_ASSET_CHANNELS.READ_ENTRY, (_, env: ClaudeEnvironment, kind: AssetKind, relPath: string) => {
+        return manager.readEntry(env, kind, relPath);
+    });
+
     // 選択したサブディレクトリを 1 つの ZIP にまとめてダウンロード
     ipcMain.handle(CLAUDE_ASSET_CHANNELS.DOWNLOAD, (_, env: ClaudeEnvironment, kind: AssetKind, names: string[]) => {
         return manager.download(env, kind, names, getMainWindow());

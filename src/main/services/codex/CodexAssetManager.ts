@@ -219,6 +219,25 @@ export class CodexAssetManager {
      * 選択したエントリ（relPaths）を 1 つの ZIP にまとめて保存する。
      * relPaths は list() が返した AssetEntry.relPath（skills=ディレクトリ名 / agents=.toml の相対パス）。
      */
+    /**
+     * 1 エントリの内容全体を読み取る（参照ダイアログの「全体」表示用）。
+     * - agents: relPath のファイルそのもの
+     * - skills: <relPath>/SKILL.md
+     */
+    async readEntry(env: CodexEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult> {
+        if (this.isUnsafeRelPath(relPath)) {
+            return { ok: false, message: 'not-found' };
+        }
+        const fs = this.fsFor(env);
+        const parentRel = this.parentRel(kind);
+        const fileRel = kind === 'skills' ? `${parentRel}/${relPath}/SKILL.md` : `${parentRel}/${relPath}`;
+        const content = await fs.readText(fileRel);
+        if (content === null) {
+            return { ok: false, message: 'not-found' };
+        }
+        return { ok: true, content };
+    }
+
     async download(
         env: CodexEnvironment,
         kind: AssetKind,
@@ -238,7 +257,7 @@ export class CodexAssetManager {
         }
 
         const distroSuffix = env.kind === 'wsl' && env.distro ? `-${env.distro}` : '';
-        const defaultName = `${kind}${distroSuffix}.zip`;
+        const defaultName = `codex_${kind}${distroSuffix}.zip`;
 
         const saveResult = window
             ? await dialog.showSaveDialog(window, {

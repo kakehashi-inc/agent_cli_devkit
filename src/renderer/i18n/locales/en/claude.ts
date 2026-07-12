@@ -110,7 +110,7 @@ export default {
         },
         columnFiles: 'Files',
         columnLastModified: 'Last Modified',
-        columnView: 'Header',
+        columnView: 'View',
         newBadge: 'NEW',
         relative: {
             today: 'Today',
@@ -124,8 +124,11 @@ export default {
         download: 'Download',
         upload: 'Upload',
         delete: 'Delete',
-        view: 'View',
+        viewHeader: 'Header',
+        viewFull: 'Full',
         viewTitle: 'Header: {{name}}',
+        viewFullTitle: 'Full: {{name}}',
+        viewFullError: 'Failed to load the content',
         close: 'Close',
         cancel: 'Cancel',
         overwrite: 'Overwrite',
@@ -288,7 +291,6 @@ export default {
         },
     },
     nav: {
-        dashboard: 'Dashboard',
         claudeDesktop: 'Claude Desktop MCP Manager',
         claudeCode: 'Claude Code MCP Manager',
         assetManager: 'Claude Code Agent / Skill Manager',
@@ -296,8 +298,6 @@ export default {
         claudeSettings: 'Claude Code Settings',
     },
     dashboard: {
-        title: 'Dashboard',
-        subtitle: 'Select a tool to get started.',
         claudeDesktopDesc: 'Enable, disable, and reorder Claude Desktop MCP servers.',
         claudeCodeDesc: 'Manage Claude Code (CLI) profile MCP servers.',
         assetManagerDesc: 'Download and upload Claude Code agents and skills as ZIP archives.',
