@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     Box,
+    Button,
     IconButton,
     Typography,
     Menu,
@@ -22,6 +23,8 @@ import {
     Brightness4 as DarkIcon,
     Brightness7 as LightIcon,
     Language as LanguageIcon,
+    KeyboardArrowDown as ExpandGroupIcon,
+    KeyboardArrowUp as CollapseGroupIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
@@ -37,6 +40,21 @@ export const TitleBar: React.FC = () => {
     const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
     const [langMenuAnchor, setLangMenuAnchor] = useState<null | HTMLElement>(null);
     const [appVersion, setAppVersion] = useState<string>('');
+    // タイトルバーで展開中の agent グループ（null = すべて閉じる）。
+    const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+
+    // 現在のルートが属するグループを自動展開する（ダッシュボードやメニューからの遷移に追従）。
+    useEffect(() => {
+        const owner = AGENT_MODULES.find(m => m.features.some(f => f.path === location.pathname));
+        if (owner) {
+            setExpandedAgentId(owner.id);
+        }
+    }, [location.pathname]);
+
+    // 代表ボタンのクリック: 同じグループなら閉じる、別グループならそちらを展開（他は閉じる）。
+    const toggleAgentGroup = (id: string) => {
+        setExpandedAgentId(prev => (prev === id ? null : id));
+    };
 
     const handleNavigate = (path: string) => {
         navigate(path);
@@ -149,26 +167,50 @@ export const TitleBar: React.FC = () => {
                     </IconButton>
                 </Tooltip>
 
-                {/* agent ごとの画面切替アイコン（グループ間は仕切り線で区切る） */}
-                {AGENT_MODULES.map(module => (
-                    <React.Fragment key={module.id}>
-                        <Divider orientation='vertical' flexItem sx={{ mx: 0.5, my: 1.25 }} />
-                        {module.features.map(feature => {
-                            const active = location.pathname === feature.path;
-                            return (
-                                <Tooltip key={feature.path} title={`${module.label}: ${t(feature.navKey)}`}>
-                                    <IconButton
-                                        size='medium'
-                                        onClick={() => navigate(feature.path)}
-                                        sx={navIconSx(active)}
-                                    >
-                                        <feature.Icon />
-                                    </IconButton>
-                                </Tooltip>
-                            );
-                        })}
-                    </React.Fragment>
-                ))}
+                {/* agent グループ（代表ボタンのみ表示。クリックで機能アイコンを展開し、
+                    他グループを展開すると自動で閉じるアコーディオン方式） */}
+                {AGENT_MODULES.map(module => {
+                    const groupActive = module.features.some(f => f.path === location.pathname);
+                    const expanded = expandedAgentId === module.id;
+                    return (
+                        <React.Fragment key={module.id}>
+                            <Divider orientation='vertical' flexItem sx={{ mx: 0.5, my: 1.25 }} />
+                            <Button
+                                size='small'
+                                onClick={() => toggleAgentGroup(module.id)}
+                                endIcon={expanded ? <CollapseGroupIcon /> : <ExpandGroupIcon />}
+                                sx={{
+                                    minWidth: 0,
+                                    px: 1,
+                                    textTransform: 'none',
+                                    fontSize: '0.85rem',
+                                    fontWeight: groupActive ? 600 : 400,
+                                    color: groupActive ? 'primary.main' : 'text.secondary',
+                                    bgcolor: expanded ? 'action.selected' : 'transparent',
+                                    '&:hover': { bgcolor: 'action.hover' },
+                                    '& .MuiButton-endIcon': { ml: 0.25 },
+                                }}
+                            >
+                                {module.label}
+                            </Button>
+                            {expanded &&
+                                module.features.map(feature => {
+                                    const active = location.pathname === feature.path;
+                                    return (
+                                        <Tooltip key={feature.path} title={`${module.label}: ${t(feature.navKey)}`}>
+                                            <IconButton
+                                                size='medium'
+                                                onClick={() => navigate(feature.path)}
+                                                sx={navIconSx(active)}
+                                            >
+                                                <feature.Icon />
+                                            </IconButton>
+                                        </Tooltip>
+                                    );
+                                })}
+                        </React.Fragment>
+                    );
+                })}
 
                 {/* スペーサー */}
                 <Box sx={{ width: 16 }} />

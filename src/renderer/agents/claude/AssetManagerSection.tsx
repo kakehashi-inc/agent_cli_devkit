@@ -24,10 +24,9 @@ import {
 } from '@mui/icons-material';
 import type { AssetEntry, AssetKind, AssetListReport, ClaudeEnvironment } from '@shared/agents/claude/types';
 import { AssetEntriesTable, computeFitWidth, type FmColumn } from './AssetEntriesTable';
-import { SettingsSection } from './SettingsSection';
 
 // セクションのタブ値: エージェント / スキル（AssetKind）に加え、設定タブを持つ。
-type SectionTab = AssetKind | 'settings';
+type SectionTab = AssetKind;
 
 interface Props {
     env: ClaudeEnvironment;
@@ -57,10 +56,10 @@ const OFFICIAL_COLUMNS: FmColumn[] = FRONTMATTER_COLUMNS.skills;
  */
 export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     const { t } = useTranslation();
-    // 表示中のタブ。'settings' のときは設定セクションを表示する。
+    // 表示中のタブ（エージェント / スキル）。
     const [tab, setTab] = useState<SectionTab>('agents');
-    // 資産（エージェント/スキル）操作で使う種別。設定タブでは直前の種別を保持する。
-    const kind: AssetKind = tab === 'settings' ? 'agents' : tab;
+    // 資産（エージェント/スキル）操作で使う種別。
+    const kind: AssetKind = tab;
     const [reports, setReports] = useState<Record<AssetKind, AssetListReport | null>>({
         agents: null,
         skills: null,
@@ -409,13 +408,10 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
             >
                 <Tab value='agents' label={t('claude.assetManager.tabAgents')} />
                 <Tab value='skills' label={t('claude.assetManager.tabSkills')} />
-                <Tab value='settings' label={t('claude.assetManager.tabSettings')} />
             </Tabs>
 
             <Box sx={{ p: 2 }}>
-                {tab === 'settings' ? (
-                    <SettingsSection env={env} onNotify={onNotify} />
-                ) : report && !report.available ? (
+                {report && !report.available ? (
                     <Alert severity='info'>{t('claude.assetManager.unavailable')}</Alert>
                 ) : (
                     <>

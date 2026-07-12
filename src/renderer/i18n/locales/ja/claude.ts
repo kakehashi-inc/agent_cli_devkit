@@ -103,7 +103,6 @@ export default {
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'エージェント',
         tabSkills: 'スキル',
-        tabSettings: '設定',
         col: {
             name: '名前',
             description: '説明',
@@ -174,6 +173,9 @@ export default {
         },
     },
     settings: {
+        title: 'Claude Code 設定',
+        description: '~/.claude/settings.json の設定項目をテーブルで編集、または直接編集します。',
+        wslSection: 'WSL: {{distro}}',
         colItem: '項目',
         colValue: '値',
         directEdit: '直接編集',
@@ -259,11 +261,19 @@ export default {
             },
             autoUpdatesChannel: {
                 label: '更新チャンネル（autoUpdatesChannel）',
-                desc: '自動更新のチャンネル。stable は約1週間遅れで安定、latest は最新。',
+                desc: '自動更新のチャンネル。latest は最新（既定）、stable は約1週間遅れの安定版。',
             },
             cleanupPeriodDays: {
                 label: 'セッション保持日数（cleanupPeriodDays）',
                 desc: 'この日数より古いセッションファイルを削除します（最小 1、未設定で既定 30）。',
+            },
+            autoCompactEnabled: {
+                label: '自動コンパクト（autoCompactEnabled）',
+                desc: 'コンテキスト上限が近づいたとき会話を自動で要約圧縮します。',
+            },
+            fileCheckpointingEnabled: {
+                label: 'ファイルチェックポイント（fileCheckpointingEnabled）',
+                desc: '/rewind で戻せるようファイル変更のスナップショットを保存します。',
             },
             agentTeams: {
                 label: 'エージェントチーム（CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS）',
@@ -271,7 +281,7 @@ export default {
             },
             teammateMode: {
                 label: 'チームメイトモード（teammateMode）',
-                desc: 'エージェントチームの実行モード。',
+                desc: 'チームメイトの表示モード。in-process=メイン端末内、auto=環境に応じて分割、tmux / iterm2=分割ペイン。既定は in-process。',
             },
             agentPushNotifEnabled: {
                 label: 'エージェント通知（agentPushNotifEnabled）',
@@ -285,6 +295,7 @@ export default {
         claudeCode: 'Claude Code MCP 管理',
         assetManager: 'Claude Code Agent・Skill管理',
         cleanup: 'Claude Code クリーンアップ',
+        claudeSettings: 'Claude Code 設定',
     },
     dashboard: {
         title: 'ダッシュボード',
@@ -293,5 +304,6 @@ export default {
         claudeCodeDesc: 'Claude Code（CLI）のプロファイル MCP を管理します。',
         assetManagerDesc: 'Claude Code のエージェント・スキルを ZIP でダウンロード／アップロードします。',
         cleanupDesc: '~/.claude 配下のディレクトリをクリーンアップして容量を回収します。',
+        claudeSettingsDesc: '~/.claude/settings.json の設定項目を編集します。',
     },
 };

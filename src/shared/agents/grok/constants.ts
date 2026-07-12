@@ -139,7 +139,13 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     // === モデル ===
     { key: 'modelsDefault', path: 'models.default', group: 'model', type: 'string' },
     { key: 'modelsWebSearch', path: 'models.web_search', group: 'model', type: 'string' },
-    { key: 'modelsDefaultReasoningEffort', path: 'models.default_reasoning_effort', group: 'model', type: 'string' },
+    {
+        key: 'modelsDefaultReasoningEffort',
+        path: 'models.default_reasoning_effort',
+        group: 'model',
+        type: 'string',
+        choices: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+    },
     { key: 'modelsSessionSummary', path: 'models.session_summary', group: 'model', type: 'string' },
     { key: 'modelsTemperature', path: 'models.temperature', group: 'model', type: 'number', min: 0, max: 2 },
     { key: 'modelsTopP', path: 'models.top_p', group: 'model', type: 'number', min: 0, max: 1 },

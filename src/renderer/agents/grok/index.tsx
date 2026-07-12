@@ -1,7 +1,13 @@
-import { Hub as HubIcon, SmartToy as AssetIcon, CleaningServices as CleanupIcon } from '@mui/icons-material';
+import {
+    Hub as HubIcon,
+    SmartToy as AssetIcon,
+    Settings as SettingsIcon,
+    CleaningServices as CleanupIcon,
+} from '@mui/icons-material';
 import type { AgentModule } from '../types';
 import { GrokMcpManager } from './GrokMcpManager';
 import { GrokAssetManager } from './GrokAssetManager';
+import { GrokSettingsManager } from './GrokSettingsManager';
 import { Cleanup } from './Cleanup';
 
 // Grok グループの機能定義。
@@ -27,6 +33,15 @@ export const grokModule: AgentModule = {
             Icon: AssetIcon,
             color: '#d98a3a',
             element: <GrokAssetManager />,
+        },
+        {
+            path: '/grok/settings',
+            titleKey: 'grok.settings.title',
+            navKey: 'grok.nav.grokSettings',
+            descKey: 'grok.dashboard.grokSettingsDesc',
+            Icon: SettingsIcon,
+            color: '#8a6df0',
+            element: <GrokSettingsManager />,
         },
         {
             path: '/grok/cleanup',

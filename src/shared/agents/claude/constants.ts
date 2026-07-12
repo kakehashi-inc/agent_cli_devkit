@@ -194,9 +194,9 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'teammateMode',
         group: 'agent',
         type: 'string',
-        choices: ['in-process', 'subprocess'],
+        choices: ['in-process', 'auto', 'tmux', 'iterm2'],
     },
-    { key: 'agentPushNotifEnabled', path: 'agentPushNotifEnabled', group: 'agent', type: 'boolean' },
+    { key: 'agentPushNotifEnabled', path: 'agentPushNotifEnabled', group: 'agent', type: 'boolean', defaultOn: false },
 
     // === 表示・通知 ===
     { key: 'editorMode', path: 'editorMode', group: 'display', type: 'string', choices: ['normal', 'vim'] },
@@ -223,6 +223,14 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['stable', 'latest'],
     },
     { key: 'cleanupPeriodDays', path: 'cleanupPeriodDays', group: 'behavior', type: 'number', min: 1 },
+    { key: 'autoCompactEnabled', path: 'autoCompactEnabled', group: 'behavior', type: 'boolean', defaultOn: true },
+    {
+        key: 'fileCheckpointingEnabled',
+        path: 'fileCheckpointingEnabled',
+        group: 'behavior',
+        type: 'boolean',
+        defaultOn: true,
+    },
 ];
 
 // グループの表示順（UI の見出し順）。

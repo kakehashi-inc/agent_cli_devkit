@@ -10,19 +10,22 @@ Agent CLI DevKit is an Electron desktop tool that manages the development enviro
 
 - **Claude Desktop MCP Manager** — Enable, disable, and reorder Claude Desktop MCP servers.
 - **Claude Code MCP Manager** — Manage Claude Code (CLI) profile MCP servers (~/.claude.json). Supports both the native OS and WSL distributions.
-- **Claude Code Agent / Skill Manager** — List Claude Code agents and skills, download/upload them as ZIP archives, import official Anthropic skills, and edit ~/.claude/settings.json.
+- **Claude Code Agent / Skill Manager** — List Claude Code agents and skills, download/upload them as ZIP archives, and import official Anthropic skills.
+- **Claude Code Settings** — Edit ~/.claude/settings.json items in a table, or edit the file directly.
 - **Claude Code Cleanup** — Reclaim disk space by deleting history, caches, temporary files, and logs under ~/.claude.
 
 **Codex group**
 
 - **Codex MCP Manager** — Enable, disable, and reorder Codex (CLI) MCP servers (~/.codex/config.toml). Supports both the native OS and WSL distributions.
-- **Codex Agent / Skill Manager** — Manage Codex custom agents (~/.codex/agents) and skills (~/.agents/skills), import official OpenAI skills, and edit config.toml settings.
+- **Codex Agent / Skill Manager** — Manage Codex custom agents (~/.codex/agents) and skills (~/.agents/skills), and import official OpenAI skills.
+- **Codex Settings** — Edit ~/.codex/config.toml items in a table, or edit the file directly.
 - **Codex Cleanup** — Reclaim disk space by deleting history, caches, temporary files, logs, and sessions under ~/.codex.
 
 **Grok group**
 
 - **Grok MCP Manager** — Enable, disable, and reorder Grok (CLI) MCP servers (~/.grok/config.toml). Supports both the native OS and WSL distributions.
-- **Grok Agent / Skill Manager** — Manage Grok custom agents (~/.grok/agents) and skills (~/.grok/skills), import official xAI skills, and edit config.toml settings.
+- **Grok Agent / Skill Manager** — Manage Grok custom agents (~/.grok/agents) and skills (~/.grok/skills), and import official xAI skills.
+- **Grok Settings** — Edit ~/.grok/config.toml items in a table, or edit the file directly.
 - **Grok Cleanup** — Reclaim disk space by deleting history, memory, and logs under ~/.grok, plus old executable versions (about 130 MB each) left behind by updates.
 
 The dashboard and the title-bar navigation display every feature grouped by Claude / Codex / Grok. The internal structure is also split into per-agent files, making it easy to add new agent CLIs (see `Documents/システム仕様.md` for details).

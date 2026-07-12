@@ -1,7 +1,13 @@
-import { Hub as HubIcon, SmartToy as AssetIcon, CleaningServices as CleanupIcon } from '@mui/icons-material';
+import {
+    Hub as HubIcon,
+    SmartToy as AssetIcon,
+    Settings as SettingsIcon,
+    CleaningServices as CleanupIcon,
+} from '@mui/icons-material';
 import type { AgentModule } from '../types';
 import { CodexMcpManager } from './CodexMcpManager';
 import { CodexAssetManager } from './CodexAssetManager';
+import { CodexSettingsManager } from './CodexSettingsManager';
 import { Cleanup } from './Cleanup';
 
 // Codex グループの機能定義。
@@ -27,6 +33,15 @@ export const codexModule: AgentModule = {
             Icon: AssetIcon,
             color: '#d98a3a',
             element: <CodexAssetManager />,
+        },
+        {
+            path: '/codex/settings',
+            titleKey: 'codex.settings.title',
+            navKey: 'codex.nav.codexSettings',
+            descKey: 'codex.dashboard.codexSettingsDesc',
+            Icon: SettingsIcon,
+            color: '#8a6df0',
+            element: <CodexSettingsManager />,
         },
         {
             path: '/codex/cleanup',

@@ -103,7 +103,6 @@ export default {
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'Agents',
         tabSkills: 'Skills',
-        tabSettings: 'Settings',
         col: {
             name: 'Name',
             description: 'Description',
@@ -172,6 +171,9 @@ export default {
         },
     },
     settings: {
+        title: 'Claude Code Settings',
+        description: 'Edit ~/.claude/settings.json items in a table, or edit the file directly.',
+        wslSection: 'WSL: {{distro}}',
         colItem: 'Item',
         colValue: 'Value',
         directEdit: 'Direct Edit',
@@ -257,11 +259,19 @@ export default {
             },
             autoUpdatesChannel: {
                 label: 'Update channel (autoUpdatesChannel)',
-                desc: 'Channel for auto-updates. "stable" is about a week behind and steadier; "latest" is the newest.',
+                desc: 'Channel for auto-updates. "latest" is the newest (default); "stable" is about a week behind and steadier.',
             },
             cleanupPeriodDays: {
                 label: 'Session retention days (cleanupPeriodDays)',
                 desc: 'Deletes session files older than this many days (minimum 1; default 30 when unset).',
+            },
+            autoCompactEnabled: {
+                label: 'Auto compact (autoCompactEnabled)',
+                desc: 'Automatically compacts the conversation as the context limit approaches.',
+            },
+            fileCheckpointingEnabled: {
+                label: 'File checkpointing (fileCheckpointingEnabled)',
+                desc: 'Saves snapshots of file changes so /rewind can restore them.',
             },
             agentTeams: {
                 label: 'Agent teams (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS)',
@@ -269,7 +279,7 @@ export default {
             },
             teammateMode: {
                 label: 'Teammate mode (teammateMode)',
-                desc: 'Execution mode for agent teams.',
+                desc: 'Display mode for teammates. in-process = inside the main terminal, auto = split when available, tmux / iterm2 = split panes. Default is in-process.',
             },
             agentPushNotifEnabled: {
                 label: 'Agent notifications (agentPushNotifEnabled)',
@@ -283,6 +293,7 @@ export default {
         claudeCode: 'Claude Code MCP Manager',
         assetManager: 'Claude Code Agent / Skill Manager',
         cleanup: 'Claude Code Cleanup',
+        claudeSettings: 'Claude Code Settings',
     },
     dashboard: {
         title: 'Dashboard',
@@ -291,5 +302,6 @@ export default {
         claudeCodeDesc: 'Manage Claude Code (CLI) profile MCP servers.',
         assetManagerDesc: 'Download and upload Claude Code agents and skills as ZIP archives.',
         cleanupDesc: 'Reclaim disk space by cleaning up ~/.claude directories.',
+        claudeSettingsDesc: 'Edit configuration items in ~/.claude/settings.json.',
     },
 };

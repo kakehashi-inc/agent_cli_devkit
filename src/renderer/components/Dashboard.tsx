@@ -13,17 +13,17 @@ export const Dashboard: React.FC = () => {
     const navigate = useNavigate();
 
     return (
-        <Box sx={{ p: 4 }}>
-            <Typography variant='h4' component='h1' sx={{ mb: 1 }}>
+        <Box sx={{ p: 3 }}>
+            <Typography variant='h4' component='h1' sx={{ mb: 0.5 }}>
                 {t('dashboard.title')}
             </Typography>
-            <Typography variant='body1' color='text.secondary' sx={{ mb: 4 }}>
+            <Typography variant='body1' color='text.secondary' sx={{ mb: 2.5 }}>
                 {t('dashboard.subtitle')}
             </Typography>
 
             {AGENT_MODULES.map((module, index) => (
-                <Box key={module.id} sx={{ mb: index < AGENT_MODULES.length - 1 ? 5 : 0 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                <Box key={module.id} sx={{ mb: index < AGENT_MODULES.length - 1 ? 3 : 0 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
                         <Typography variant='h5' component='h2'>
                             {module.label}
                         </Typography>
@@ -33,37 +33,42 @@ export const Dashboard: React.FC = () => {
                         sx={{
                             display: 'grid',
                             gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: '1fr 1fr 1fr' },
-                            gap: 3,
+                            gap: 1.5,
                         }}
                     >
+                        {/* アイコンを左・テキストを右に置く横並びレイアウトで縦方向をコンパクトに保つ */}
                         {module.features.map(feature => (
                             <Card key={feature.path} variant='outlined' sx={{ height: '100%' }}>
                                 <CardActionArea
                                     onClick={() => navigate(feature.path)}
                                     sx={{ height: '100%', alignItems: 'stretch' }}
                                 >
-                                    <CardContent sx={{ p: 3 }}>
-                                        <Box
-                                            sx={{
-                                                width: 56,
-                                                height: 56,
-                                                borderRadius: 2,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                bgcolor: feature.color,
-                                                color: '#fff',
-                                                mb: 2,
-                                            }}
-                                        >
-                                            <feature.Icon sx={{ fontSize: 32 }} />
+                                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                                        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                                            <Box
+                                                sx={{
+                                                    width: 40,
+                                                    height: 40,
+                                                    borderRadius: 1.5,
+                                                    flexShrink: 0,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    bgcolor: feature.color,
+                                                    color: '#fff',
+                                                }}
+                                            >
+                                                <feature.Icon sx={{ fontSize: 24 }} />
+                                            </Box>
+                                            <Box sx={{ minWidth: 0 }}>
+                                                <Typography variant='h6' sx={{ mb: 0.25, lineHeight: 1.3 }}>
+                                                    {t(feature.navKey)}
+                                                </Typography>
+                                                <Typography variant='body2' color='text.secondary'>
+                                                    {t(feature.descKey)}
+                                                </Typography>
+                                            </Box>
                                         </Box>
-                                        <Typography variant='h6' sx={{ mb: 1 }}>
-                                            {t(feature.navKey)}
-                                        </Typography>
-                                        <Typography variant='body2' color='text.secondary'>
-                                            {t(feature.descKey)}
-                                        </Typography>
                                     </CardContent>
                                 </CardActionArea>
                             </Card>

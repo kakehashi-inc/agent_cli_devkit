@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Merged Claude Developer Tool and Codex Developer Tool into a single application: Agent CLI DevKit. All features of both tools are now available in one app, with the dashboard and title-bar navigation grouped by agent.
+- The title bar now shows one button per agent group. Clicking a group expands its feature icons; opening another group collapses the previous one.
+- Settings editing (settings.json / config.toml) moved from a tab inside each Agent / Skill manager to its own dedicated page per agent.
+- Dashboard cards are more compact: smaller icons placed to the left of the text, reducing vertical space so more features fit on screen.
+- Settings editors updated to the latest official options: corrected Claude Code teammate mode choices, added Claude Code auto-compact and file checkpointing settings, added the new "indexed" web search mode for Codex, allowed custom Codex model providers, and made Grok reasoning effort a proper selection.
 
 ### Added
 

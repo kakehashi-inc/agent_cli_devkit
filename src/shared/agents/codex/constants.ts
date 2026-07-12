@@ -127,13 +127,8 @@ export const OTHER_CLEANUP_ITEMS: OtherCleanupItem[] = [
 export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     // === モデル ===
     { key: 'model', path: 'model', group: 'model', type: 'string' },
-    {
-        key: 'modelProvider',
-        path: 'model_provider',
-        group: 'model',
-        type: 'string',
-        choices: ['openai', 'ollama', 'lmstudio', 'azure'],
-    },
+    // model_provider は [model_providers.<id>] で定義した任意 ID を取るため choices で限定しない。既定は openai。
+    { key: 'modelProvider', path: 'model_provider', group: 'model', type: 'string' },
     {
         key: 'modelReasoningEffort',
         path: 'model_reasoning_effort',
@@ -184,7 +179,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'web_search',
         group: 'security',
         type: 'string',
-        choices: ['disabled', 'cached', 'live'],
+        choices: ['disabled', 'cached', 'indexed', 'live'],
     },
     {
         key: 'personality',
@@ -223,7 +218,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
 
     // === データ ===
     { key: 'projectDocMaxBytes', path: 'project_doc_max_bytes', group: 'data', type: 'number', min: 0 },
-    { key: 'analyticsEnabled', path: 'analytics.enabled', group: 'data', type: 'boolean', defaultOn: true },
+    { key: 'analyticsEnabled', path: 'analytics.enabled', group: 'data', type: 'boolean' },
     { key: 'feedbackEnabled', path: 'feedback.enabled', group: 'data', type: 'boolean', defaultOn: true },
 ];
 

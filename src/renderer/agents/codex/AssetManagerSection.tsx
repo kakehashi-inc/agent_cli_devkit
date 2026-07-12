@@ -24,10 +24,9 @@ import {
 } from '@mui/icons-material';
 import type { AssetEntry, AssetKind, AssetListReport, CodexEnvironment } from '@shared/agents/codex/types';
 import { AssetEntriesTable, computeFitWidth, type FmColumn } from './AssetEntriesTable';
-import { SettingsSection } from './SettingsSection';
 
 // セクションのタブ値: エージェント / スキル（AssetKind）に加え、設定タブを持つ。
-type SectionTab = AssetKind | 'settings';
+type SectionTab = AssetKind;
 // 単体ファイルアップロードの種別（zip 以外）。skills=md、agents=toml。
 type UploadKind = 'zip' | 'md' | 'toml';
 
@@ -59,7 +58,7 @@ const OFFICIAL_COLUMNS: FmColumn[] = FRONTMATTER_COLUMNS.skills;
 export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     const { t } = useTranslation();
     const [tab, setTab] = useState<SectionTab>('agents');
-    const kind: AssetKind = tab === 'settings' ? 'agents' : tab;
+    const kind: AssetKind = tab;
     const [reports, setReports] = useState<Record<AssetKind, AssetListReport | null>>({
         agents: null,
         skills: null,
@@ -392,13 +391,10 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
             >
                 <Tab value='agents' label={t('codex.assetManager.tabAgents')} />
                 <Tab value='skills' label={t('codex.assetManager.tabSkills')} />
-                <Tab value='settings' label={t('codex.assetManager.tabSettings')} />
             </Tabs>
 
             <Box sx={{ p: 2 }}>
-                {tab === 'settings' ? (
-                    <SettingsSection env={env} onNotify={onNotify} />
-                ) : report && !report.available ? (
+                {report && !report.available ? (
                     <Alert severity='info'>{t('codex.assetManager.unavailable')}</Alert>
                 ) : (
                     <>

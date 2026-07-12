@@ -75,7 +75,6 @@ export default {
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'Agents',
         tabSkills: 'Skills',
-        tabSettings: 'Settings',
         col: {
             name: 'Name',
             description: 'Description',
@@ -144,6 +143,9 @@ export default {
         },
     },
     settings: {
+        title: 'Codex Settings',
+        description: 'Edit ~/.codex/config.toml items in a table, or edit the file directly.',
+        wslSection: 'WSL: {{distro}}',
         colItem: 'Item',
         colValue: 'Value',
         directEdit: 'Direct edit',
@@ -176,7 +178,8 @@ export default {
             },
             modelProvider: {
                 label: 'Model provider (model_provider)',
-                desc: 'The model provider to use. Default is openai.',
+                desc: 'The model provider ID to use (any ID defined under [model_providers]). Default is openai.',
+                placeholder: 'e.g. openai',
             },
             modelReasoningEffort: {
                 label: 'Reasoning effort (model_reasoning_effort)',
@@ -208,7 +211,7 @@ export default {
             },
             webSearch: {
                 label: 'Web search (web_search)',
-                desc: 'Web search behavior mode. Default is cached.',
+                desc: 'Web search behavior mode (disabled / cached / indexed / live). Default is cached.',
             },
             personality: {
                 label: 'Personality (personality)',
@@ -261,12 +264,14 @@ export default {
         codexMcp: 'Codex MCP Management',
         codexAgentSkill: 'Codex Agent / Skill Management',
         codexCleanup: 'Codex Cleanup',
+        codexSettings: 'Codex Settings',
     },
     dashboard: {
         title: 'Dashboard',
         subtitle: 'Select a feature to use.',
         codexMcpDesc: 'Enable/disable/reorder MCP servers for Codex (CLI).',
-        codexAgentSkillDesc: 'Manage Codex agents and skills, and edit config.toml settings.',
+        codexAgentSkillDesc: 'Manage Codex agents and skills.',
         codexCleanupDesc: 'Clean up directories under ~/.codex to reclaim space.',
+        codexSettingsDesc: 'Edit configuration items in ~/.codex/config.toml.',
     },
 };

@@ -76,7 +76,6 @@ export default {
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'エージェント',
         tabSkills: 'スキル',
-        tabSettings: '設定',
         col: {
             name: '名前',
             description: '説明',
@@ -147,6 +146,9 @@ export default {
         },
     },
     settings: {
+        title: 'Grok 設定',
+        description: '~/.grok/config.toml の設定項目をテーブルで編集、または直接編集します。',
+        wslSection: 'WSL: {{distro}}',
         colItem: '項目',
         colValue: '値',
         directEdit: '直接編集',
@@ -183,8 +185,7 @@ export default {
             },
             modelsDefaultReasoningEffort: {
                 label: '推論の労力（models.default_reasoning_effort）',
-                desc: '既定モデルの推論労力。空欄で未設定。',
-                placeholder: '例: high',
+                desc: '既定モデルの推論にかける労力。',
             },
             modelsSessionSummary: {
                 label: 'セッション要約モデル（models.session_summary）',
@@ -273,10 +274,12 @@ export default {
         grokMcp: 'Grok MCP 管理',
         grokAgentSkill: 'Grok Agent・Skill 管理',
         grokCleanup: 'Grok クリーンアップ',
+        grokSettings: 'Grok 設定',
     },
     dashboard: {
         grokMcpDesc: 'Grok（CLI）の MCP サーバーを有効化/無効化/並べ替えします。',
-        grokAgentSkillDesc: 'Grok のエージェント・スキルの管理と config.toml 設定を行います。',
+        grokAgentSkillDesc: 'Grok のエージェント・スキルを管理します。',
         grokCleanupDesc: '~/.grok 配下のディレクトリと旧バージョンの実行ファイルをクリーンアップします。',
+        grokSettingsDesc: '~/.grok/config.toml の設定項目を編集します。',
     },
 };

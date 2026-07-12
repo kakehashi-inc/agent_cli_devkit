@@ -76,7 +76,6 @@ export default {
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'Agents',
         tabSkills: 'Skills',
-        tabSettings: 'Settings',
         col: {
             name: 'Name',
             description: 'Description',
@@ -145,6 +144,9 @@ export default {
         },
     },
     settings: {
+        title: 'Grok Settings',
+        description: 'Edit ~/.grok/config.toml items in a table, or edit the file directly.',
+        wslSection: 'WSL: {{distro}}',
         colItem: 'Item',
         colValue: 'Value',
         directEdit: 'Direct edit',
@@ -181,8 +183,7 @@ export default {
             },
             modelsDefaultReasoningEffort: {
                 label: 'Reasoning effort (models.default_reasoning_effort)',
-                desc: 'Reasoning effort for the default model. Leave blank to unset.',
-                placeholder: 'e.g. high',
+                desc: 'Reasoning effort for the default model.',
             },
             modelsSessionSummary: {
                 label: 'Session summary model (models.session_summary)',
@@ -271,10 +272,12 @@ export default {
         grokMcp: 'Grok MCP Management',
         grokAgentSkill: 'Grok Agent / Skill Management',
         grokCleanup: 'Grok Cleanup',
+        grokSettings: 'Grok Settings',
     },
     dashboard: {
         grokMcpDesc: 'Enable/disable/reorder MCP servers for Grok (CLI).',
-        grokAgentSkillDesc: 'Manage Grok agents and skills, and edit config.toml settings.',
+        grokAgentSkillDesc: 'Manage Grok agents and skills.',
         grokCleanupDesc: 'Clean up ~/.grok directories and old executable versions.',
+        grokSettingsDesc: 'Edit configuration items in ~/.grok/config.toml.',
     },
 };

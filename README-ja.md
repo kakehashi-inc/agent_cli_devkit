@@ -10,19 +10,22 @@ Agent CLI DevKit は、AI エージェント CLI（Claude Code / Codex CLI / Gro
 
 - **Claude Desktop MCP 管理** — Claude Desktop の MCP サーバーを有効化/無効化/並べ替えします。
 - **Claude Code MCP 管理** — Claude Code（CLI）のプロファイル MCP（~/.claude.json）を管理します。native と WSL distro の両方に対応します。
-- **Claude Code Agent・Skill 管理** — Claude Code のエージェント・スキルを一覧表示し、ZIP でダウンロード／アップロードします。Anthropic 公式スキルのインポートと、~/.claude/settings.json の設定編集にも対応します。
+- **Claude Code Agent・Skill 管理** — Claude Code のエージェント・スキルを一覧表示し、ZIP でダウンロード／アップロードします。Anthropic 公式スキルのインポートにも対応します。
+- **Claude Code 設定** — ~/.claude/settings.json の設定項目をテーブルで編集、または直接編集します。
 - **Claude Code クリーンアップ** — ~/.claude 配下の履歴・キャッシュ・一時ファイル・ログを削除して容量を回収します。
 
 **Codex グループ**
 
 - **Codex MCP 管理** — Codex（CLI）の MCP サーバー（~/.codex/config.toml）を有効化/無効化/並べ替えします。native と WSL distro の両方に対応します。
-- **Codex Agent・Skill 管理** — Codex のカスタムエージェント（~/.codex/agents）・スキル（~/.agents/skills）の管理、OpenAI 公式スキルのインポート、config.toml の設定編集を行います。
+- **Codex Agent・Skill 管理** — Codex のカスタムエージェント（~/.codex/agents）・スキル（~/.agents/skills）の管理と OpenAI 公式スキルのインポートを行います。
+- **Codex 設定** — ~/.codex/config.toml の設定項目をテーブルで編集、または直接編集します。
 - **Codex クリーンアップ** — ~/.codex 配下の履歴・キャッシュ・一時ファイル・ログ・セッションを削除して容量を回収します。
 
 **Grok グループ**
 
 - **Grok MCP 管理** — Grok（CLI）の MCP サーバー（~/.grok/config.toml）を有効化/無効化/並べ替えします。native と WSL distro の両方に対応します。
-- **Grok Agent・Skill 管理** — Grok のカスタムエージェント（~/.grok/agents）・スキル（~/.grok/skills）の管理、xAI 公式スキルのインポート、config.toml の設定編集を行います。
+- **Grok Agent・Skill 管理** — Grok のカスタムエージェント（~/.grok/agents）・スキル（~/.grok/skills）の管理と xAI 公式スキルのインポートを行います。
+- **Grok 設定** — ~/.grok/config.toml の設定項目をテーブルで編集、または直接編集します。
 - **Grok クリーンアップ** — ~/.grok 配下の履歴・メモリ・ログと、更新で残った旧バージョンの実行ファイル（約130MB/個）を削除して容量を回収します。
 
 ダッシュボードとタイトルバーのナビゲーションは Claude / Codex / Grok のグループ単位で全機能を表示します。内部構造もエージェント単位でファイル分割されており、新しい agent CLI を追加しやすい構成になっています（詳細は `Documents/システム仕様.md` を参照）。

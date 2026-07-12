@@ -75,7 +75,6 @@ export default {
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'エージェント',
         tabSkills: 'スキル',
-        tabSettings: '設定',
         col: {
             name: '名前',
             description: '説明',
@@ -145,6 +144,9 @@ export default {
         },
     },
     settings: {
+        title: 'Codex 設定',
+        description: '~/.codex/config.toml の設定項目をテーブルで編集、または直接編集します。',
+        wslSection: 'WSL: {{distro}}',
         colItem: '項目',
         colValue: '値',
         directEdit: '直接編集',
@@ -177,7 +179,8 @@ export default {
             },
             modelProvider: {
                 label: 'モデルプロバイダ（model_provider）',
-                desc: '使用するモデルプロバイダ。既定は openai。',
+                desc: '使用するモデルプロバイダ ID（[model_providers] で定義した任意 ID も可）。既定は openai。',
+                placeholder: '例: openai',
             },
             modelReasoningEffort: {
                 label: '推論の労力（model_reasoning_effort）',
@@ -209,7 +212,7 @@ export default {
             },
             webSearch: {
                 label: 'Web検索（web_search）',
-                desc: 'Web検索の動作モード。既定は cached。',
+                desc: 'Web検索の動作モード（disabled / cached / indexed / live）。既定は cached。',
             },
             personality: {
                 label: 'パーソナリティ（personality）',
@@ -262,12 +265,14 @@ export default {
         codexMcp: 'Codex MCP 管理',
         codexAgentSkill: 'Codex Agent・Skill 管理',
         codexCleanup: 'Codex クリーンアップ',
+        codexSettings: 'Codex 設定',
     },
     dashboard: {
         title: 'ダッシュボード',
         subtitle: '利用する機能を選択してください。',
         codexMcpDesc: 'Codex（CLI）の MCP サーバーを有効化/無効化/並べ替えします。',
-        codexAgentSkillDesc: 'Codex のエージェント・スキルの管理と config.toml 設定を行います。',
+        codexAgentSkillDesc: 'Codex のエージェント・スキルを管理します。',
         codexCleanupDesc: '~/.codex 配下のディレクトリをクリーンアップして容量を回収します。',
+        codexSettingsDesc: '~/.codex/config.toml の設定項目を編集します。',
     },
 };

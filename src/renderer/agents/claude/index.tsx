@@ -1,13 +1,15 @@
 import {
     Storage as StorageIcon,
-    Terminal as TerminalIcon,
+    Hub as HubIcon,
     SmartToy as AssetIcon,
+    Settings as SettingsIcon,
     CleaningServices as CleanupIcon,
 } from '@mui/icons-material';
 import type { AgentModule } from '../types';
 import { ClaudeDesktopManager } from './ClaudeDesktopManager';
 import { ClaudeCodeManager } from './ClaudeCodeManager';
 import { AssetManager } from './AssetManager';
+import { ClaudeSettingsManager } from './ClaudeSettingsManager';
 import { Cleanup } from './Cleanup';
 
 // Claude グループの機能定義。
@@ -30,8 +32,9 @@ export const claudeModule: AgentModule = {
             titleKey: 'claude.claudeCode.title',
             navKey: 'claude.nav.claudeCode',
             descKey: 'claude.dashboard.claudeCodeDesc',
-            Icon: TerminalIcon,
-            color: '#8a6df0',
+            // CLI 系の MCP 管理は全 agent で同一の見た目（Hub / #5b8def）に統一する。
+            Icon: HubIcon,
+            color: '#5b8def',
             element: <ClaudeCodeManager />,
         },
         {
@@ -42,6 +45,15 @@ export const claudeModule: AgentModule = {
             Icon: AssetIcon,
             color: '#d98a3a',
             element: <AssetManager />,
+        },
+        {
+            path: '/claude/settings',
+            titleKey: 'claude.settings.title',
+            navKey: 'claude.nav.claudeSettings',
+            descKey: 'claude.dashboard.claudeSettingsDesc',
+            Icon: SettingsIcon,
+            color: '#8a6df0',
+            element: <ClaudeSettingsManager />,
         },
         {
             path: '/claude/cleanup',
