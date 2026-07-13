@@ -2,6 +2,7 @@ import {
     Storage as StorageIcon,
     Hub as HubIcon,
     SmartToy as AssetIcon,
+    Extension as PluginIcon,
     Settings as SettingsIcon,
     CleaningServices as CleanupIcon,
 } from '@mui/icons-material';
@@ -9,6 +10,7 @@ import type { AgentModule } from '../types';
 import { ClaudeDesktopManager } from './ClaudeDesktopManager';
 import { ClaudeCodeManager } from './ClaudeCodeManager';
 import { AssetManager } from './AssetManager';
+import { PluginManager } from './PluginManager';
 import { ClaudeSettingsManager } from './ClaudeSettingsManager';
 import { Cleanup } from './Cleanup';
 
@@ -45,6 +47,16 @@ export const claudeModule: AgentModule = {
             Icon: AssetIcon,
             color: '#d98a3a',
             element: <AssetManager />,
+        },
+        {
+            path: '/claude/plugins',
+            titleKey: 'claude.pluginManager.title',
+            navKey: 'claude.nav.pluginManager',
+            descKey: 'claude.dashboard.pluginManagerDesc',
+            // プラグイン管理は全 agent で同一の見た目（Extension / #c85f8d）に統一する。
+            Icon: PluginIcon,
+            color: '#c85f8d',
+            element: <PluginManager />,
         },
         {
             path: '/claude/settings',

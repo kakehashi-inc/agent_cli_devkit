@@ -10,6 +10,9 @@ import type {
     MCPServers,
     OtherCleanupReport,
     OtherCleanupSelection,
+    PluginCatalogReport,
+    PluginEnvReport,
+    PluginOpResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
@@ -59,5 +62,16 @@ export type CodexIpcApi = {
         read(env: CodexEnvironment): Promise<SettingsReadResult>;
         write(env: CodexEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
         writeRaw(env: CodexEnvironment, rawToml: string): Promise<SettingsWriteResult>;
+    };
+    // Codex プラグイン管理
+    plugin: {
+        getEnvironments(): Promise<{ env: CodexEnvironment; label: string }[]>;
+        list(env: CodexEnvironment): Promise<PluginEnvReport>;
+        catalog(env: CodexEnvironment): Promise<PluginCatalogReport>;
+        install(env: CodexEnvironment, id: string): Promise<PluginOpResult>;
+        uninstall(env: CodexEnvironment, id: string): Promise<PluginOpResult>;
+        setEnabled(env: CodexEnvironment, id: string, enabled: boolean): Promise<PluginOpResult>;
+        addMarketplace(env: CodexEnvironment, source: string): Promise<PluginOpResult>;
+        removeMarketplace(env: CodexEnvironment, name: string): Promise<PluginOpResult>;
     };
 };

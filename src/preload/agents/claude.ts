@@ -6,6 +6,7 @@ import {
     CLAUDE_CLEANUP_CHANNELS,
     CLAUDE_CODE_CHANNELS,
     CLAUDE_DESKTOP_CHANNELS,
+    CLAUDE_PLUGIN_CHANNELS,
     CLAUDE_SETTINGS_CHANNELS,
 } from '../../shared/agents/claude/constants';
 import type {
@@ -77,5 +78,19 @@ export const claudeApi: ClaudeIpcApi = {
             ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.WRITE, env, values),
         writeRaw: (env: ClaudeEnvironment, rawJson: string) =>
             ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.WRITE_RAW, env, rawJson),
+    },
+    plugin: {
+        getEnvironments: () => ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.GET_ENVIRONMENTS),
+        list: (env: ClaudeEnvironment) => ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.LIST, env),
+        catalog: (env: ClaudeEnvironment) => ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.CATALOG, env),
+        install: (env: ClaudeEnvironment, id: string) => ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.INSTALL, env, id),
+        uninstall: (env: ClaudeEnvironment, id: string) =>
+            ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.UNINSTALL, env, id),
+        setEnabled: (env: ClaudeEnvironment, id: string, enabled: boolean) =>
+            ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.SET_ENABLED, env, id, enabled),
+        addMarketplace: (env: ClaudeEnvironment, source: string) =>
+            ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.ADD_MARKETPLACE, env, source),
+        removeMarketplace: (env: ClaudeEnvironment, name: string) =>
+            ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.REMOVE_MARKETPLACE, env, name),
     },
 };

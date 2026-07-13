@@ -1,12 +1,14 @@
 import {
     Hub as HubIcon,
     SmartToy as AssetIcon,
+    Extension as PluginIcon,
     Settings as SettingsIcon,
     CleaningServices as CleanupIcon,
 } from '@mui/icons-material';
 import type { AgentModule } from '../types';
 import { GrokMcpManager } from './GrokMcpManager';
 import { GrokAssetManager } from './GrokAssetManager';
+import { PluginManager } from './PluginManager';
 import { GrokSettingsManager } from './GrokSettingsManager';
 import { Cleanup } from './Cleanup';
 
@@ -33,6 +35,16 @@ export const grokModule: AgentModule = {
             Icon: AssetIcon,
             color: '#d98a3a',
             element: <GrokAssetManager />,
+        },
+        {
+            path: '/grok/plugins',
+            titleKey: 'grok.pluginManager.title',
+            navKey: 'grok.nav.pluginManager',
+            descKey: 'grok.dashboard.pluginManagerDesc',
+            // プラグイン管理は全 agent で同一の見た目（Extension / #c85f8d）に統一する。
+            Icon: PluginIcon,
+            color: '#c85f8d',
+            element: <PluginManager />,
         },
         {
             path: '/grok/settings',

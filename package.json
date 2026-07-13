@@ -1,6 +1,6 @@
 {
   "name": "agent-cli-devkit",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "GUI for managing Claude and OpenAI Codex CLI: MCP servers, agents & skills, config, and cleanup.",
   "main": "dist/main/index.js",
   "engines": {

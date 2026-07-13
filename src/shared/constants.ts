@@ -32,6 +32,7 @@ export const SYSTEM_CHANNELS = {
     GET_THEME: 'system:get-theme',
     GET_LOCALE: 'system:get-locale',
     GET_VERSION: 'system:get-version',
+    OPEN_EXTERNAL: 'system:open-external',
 } as const;
 
 // 自動アップデート用

@@ -292,10 +292,16 @@ export default {
             },
         },
     },
+    pluginManager: {
+        title: 'Claude Code プラグイン管理',
+        description:
+            'Claude Code のプラグインを一覧・追加・削除し、マーケットプレイスを管理します。操作には claude コマンドを使用します。',
+    },
     nav: {
         claudeDesktop: 'Claude Desktop MCP 管理',
         claudeCode: 'Claude Code MCP 管理',
         assetManager: 'Claude Code Agent・Skill管理',
+        pluginManager: 'Claude Code プラグイン管理',
         cleanup: 'Claude Code クリーンアップ',
         claudeSettings: 'Claude Code 設定',
     },
@@ -303,6 +309,7 @@ export default {
         claudeDesktopDesc: 'Claude Desktop の MCP サーバーを有効化/無効化/並べ替えします。',
         claudeCodeDesc: 'Claude Code（CLI）のプロファイル MCP を管理します。',
         assetManagerDesc: 'Claude Code のエージェント・スキルを ZIP でダウンロード／アップロードします。',
+        pluginManagerDesc: 'Claude Code のプラグインとマーケットプレイスを管理します。',
         cleanupDesc: '~/.claude 配下のディレクトリをクリーンアップして容量を回収します。',
         claudeSettingsDesc: '~/.claude/settings.json の設定項目を編集します。',
     },

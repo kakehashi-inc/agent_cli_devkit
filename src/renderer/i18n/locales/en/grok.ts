@@ -273,15 +273,22 @@ export default {
             },
         },
     },
+    pluginManager: {
+        title: 'Grok Plugin Manager',
+        description:
+            'List, install, and uninstall Grok plugins and manage marketplaces. Operations use the grok command.',
+    },
     nav: {
         grokMcp: 'Grok MCP Management',
         grokAgentSkill: 'Grok Agent / Skill Management',
+        pluginManager: 'Grok Plugin Manager',
         grokCleanup: 'Grok Cleanup',
         grokSettings: 'Grok Settings',
     },
     dashboard: {
         grokMcpDesc: 'Enable/disable/reorder MCP servers for Grok (CLI).',
         grokAgentSkillDesc: 'Manage Grok agents and skills.',
+        pluginManagerDesc: 'Manage Grok plugins and marketplaces.',
         grokCleanupDesc: 'Clean up ~/.grok directories and old executable versions.',
         grokSettingsDesc: 'Edit configuration items in ~/.grok/config.toml.',
     },

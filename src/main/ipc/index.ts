@@ -1,4 +1,5 @@
 import { BrowserWindow } from 'electron';
+import { AgentCliRunner } from '../services/common/cli/AgentCliRunner';
 import { WslDetector } from '../services/common/wsl/WslDetector';
 import { registerClaudeIpcHandlers } from './claude/index';
 import { registerCodexIpcHandlers } from './codex/index';
@@ -9,16 +10,17 @@ import { registerUpdaterIpcHandlers } from './updater';
 
 /**
  * アプリケーション固有の IPC ハンドラを登録する。
- * WSL 検出器を 1 つ生成し、各 agent のサービスへ注入して共有する。
+ * WSL 検出器と CLI 実行基盤を 1 つずつ生成し、各 agent のサービスへ注入して共有する。
  * agent を追加する場合は ipc/<agent>/index.ts を作成し、ここに 1 行追加する。
  */
 export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null) {
     const detector = new WslDetector();
+    const cliRunner = new AgentCliRunner();
 
     // ===== agent 別 IPC ハンドラ =====
-    registerClaudeIpcHandlers(detector, getMainWindow);
-    registerCodexIpcHandlers(detector, getMainWindow);
-    registerGrokIpcHandlers(detector, getMainWindow);
+    registerClaudeIpcHandlers(detector, cliRunner, getMainWindow);
+    registerCodexIpcHandlers(detector, cliRunner, getMainWindow);
+    registerGrokIpcHandlers(detector, cliRunner, getMainWindow);
 
     // ===== アプリ共通 IPC ハンドラ =====
     registerSystemHandlers();

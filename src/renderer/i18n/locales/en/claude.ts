@@ -290,10 +290,16 @@ export default {
             },
         },
     },
+    pluginManager: {
+        title: 'Claude Code Plugin Manager',
+        description:
+            'List, install, and uninstall Claude Code plugins and manage marketplaces. Operations use the claude command.',
+    },
     nav: {
         claudeDesktop: 'Claude Desktop MCP Manager',
         claudeCode: 'Claude Code MCP Manager',
         assetManager: 'Claude Code Agent / Skill Manager',
+        pluginManager: 'Claude Code Plugin Manager',
         cleanup: 'Claude Code Cleanup',
         claudeSettings: 'Claude Code Settings',
     },
@@ -301,6 +307,7 @@ export default {
         claudeDesktopDesc: 'Enable, disable, and reorder Claude Desktop MCP servers.',
         claudeCodeDesc: 'Manage Claude Code (CLI) profile MCP servers.',
         assetManagerDesc: 'Download and upload Claude Code agents and skills as ZIP archives.',
+        pluginManagerDesc: 'Manage Claude Code plugins and marketplaces.',
         cleanupDesc: 'Reclaim disk space by cleaning up ~/.claude directories.',
         claudeSettingsDesc: 'Edit configuration items in ~/.claude/settings.json.',
     },

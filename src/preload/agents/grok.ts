@@ -6,6 +6,7 @@ import {
     GROK_CLEANUP_CHANNELS,
     GROK_CONFIG_CHANNELS,
     GROK_MCP_CHANNELS,
+    GROK_PLUGIN_CHANNELS,
 } from '../../shared/agents/grok/constants';
 import type {
     AssetKind,
@@ -66,5 +67,20 @@ export const grokApi: GrokIpcApi = {
             ipcRenderer.invoke(GROK_CONFIG_CHANNELS.WRITE, env, values),
         writeRaw: (env: GrokEnvironment, rawToml: string) =>
             ipcRenderer.invoke(GROK_CONFIG_CHANNELS.WRITE_RAW, env, rawToml),
+    },
+    plugin: {
+        getEnvironments: () => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.GET_ENVIRONMENTS),
+        list: (env: GrokEnvironment) => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.LIST, env),
+        catalog: (env: GrokEnvironment) => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.CATALOG, env),
+        install: (env: GrokEnvironment, id: string) => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.INSTALL, env, id),
+        installFromSource: (env: GrokEnvironment, source: string) =>
+            ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.INSTALL_FROM_SOURCE, env, source),
+        uninstall: (env: GrokEnvironment, id: string) => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.UNINSTALL, env, id),
+        setEnabled: (env: GrokEnvironment, id: string, enabled: boolean) =>
+            ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.SET_ENABLED, env, id, enabled),
+        addMarketplace: (env: GrokEnvironment, source: string) =>
+            ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.ADD_MARKETPLACE, env, source),
+        removeMarketplace: (env: GrokEnvironment, name: string) =>
+            ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.REMOVE_MARKETPLACE, env, name),
     },
 };

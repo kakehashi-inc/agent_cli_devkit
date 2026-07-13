@@ -1,12 +1,14 @@
 import {
     Hub as HubIcon,
     SmartToy as AssetIcon,
+    Extension as PluginIcon,
     Settings as SettingsIcon,
     CleaningServices as CleanupIcon,
 } from '@mui/icons-material';
 import type { AgentModule } from '../types';
 import { CodexMcpManager } from './CodexMcpManager';
 import { CodexAssetManager } from './CodexAssetManager';
+import { PluginManager } from './PluginManager';
 import { CodexSettingsManager } from './CodexSettingsManager';
 import { Cleanup } from './Cleanup';
 
@@ -33,6 +35,16 @@ export const codexModule: AgentModule = {
             Icon: AssetIcon,
             color: '#d98a3a',
             element: <CodexAssetManager />,
+        },
+        {
+            path: '/codex/plugins',
+            titleKey: 'codex.pluginManager.title',
+            navKey: 'codex.nav.pluginManager',
+            descKey: 'codex.dashboard.pluginManagerDesc',
+            // プラグイン管理は全 agent で同一の見た目（Extension / #c85f8d）に統一する。
+            Icon: PluginIcon,
+            color: '#c85f8d',
+            element: <PluginManager />,
         },
         {
             path: '/codex/settings',

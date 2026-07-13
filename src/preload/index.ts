@@ -15,6 +15,7 @@ const api: IpcApi = {
         getTheme: () => ipcRenderer.invoke(SYSTEM_CHANNELS.GET_THEME),
         getLocale: () => ipcRenderer.invoke(SYSTEM_CHANNELS.GET_LOCALE),
         getVersion: () => ipcRenderer.invoke(SYSTEM_CHANNELS.GET_VERSION),
+        openExternal: (url: string) => ipcRenderer.invoke(SYSTEM_CHANNELS.OPEN_EXTERNAL, url),
     },
     window: {
         minimize: () => ipcRenderer.invoke(WINDOW_CHANNELS.MINIMIZE),

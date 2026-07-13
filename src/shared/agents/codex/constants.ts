@@ -1,7 +1,13 @@
 // ============================================================
 // Codex 固有の定数・IPC チャンネル・レジストリ
 // ============================================================
-import type { AssetKind, CleanupCandidateSpec, OtherCleanupItem, SettingsFieldSpec } from '../types';
+import type {
+    AssetKind,
+    CleanupCandidateSpec,
+    OtherCleanupItem,
+    PluginCapabilities,
+    SettingsFieldSpec,
+} from '../types';
 
 // ============================================================
 // Codex のパス（すべて HOME 相対、区切りは '/'）
@@ -73,6 +79,38 @@ export const CODEX_CONFIG_CHANNELS = {
     WRITE: 'codex-config:write',
     WRITE_RAW: 'codex-config:write-raw',
 } as const;
+
+// Codex プラグイン管理用
+export const CODEX_PLUGIN_CHANNELS = {
+    GET_ENVIRONMENTS: 'codex-plugin:get-environments',
+    LIST: 'codex-plugin:list',
+    CATALOG: 'codex-plugin:catalog',
+    INSTALL: 'codex-plugin:install',
+    UNINSTALL: 'codex-plugin:uninstall',
+    SET_ENABLED: 'codex-plugin:set-enabled',
+    ADD_MARKETPLACE: 'codex-plugin:add-marketplace',
+    REMOVE_MARKETPLACE: 'codex-plugin:remove-marketplace',
+} as const;
+
+// ============================================================
+// プラグイン管理
+// ============================================================
+
+// ヘッドレス実行する CLI コマンド名
+export const CODEX_CLI_COMMAND = 'codex';
+
+// OpenAI 組み込みマーケットプレイス（自動登録される。削除ボタンを無効化する）
+export const CODEX_BUILTIN_MARKETPLACES = ['openai-bundled', 'openai-primary-runtime', 'openai-curated'];
+
+// GUI の機能出し分け。
+// - directInstall=false: `codex plugin add` は設定済みマーケットプレイスからのみ。
+//   個別リポジトリは「マーケットプレイスとして追加 → プラグイン選択」の 2 段階。
+// - marketplaceRemoteUrl=false: marketplace.json への直接 URL 指定は非対応
+//   （ローカルパス / owner/repo[@ref] / Git URL のみ）。
+export const CODEX_PLUGIN_CAPABILITIES: PluginCapabilities = {
+    directInstall: false,
+    marketplaceRemoteUrl: false,
+};
 
 // ============================================================
 // クリーンアップ候補

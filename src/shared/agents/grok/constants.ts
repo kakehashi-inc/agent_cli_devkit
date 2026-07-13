@@ -5,7 +5,13 @@
 // 対象は ~/.grok 配下のみ（共有の ~/.agents/skills や、Grok が互換読み込みする
 // ~/.claude 系の設定には一切触れない）。
 // ============================================================
-import type { AssetKind, CleanupCandidateSpec, OtherCleanupItem, SettingsFieldSpec } from '../types';
+import type {
+    AssetKind,
+    CleanupCandidateSpec,
+    OtherCleanupItem,
+    PluginCapabilities,
+    SettingsFieldSpec,
+} from '../types';
 
 // ============================================================
 // Grok のパス（すべて HOME 相対、区切りは '/'）
@@ -77,6 +83,43 @@ export const GROK_CONFIG_CHANNELS = {
     WRITE: 'grok-config:write',
     WRITE_RAW: 'grok-config:write-raw',
 } as const;
+
+// Grok プラグイン管理用
+export const GROK_PLUGIN_CHANNELS = {
+    GET_ENVIRONMENTS: 'grok-plugin:get-environments',
+    LIST: 'grok-plugin:list',
+    CATALOG: 'grok-plugin:catalog',
+    INSTALL: 'grok-plugin:install',
+    INSTALL_FROM_SOURCE: 'grok-plugin:install-from-source',
+    UNINSTALL: 'grok-plugin:uninstall',
+    SET_ENABLED: 'grok-plugin:set-enabled',
+    ADD_MARKETPLACE: 'grok-plugin:add-marketplace',
+    REMOVE_MARKETPLACE: 'grok-plugin:remove-marketplace',
+} as const;
+
+// ============================================================
+// プラグイン管理
+// ============================================================
+
+// ヘッドレス実行する CLI コマンド名
+export const GROK_CLI_COMMAND = 'grok';
+
+// 組み込みマーケットプレイス（初回起動時に自動登録される。削除ボタンを無効化する）
+export const GROK_BUILTIN_MARKETPLACES = ['xAI Official'];
+
+// Claude 由来の外部マーケットプレイスのうち、プラグイン追加ダイアログで
+// インストール元として選択を許可するもの（公式のみ）。ユーザーが Claude 用に追加した
+// 外部マーケットは Grok のインストール元として提示しない。
+export const GROK_SELECTABLE_EXTERNAL_MARKETPLACES = ['claude-plugins-official'];
+
+// GUI の機能出し分け。
+// - directInstall=true: `grok plugin install <git URL | owner/repo | ローカルパス>` で
+//   個別リポジトリから 1 コマンドで直接インストールできる（@ref / #subdir 対応）。
+// - marketplaceRemoteUrl=false: marketplace.json への直接 URL 指定は非対応。
+export const GROK_PLUGIN_CAPABILITIES: PluginCapabilities = {
+    directInstall: true,
+    marketplaceRemoteUrl: false,
+};
 
 // ============================================================
 // クリーンアップ候補

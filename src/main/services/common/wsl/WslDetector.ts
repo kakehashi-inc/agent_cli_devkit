@@ -20,8 +20,9 @@ function execFileBuffer(file: string, args: string[]): Promise<{ stdout: Buffer;
 /**
  * WSL 出力のデコード。wsl.exe は UTF-16LE、bash 出力は UTF-8 と環境で異なるため、
  * NUL バイトの密度から自動判定する（mcp_server_manager の実績ある実装を踏襲）。
+ * AgentCliRunner など WSL 経由でコマンドを実行する共通実装からも使う。
  */
-function decodeWslBuffer(buf: Buffer): string {
+export function decodeWslBuffer(buf: Buffer): string {
     if (!buf || buf.length === 0) {
         return '';
     }

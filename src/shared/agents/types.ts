@@ -212,6 +212,100 @@ export interface AssetOpResult {
 }
 
 // ============================================================
+// プラグイン管理
+// ------------------------------------------------------------
+// 一覧・カタログは各 agent CLI の `plugin list --json` 等の出力を
+// main 側で共通型へ正規化する。変更操作（インストール / アンインストール /
+// マーケットプレイス追加・削除）は agent CLI のヘッドレス実行で行う。
+// ============================================================
+
+// インストール済みプラグイン 1 件
+export interface PluginEntry {
+    // アンインストール等の操作に渡す識別子（agent により形式が異なる。
+    // claude/codex は "<plugin>@<marketplace>"、grok はプラグイン名）。
+    id: string;
+    name: string;
+    version: string | null;
+    // 提供元マーケットプレイス名（個別リポジトリ導入などで不明なら null）。
+    marketplace: string | null;
+    enabled: boolean;
+    // インストールスコープ（claude のみ。user / project / local）。
+    scope?: string;
+}
+
+// マーケットプレイスの由来。
+// - user: この agent で追加されたもの（削除可）
+// - builtin: agent 組み込み（削除不可として扱う）
+// - external: 他 agent 由来の合成表示（grok が Claude 設定を自動読込したもの等。削除不可）
+export type PluginMarketplaceOrigin = 'user' | 'builtin' | 'external';
+
+// 登録済みマーケットプレイス 1 件
+export interface PluginMarketplaceEntry {
+    name: string;
+    // ソース種別（'github' / 'git' / 'local' / 'url' など agent の表現をそのまま保持）
+    sourceKind: string;
+    // リポジトリ / URL / パスなどの表示用文字列
+    sourceDetail: string;
+    origin: PluginMarketplaceOrigin;
+    // プラグイン追加ダイアログでインストール元として選択できるか。
+    // grok では Claude 由来の外部マーケット（公式 claude-plugins-official を除く）を false にする。
+    selectable: boolean;
+}
+
+// マーケットプレイスカタログ（インストール可能なプラグイン）1 件
+export interface PluginCatalogEntry {
+    // インストール操作に渡す識別子（agent 側で組み立て済み）
+    id: string;
+    name: string;
+    description: string | null;
+    marketplace: string;
+    installed: boolean;
+    // プラグインのリポジトリ / ホームページ URL（外部ブラウザで開く。導出できなければ null）
+    homepage: string | null;
+}
+
+// プラグイン管理の環境ごとのレポート
+export interface PluginEnvReport {
+    env: AgentEnvironment;
+    label: string;
+    // agent CLI がこの環境で実行可能か。false の場合 plugins / marketplaces は空で、
+    // UI は案内メッセージを表示して変更操作を無効化する。
+    cliAvailable: boolean;
+    cliVersion: string | null;
+    plugins: PluginEntry[];
+    marketplaces: PluginMarketplaceEntry[];
+    // GUI の機能出し分け（単一ソースは main 側の agent constants。renderer は
+    // OS 依存の constants を import せず、このレポート経由で受け取る）。
+    capabilities: PluginCapabilities;
+    // 一覧取得自体が失敗した場合の CLI エラー出力（詳細表示用）
+    error?: string;
+}
+
+// カタログ取得の結果
+export interface PluginCatalogReport {
+    ok: boolean;
+    entries: PluginCatalogEntry[];
+    // 失敗時の CLI エラー出力（詳細表示用）
+    message?: string;
+}
+
+// プラグイン変更操作（インストール / アンインストール / マーケットプレイス追加・削除）の結果
+export interface PluginOpResult {
+    ok: boolean;
+    // 失敗時の CLI エラー出力（詳細表示用）
+    message?: string;
+}
+
+// GUI 側の機能出し分け（agent ごとの constants で宣言する registry）
+export interface PluginCapabilities {
+    // 個別リポジトリ / ローカルパスから 1 コマンドで直接インストールできるか（grok のみ true）。
+    // false の agent は「マーケットプレイスとして追加 → 含まれるプラグインを選択」の 2 段階で行う。
+    directInstall: boolean;
+    // マーケットプレイスソースにリモート marketplace.json の URL を指定できるか（claude のみ true）
+    marketplaceRemoteUrl: boolean;
+}
+
+// ============================================================
 // 設定ファイル編集（settings.json / config.toml など）
 // ============================================================
 

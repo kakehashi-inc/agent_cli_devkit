@@ -12,6 +12,8 @@ export type IpcApi = {
         getTheme(): Promise<'light' | 'dark'>;
         getLocale(): Promise<string>;
         getVersion(): Promise<string>;
+        // http/https の URL を OS 既定の外部ブラウザで開く（それ以外は拒否して false）
+        openExternal(url: string): Promise<boolean>;
     };
     // ウィンドウ制御
     window: {

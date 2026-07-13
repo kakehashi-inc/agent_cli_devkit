@@ -3,7 +3,7 @@
 // ============================================================
 import { homedir } from 'os';
 import { join } from 'path';
-import type { CleanupCandidateSpec, OtherCleanupItem, SettingsFieldSpec } from '../types';
+import type { CleanupCandidateSpec, OtherCleanupItem, PluginCapabilities, SettingsFieldSpec } from '../types';
 import type { OSType } from '../../types';
 
 // Claude Desktopの設定ファイルパス
@@ -95,6 +95,36 @@ export const CLAUDE_SETTINGS_CHANNELS = {
     WRITE: 'claude-settings:write',
     WRITE_RAW: 'claude-settings:write-raw',
 } as const;
+
+// Claude Code プラグイン管理用
+export const CLAUDE_PLUGIN_CHANNELS = {
+    GET_ENVIRONMENTS: 'claude-plugin:get-environments',
+    LIST: 'claude-plugin:list',
+    CATALOG: 'claude-plugin:catalog',
+    INSTALL: 'claude-plugin:install',
+    UNINSTALL: 'claude-plugin:uninstall',
+    SET_ENABLED: 'claude-plugin:set-enabled',
+    ADD_MARKETPLACE: 'claude-plugin:add-marketplace',
+    REMOVE_MARKETPLACE: 'claude-plugin:remove-marketplace',
+} as const;
+
+// ============================================================
+// プラグイン管理
+// ============================================================
+
+// ヘッドレス実行する CLI コマンド名
+export const CLAUDE_CLI_COMMAND = 'claude';
+
+// 組み込みマーケットプレイス（削除ボタンを無効化する）
+export const CLAUDE_BUILTIN_MARKETPLACES = ['claude-plugins-official'];
+
+// GUI の機能出し分け。
+// - directInstall=false: 個別リポジトリは「マーケットプレイスとして追加 → プラグイン選択」の 2 段階。
+// - marketplaceRemoteUrl=true: ホストされた marketplace.json への直接 URL をソースに指定できる。
+export const CLAUDE_PLUGIN_CAPABILITIES: PluginCapabilities = {
+    directInstall: false,
+    marketplaceRemoteUrl: true,
+};
 
 // ============================================================
 // クリーンアップ候補

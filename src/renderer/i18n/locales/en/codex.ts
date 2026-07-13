@@ -262,15 +262,22 @@ export default {
             },
         },
     },
+    pluginManager: {
+        title: 'Codex Plugin Manager',
+        description:
+            'List, install, and uninstall Codex plugins and manage marketplaces. Operations use the codex command.',
+    },
     nav: {
         codexMcp: 'Codex MCP Management',
         codexAgentSkill: 'Codex Agent / Skill Management',
+        pluginManager: 'Codex Plugin Manager',
         codexCleanup: 'Codex Cleanup',
         codexSettings: 'Codex Settings',
     },
     dashboard: {
         codexMcpDesc: 'Enable/disable/reorder MCP servers for Codex (CLI).',
         codexAgentSkillDesc: 'Manage Codex agents and skills.',
+        pluginManagerDesc: 'Manage Codex plugins and marketplaces.',
         codexCleanupDesc: 'Clean up directories under ~/.codex to reclaim space.',
         codexSettingsDesc: 'Edit configuration items in ~/.codex/config.toml.',
     },

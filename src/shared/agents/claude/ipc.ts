@@ -11,6 +11,9 @@ import type {
     MCPServers,
     OtherCleanupReport,
     OtherCleanupSelection,
+    PluginCatalogReport,
+    PluginEnvReport,
+    PluginOpResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
@@ -65,5 +68,16 @@ export type ClaudeIpcApi = {
         read(env: ClaudeEnvironment): Promise<SettingsReadResult>;
         write(env: ClaudeEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
         writeRaw(env: ClaudeEnvironment, rawJson: string): Promise<SettingsWriteResult>;
+    };
+    // Claude Code プラグイン管理
+    plugin: {
+        getEnvironments(): Promise<{ env: ClaudeEnvironment; label: string }[]>;
+        list(env: ClaudeEnvironment): Promise<PluginEnvReport>;
+        catalog(env: ClaudeEnvironment): Promise<PluginCatalogReport>;
+        install(env: ClaudeEnvironment, id: string): Promise<PluginOpResult>;
+        uninstall(env: ClaudeEnvironment, id: string): Promise<PluginOpResult>;
+        setEnabled(env: ClaudeEnvironment, id: string, enabled: boolean): Promise<PluginOpResult>;
+        addMarketplace(env: ClaudeEnvironment, source: string): Promise<PluginOpResult>;
+        removeMarketplace(env: ClaudeEnvironment, name: string): Promise<PluginOpResult>;
     };
 };

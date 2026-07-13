@@ -10,6 +10,9 @@ import type {
     MCPServers,
     OtherCleanupReport,
     OtherCleanupSelection,
+    PluginCatalogReport,
+    PluginEnvReport,
+    PluginOpResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
@@ -54,5 +57,18 @@ export type GrokIpcApi = {
         read(env: GrokEnvironment): Promise<SettingsReadResult>;
         write(env: GrokEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
         writeRaw(env: GrokEnvironment, rawToml: string): Promise<SettingsWriteResult>;
+    };
+    // Grok プラグイン管理
+    plugin: {
+        getEnvironments(): Promise<{ env: GrokEnvironment; label: string }[]>;
+        list(env: GrokEnvironment): Promise<PluginEnvReport>;
+        catalog(env: GrokEnvironment): Promise<PluginCatalogReport>;
+        install(env: GrokEnvironment, id: string): Promise<PluginOpResult>;
+        // 個別リポジトリ / ローカルパスからの直接インストール（grok のみ）
+        installFromSource(env: GrokEnvironment, source: string): Promise<PluginOpResult>;
+        uninstall(env: GrokEnvironment, id: string): Promise<PluginOpResult>;
+        setEnabled(env: GrokEnvironment, id: string, enabled: boolean): Promise<PluginOpResult>;
+        addMarketplace(env: GrokEnvironment, source: string): Promise<PluginOpResult>;
+        removeMarketplace(env: GrokEnvironment, name: string): Promise<PluginOpResult>;
     };
 };

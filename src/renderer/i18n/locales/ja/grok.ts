@@ -275,15 +275,22 @@ export default {
             },
         },
     },
+    pluginManager: {
+        title: 'Grok プラグイン管理',
+        description:
+            'Grok のプラグインを一覧・追加・削除し、マーケットプレイスを管理します。操作には grok コマンドを使用します。',
+    },
     nav: {
         grokMcp: 'Grok MCP 管理',
         grokAgentSkill: 'Grok Agent・Skill 管理',
+        pluginManager: 'Grok プラグイン管理',
         grokCleanup: 'Grok クリーンアップ',
         grokSettings: 'Grok 設定',
     },
     dashboard: {
         grokMcpDesc: 'Grok（CLI）の MCP サーバーを有効化/無効化/並べ替えします。',
         grokAgentSkillDesc: 'Grok のエージェント・スキルを管理します。',
+        pluginManagerDesc: 'Grok のプラグインとマーケットプレイスを管理します。',
         grokCleanupDesc: '~/.grok 配下のディレクトリと旧バージョンの実行ファイルをクリーンアップします。',
         grokSettingsDesc: '~/.grok/config.toml の設定項目を編集します。',
     },

@@ -6,6 +6,7 @@ import {
     CODEX_CLEANUP_CHANNELS,
     CODEX_CONFIG_CHANNELS,
     CODEX_MCP_CHANNELS,
+    CODEX_PLUGIN_CHANNELS,
 } from '../../shared/agents/codex/constants';
 import type {
     AssetKind,
@@ -66,5 +67,18 @@ export const codexApi: CodexIpcApi = {
             ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.WRITE, env, values),
         writeRaw: (env: CodexEnvironment, rawToml: string) =>
             ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.WRITE_RAW, env, rawToml),
+    },
+    plugin: {
+        getEnvironments: () => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.GET_ENVIRONMENTS),
+        list: (env: CodexEnvironment) => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.LIST, env),
+        catalog: (env: CodexEnvironment) => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.CATALOG, env),
+        install: (env: CodexEnvironment, id: string) => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.INSTALL, env, id),
+        uninstall: (env: CodexEnvironment, id: string) => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.UNINSTALL, env, id),
+        setEnabled: (env: CodexEnvironment, id: string, enabled: boolean) =>
+            ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.SET_ENABLED, env, id, enabled),
+        addMarketplace: (env: CodexEnvironment, source: string) =>
+            ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.ADD_MARKETPLACE, env, source),
+        removeMarketplace: (env: CodexEnvironment, name: string) =>
+            ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.REMOVE_MARKETPLACE, env, name),
     },
 };

@@ -263,15 +263,22 @@ export default {
             },
         },
     },
+    pluginManager: {
+        title: 'Codex プラグイン管理',
+        description:
+            'Codex のプラグインを一覧・追加・削除し、マーケットプレイスを管理します。操作には codex コマンドを使用します。',
+    },
     nav: {
         codexMcp: 'Codex MCP 管理',
         codexAgentSkill: 'Codex Agent・Skill 管理',
+        pluginManager: 'Codex プラグイン管理',
         codexCleanup: 'Codex クリーンアップ',
         codexSettings: 'Codex 設定',
     },
     dashboard: {
         codexMcpDesc: 'Codex（CLI）の MCP サーバーを有効化/無効化/並べ替えします。',
         codexAgentSkillDesc: 'Codex のエージェント・スキルを管理します。',
+        pluginManagerDesc: 'Codex のプラグインとマーケットプレイスを管理します。',
         codexCleanupDesc: '~/.codex 配下のディレクトリをクリーンアップして容量を回収します。',
         codexSettingsDesc: '~/.codex/config.toml の設定項目を編集します。',
     },

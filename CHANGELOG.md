@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [0.5.5] - 2026-07-13
+
+### Added
+
+- Plugin Manager for every agent group (Claude / Codex / Grok): manage plugins and marketplaces from the GUI — install, uninstall, and enable/disable plugins, from marketplace catalogs or individual repositories — on both the host OS and WSL.
+
 ## [0.5.4] - 2026-07-13
 
 ### Changed
