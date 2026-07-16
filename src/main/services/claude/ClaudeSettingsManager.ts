@@ -20,8 +20,8 @@ import { WslDetector } from '../common/wsl/WslDetector';
  * Claude Code (CLI) の設定ファイル ~/.claude/settings.json を管理する。
  *
  * 設計の要点:
- * - 編集対象は SETTINGS_FIELDS（registry）で宣言した項目のみ。
- *   permissions / enabledPlugins / extraKnownMarketplaces など登録外の項目には一切触れない。
+ * - 編集対象は SETTINGS_FIELDS（registry）のうち directEdit 以外で宣言した項目のみ。
+ *   directEdit は一覧表示専用で、テーブル保存では構造値に一切触れない。
  * - テーブル保存（write）は、既存 JSON を読み込んでから登録項目だけを差分マージで反映する。
  *   - string / boolean: 値があればキーを設定、未設定（undefined / 空文字）ならキーを削除する。
  *   - envFlag（env 内の特定キー）: ON で env[envKey] = onValue（既定 '1'）を設定、OFF で当該キーを削除する。
@@ -100,10 +100,16 @@ export class ClaudeSettingsManager {
 
     /** registry の定義に応じて settings.json から値を抽出する。 */
     private extractValue(field: SettingsFieldSpec, raw: unknown): SettingsFieldValue {
+        if (field.type === 'directEdit') {
+            return undefined;
+        }
         if (field.type === 'envFlag') {
-            // env オブジェクト内に対象キーが存在すれば ON（true）、無ければ OFF（false）。
+            // 既定の ON 値は true、未知の保存値は文字列のまま返して表示・保持する。
             if (raw && typeof raw === 'object' && !Array.isArray(raw) && field.envKey) {
-                return (raw as Record<string, unknown>)[field.envKey] !== undefined;
+                const value = (raw as Record<string, unknown>)[field.envKey];
+                if (value === undefined) return false;
+                if (value === (field.onValue ?? '1')) return true;
+                return typeof value === 'string' ? value : String(value);
             }
             return false;
         }
@@ -144,6 +150,7 @@ export class ClaudeSettingsManager {
 
         // 登録項目だけを反映する。
         for (const field of SETTINGS_FIELDS) {
+            if (!Object.prototype.hasOwnProperty.call(values, field.key)) continue;
             this.applyField(obj, field, values[field.key]);
         }
 
@@ -159,6 +166,9 @@ export class ClaudeSettingsManager {
 
     /** 1 項目を既存オブジェクトへ反映する（型ごとの上書き/削除ルール）。 */
     private applyField(obj: Record<string, unknown>, field: SettingsFieldSpec, value: SettingsFieldValue): void {
+        if (field.type === 'directEdit') {
+            return;
+        }
         const path = field.path;
         if (field.type === 'envFlag') {
             // env オブジェクト内の対象キー（envKey）のみを操作する。
@@ -174,6 +184,8 @@ export class ClaudeSettingsManager {
                     : {};
             if (value === true) {
                 envObj[field.envKey] = field.onValue ?? '1';
+            } else if (typeof value === 'string' && value.length > 0) {
+                envObj[field.envKey] = value;
             } else {
                 delete envObj[field.envKey];
             }
@@ -202,6 +214,7 @@ export class ClaudeSettingsManager {
                 if (typeof field.max === 'number' && n > field.max) {
                     n = field.max;
                 }
+                if (field.integer) n = Math.trunc(n);
                 obj[path] = n;
             } else {
                 delete obj[path];

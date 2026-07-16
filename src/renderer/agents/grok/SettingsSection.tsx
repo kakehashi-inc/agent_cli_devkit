@@ -9,8 +9,6 @@ import {
     TableContainer,
     TableHead,
     TableRow,
-    Select,
-    MenuItem,
     TextField,
     Typography,
     Dialog,
@@ -26,6 +24,7 @@ import {
     KeyboardArrowDown as ExpandIcon,
     KeyboardArrowRight as CollapseIcon,
 } from '@mui/icons-material';
+import { SettingsValueEditor } from '../../components/settings/SettingsValueEditor';
 import type { GrokEnvironment, SettingsFieldSpec, SettingsFieldValue, SettingsValues } from '@shared/agents/grok/types';
 
 interface Props {
@@ -37,9 +36,10 @@ interface Props {
  * 1 環境分の Grok 設定（~/.grok/config.toml）編集セクション。
  *
  * - read() が返す項目定義（result.fields）だけをテーブルに展開して編集する。
- *   各項目はトグル（boolean）・セレクト（string + choices）・テキスト / 数値（string / number）で表示する。
+ *   各項目は 3 状態 boolean・候補入力・セレクト・テキスト・数値で表示し、
+ *   構造化設定はファイルの直接編集が必要なことを値欄へ表示する。
  * - 個々の変更は即保存せず、テーブル下の「保存」「キャンセル」で確定/破棄する。
- *   - 保存: 登録項目のみ config.toml へ反映（他セクション・コメント・書式は保持）。
+ *   - 保存: 変更した編集可能項目だけを config.toml へ反映（他セクション・コメント・書式は保持）。
  *   - キャンセル: 再取得して編集前の状態へ戻す。
  * - 「直接編集」で config.toml の生 TOML を直接編集できる。
  */
@@ -50,6 +50,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
     const [available, setAvailable] = useState(true);
 
     const [editValues, setEditValues] = useState<Record<string, SettingsFieldValue>>({});
+    const [originalValues, setOriginalValues] = useState<Record<string, SettingsFieldValue>>({});
 
     const [rawOpen, setRawOpen] = useState(false);
     const [rawText, setRawText] = useState('');
@@ -83,14 +84,14 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         return order.map(group => ({ group, items: byGroup.get(group)! }));
     }, [fields]);
 
-    const boolToSelect = (v: SettingsFieldValue): string => (v === true ? 'true' : v === false ? 'false' : '');
-    const selectToBool = (v: string): SettingsFieldValue => (v === 'true' ? true : v === 'false' ? false : undefined);
-
     const unsetLabel = (f: SettingsFieldSpec): string => {
         if (typeof f.defaultOn === 'boolean') {
             return t('grok.settings.unsetWithDefault', {
                 default: f.defaultOn ? t('grok.settings.enabled') : t('grok.settings.disabled'),
             });
+        }
+        if (f.defaultValue !== undefined) {
+            return t('grok.settings.unsetWithDefault', { default: f.defaultValue });
         }
         return t('grok.settings.unset');
     };
@@ -106,6 +107,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                 next[f.key] = result.values[f.key];
             }
             setEditValues(next);
+            setOriginalValues(next);
         } catch (error) {
             console.error('Failed to read settings:', error);
             onNotify(t('grok.settings.readError'), 'error');
@@ -119,7 +121,13 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const collectValues = (): SettingsValues => ({ ...editValues });
+    const collectValues = (): SettingsValues =>
+        Object.fromEntries(
+            Object.entries(editValues).filter(([key, value]) => {
+                const field = fields.find(item => item.key === key);
+                return field?.type !== 'directEdit' && !Object.is(value, originalValues[key]);
+            })
+        );
 
     const handleSave = async () => {
         setBusy(true);
@@ -252,89 +260,18 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                     </Typography>
                                                 </TableCell>
                                                 <TableCell>
-                                                    {f.type === 'boolean' ? (
-                                                        <Select
-                                                            size='small'
-                                                            displayEmpty
-                                                            value={boolToSelect(editValues[f.key])}
-                                                            onChange={e =>
-                                                                setValue(f.key, selectToBool(e.target.value))
-                                                            }
-                                                            sx={{ minWidth: 200 }}
-                                                        >
-                                                            <MenuItem value=''>
-                                                                <em>{unsetLabel(f)}</em>
-                                                            </MenuItem>
-                                                            <MenuItem value='true'>
-                                                                {t('grok.settings.enabled')}
-                                                            </MenuItem>
-                                                            <MenuItem value='false'>
-                                                                {t('grok.settings.disabled')}
-                                                            </MenuItem>
-                                                        </Select>
-                                                    ) : f.choices ? (
-                                                        <Select
-                                                            size='small'
-                                                            displayEmpty
-                                                            value={(editValues[f.key] as string | undefined) ?? ''}
-                                                            onChange={e =>
-                                                                setValue(
-                                                                    f.key,
-                                                                    e.target.value === '' ? undefined : e.target.value
-                                                                )
-                                                            }
-                                                            sx={{ minWidth: 200 }}
-                                                        >
-                                                            <MenuItem value=''>
-                                                                <em>{t('grok.settings.unset')}</em>
-                                                            </MenuItem>
-                                                            {f.choices.map(c => (
-                                                                <MenuItem key={c} value={c}>
-                                                                    {c}
-                                                                </MenuItem>
-                                                            ))}
-                                                        </Select>
-                                                    ) : f.type === 'number' ? (
-                                                        <TextField
-                                                            size='small'
-                                                            type='number'
-                                                            placeholder={t('grok.settings.unset')}
-                                                            value={
-                                                                typeof editValues[f.key] === 'number'
-                                                                    ? String(editValues[f.key])
-                                                                    : ''
-                                                            }
-                                                            onChange={e => {
-                                                                const raw = e.target.value;
-                                                                if (raw === '') {
-                                                                    setValue(f.key, undefined);
-                                                                    return;
-                                                                }
-                                                                const n = Number(raw);
-                                                                setValue(f.key, Number.isFinite(n) ? n : undefined);
-                                                            }}
-                                                            slotProps={{
-                                                                htmlInput: { min: f.min, max: f.max },
-                                                            }}
-                                                            sx={{ minWidth: 200 }}
-                                                        />
-                                                    ) : (
-                                                        <TextField
-                                                            size='small'
-                                                            placeholder={t(
-                                                                `grok.settings.field.${f.key}.placeholder`,
-                                                                ''
-                                                            )}
-                                                            value={(editValues[f.key] as string | undefined) ?? ''}
-                                                            onChange={e =>
-                                                                setValue(
-                                                                    f.key,
-                                                                    e.target.value === '' ? undefined : e.target.value
-                                                                )
-                                                            }
-                                                            sx={{ minWidth: 200 }}
-                                                        />
-                                                    )}
+                                                    <SettingsValueEditor
+                                                        field={f}
+                                                        value={editValues[f.key]}
+                                                        unsetLabel={unsetLabel(f)}
+                                                        enabledLabel={t('grok.settings.enabled')}
+                                                        disabledLabel={t('grok.settings.disabled')}
+                                                        directEditLabel={t('grok.settings.directEditValue')}
+                                                        unknownValueLabel={value =>
+                                                            t('grok.settings.unknownValue', { value })
+                                                        }
+                                                        onChange={value => setValue(f.key, value)}
+                                                    />
                                                 </TableCell>
                                             </TableRow>
                                         ))}

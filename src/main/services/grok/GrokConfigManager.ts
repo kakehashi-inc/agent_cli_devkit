@@ -17,7 +17,8 @@ import { deleteScalar, getScalar, setScalar } from '../../utils/tomlEdit';
  * Grok CLI の設定ファイル ~/.grok/config.toml を管理する。
  *
  * 設計の要点:
- * - 編集対象は SETTINGS_FIELDS（registry）で宣言した項目のみ。レジストリ外のキーには触れない。
+ * - 編集対象は SETTINGS_FIELDS（registry）のうち directEdit 以外で宣言した項目のみ。
+ *   directEdit は一覧表示専用で、テーブル保存では構造値に一切触れない。
  * - テーブル保存（write）は tomlEdit の行スライスで対象キーだけを更新/削除する。他セクション・
  *   コメント・整形は保持する。
  * - 直接編集（writeRaw）は smol-toml の parse で構文検証後、生テキストをそのまま書き込む。
@@ -75,6 +76,9 @@ export class GrokConfigManager {
 
     /** registry の定義に応じて config.toml から値を抽出する（型が合わなければ undefined）。 */
     private extractValue(field: SettingsFieldSpec, text: string): SettingsFieldValue {
+        if (field.type === 'directEdit') {
+            return undefined;
+        }
         const value = getScalar(text, field.path);
         if (value === undefined) {
             return undefined;
@@ -97,7 +101,16 @@ export class GrokConfigManager {
         const fs = this.fsFor(env);
         let text = (await fs.readText(GROK_CONFIG_REL)) ?? '';
 
+        if (text.trim().length > 0) {
+            try {
+                parse(text);
+            } catch {
+                return { ok: false, message: 'invalid-existing-toml' };
+            }
+        }
+
         for (const field of SETTINGS_FIELDS) {
+            if (!Object.prototype.hasOwnProperty.call(values, field.key)) continue;
             text = this.applyField(text, field, values[field.key]);
         }
 
@@ -112,6 +125,9 @@ export class GrokConfigManager {
 
     /** 1 項目を TOML テキストへ反映する（型ごとの上書き/削除ルール）。 */
     private applyField(text: string, field: SettingsFieldSpec, value: SettingsFieldValue): string {
+        if (field.type === 'directEdit') {
+            return text;
+        }
         if (field.type === 'boolean') {
             if (typeof value === 'boolean') {
                 return setScalar(text, field.path, value);
@@ -127,6 +143,7 @@ export class GrokConfigManager {
                 if (typeof field.max === 'number' && n > field.max) {
                     n = field.max;
                 }
+                if (field.integer) n = Math.trunc(n);
                 return setScalar(text, field.path, n);
             }
             return deleteScalar(text, field.path);

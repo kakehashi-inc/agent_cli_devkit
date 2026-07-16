@@ -164,6 +164,8 @@ export default {
         unsetWithDefault: 'Unset (default: {{default}})',
         enabled: 'Enabled',
         disabled: 'Disabled',
+        unknownValue: '{{value}} (saved value; not in current suggestions)',
+        directEditValue: 'Edit the file directly',
         saveSuccess: 'Settings saved',
         saveError: 'Failed to save settings',
         readError: 'Failed to read settings',
@@ -179,8 +181,7 @@ export default {
         field: {
             modelsDefault: {
                 label: 'Default model (models.default)',
-                desc: 'Model used for new sessions. Leave blank to unset.',
-                placeholder: 'e.g. grok-4.5',
+                desc: 'Model ID used for new sessions. Current suggestions and custom model IDs are accepted.',
             },
             modelsWebSearch: {
                 label: 'Web search model (models.web_search)',
@@ -188,7 +189,7 @@ export default {
             },
             modelsDefaultReasoningEffort: {
                 label: 'Reasoning effort (models.default_reasoning_effort)',
-                desc: 'Reasoning effort for the default model.',
+                desc: 'Reasoning effort for the default model, including none through xhigh when supported.',
             },
             modelsSessionSummary: {
                 label: 'Session summary model (models.session_summary)',
@@ -208,8 +209,7 @@ export default {
             },
             sandboxProfile: {
                 label: 'Sandbox (sandbox.profile)',
-                desc: 'Filesystem sandbox profile (off / workspace / read-only / strict / custom name).',
-                placeholder: 'e.g. workspace',
+                desc: 'Filesystem sandbox profile (off / workspace / devbox / read-only / strict / custom name).',
             },
             sandboxAutoAllowBash: {
                 label: 'Auto-allow bash (sandbox.auto_allow_bash)',
@@ -270,6 +270,246 @@ export default {
             featuresToolSearch: {
                 label: 'MCP tool search (features.tool_search)',
                 desc: 'Enables searching (on-demand loading) of MCP tools.',
+            },
+            modelsImageDescription: {
+                label: 'Image description model (models.image_description)',
+                desc: 'Model ID used to describe images. Current suggestions and custom model IDs are accepted.',
+            },
+            modelsMaxRetries: {
+                label: 'Inference retries (models.max_retries)',
+                desc: 'Global maximum retry count when model inference fails.',
+            },
+            modelsStreamToolCalls: {
+                label: 'Stream tool calls (models.stream_tool_calls)',
+                desc: 'Requests streamed tool-call output. Disable it for BYOK endpoints that do not support this request shape.',
+            },
+            toolsetFileToolset: {
+                label: 'File editing scheme (toolset.file_toolset)',
+                desc: 'Uses standard file editing or the hashline line-hash editing scheme. Default: standard.',
+            },
+            toolsetBashTimeoutSecs: {
+                label: 'Bash timeout (toolset.bash.timeout_secs)',
+                desc: 'Default foreground bash command timeout in seconds. Default: 120.',
+            },
+            toolsetBashOutputByteLimit: {
+                label: 'Bash output limit (toolset.bash.output_byte_limit)',
+                desc: 'Maximum bytes captured from bash command output. Default: 20000.',
+            },
+            toolsetBashMaxTimeoutSecs: {
+                label: 'Maximum bash timeout (toolset.bash.max_timeout_secs)',
+                desc: 'Upper limit in seconds for model-requested foreground bash timeouts. Default: 36000.',
+            },
+            toolsetBashAutoBackground: {
+                label: 'Background on timeout (toolset.bash.auto_background_on_timeout)',
+                desc: 'Moves a timed-out bash command into the background instead of stopping it. Default: on.',
+            },
+            toolsetWebFetchProxyEndpoint: {
+                label: 'WebFetch proxy (toolset.web_fetch.proxy_endpoint)',
+                desc: 'Proxy URL used for outbound web_fetch traffic.',
+            },
+            uiCompactMode: {
+                label: 'Compact display (ui.compact_mode)',
+                desc: 'Reduces TUI padding and decoration to fit more content in short terminals; enabled automatically at 20 rows or fewer.',
+            },
+            uiScreenMode: {
+                label: 'Screen mode (ui.screen_mode)',
+                desc: 'fullscreen uses the standard full-screen TUI; minimal leaves finalized output in native terminal scrollback.',
+            },
+            uiShowTimestamps: {
+                label: 'Show timestamps (ui.show_timestamps)',
+                desc: 'Shows timestamps on conversation and tool events. Default: on.',
+            },
+            uiShowTimeline: {
+                label: 'Show timeline (ui.show_timeline)',
+                desc: 'Shows session progress as a chronological timeline.',
+            },
+            uiSimpleMode: {
+                label: 'Simple input mode (ui.simple_mode)',
+                desc: 'Uses simplified input behavior without Vim input mode. Default: on.',
+            },
+            uiTheme: {
+                label: 'TUI theme (ui.theme)',
+                desc: 'Selects auto or a built-in Grok Build color theme. Saved themes outside the suggestions remain supported.',
+            },
+            uiRenderMermaid: {
+                label: 'Render Mermaid (ui.render_mermaid)',
+                desc: 'Selects automatic, always-on, or off for rendering Mermaid diagrams in the terminal.',
+            },
+            uiRememberToolApprovals: {
+                label: 'Remember tool approvals (ui.remember_tool_approvals)',
+                desc: 'Remembers approved tool actions during the session to reduce repeated confirmation prompts.',
+            },
+            uiShowThinkingBlocks: {
+                label: 'Show thinking blocks (ui.show_thinking_blocks)',
+                desc: 'Shows model reasoning/thinking blocks in the TUI, matching GROK_SHOW_THINKING_BLOCKS.',
+            },
+            uiPromptSuggestions: {
+                label: 'Prompt suggestions (ui.prompt_suggestions)',
+                desc: 'Shows contextual prompt suggestions in the input box.',
+            },
+            uiGroupToolVerbs: {
+                label: 'Group tool actions (ui.group_tool_verbs)',
+                desc: 'Groups consecutive similar tool operations into a single action display. Default: on.',
+            },
+            uiCollapsedEditBlocks: {
+                label: 'Collapse edit blocks (ui.collapsed_edit_blocks)',
+                desc: 'Shows file edit results collapsed by default. Default: off.',
+            },
+            uiScrollSpeed: {
+                label: 'Scroll speed (ui.scroll_speed)',
+                desc: 'Adjusts TUI scrolling speed from 1 through 100.',
+            },
+            uiScrollMode: {
+                label: 'Scroll input mode (ui.scroll_mode)',
+                desc: 'Automatically detects the device or fixes behavior for a mouse wheel or trackpad.',
+            },
+            uiScrollLines: {
+                label: 'Lines per scroll (ui.scroll_lines)',
+                desc: 'Sets the number of lines moved per wheel event from 1 through 10.',
+            },
+            uiInvertScroll: {
+                label: 'Invert scrolling (ui.invert_scroll)',
+                desc: 'Reverses TUI scroll direction for mouse or trackpad input.',
+            },
+            uiKeepTextSelection: {
+                label: 'Keep text selection (ui.keep_text_selection)',
+                desc: 'Uses flash, hold, or word-selection behavior for selected text. Saved custom values remain supported.',
+            },
+            featuresRemoteFetch: {
+                label: 'Remote settings fetch (features.remote_fetch)',
+                desc: 'Fetches model catalogs and remote settings from xAI backends. When off, only bundled model information is used. Default: on.',
+            },
+            featuresImageGen: {
+                label: 'Image generation (features.image_gen)',
+                desc: 'Enables the Grok Build image-generation tool.',
+            },
+            featuresImageEdit: {
+                label: 'Image editing (features.image_edit)',
+                desc: 'Enables the Grok Build image-editing tool.',
+            },
+            featuresVideoGen: {
+                label: 'Video generation (features.video_gen)',
+                desc: 'Enables the Grok Build video-generation tool.',
+            },
+            telemetryTraceUpload: {
+                label: 'Trace upload (telemetry.trace_upload)',
+                desc: 'Allows diagnostic session traces to be uploaded to xAI.',
+            },
+            cliUseLeader: {
+                label: 'Use leader process (cli.use_leader)',
+                desc: 'Uses the leader process that coordinates multiple Grok Build sessions.',
+            },
+            cliMinimumVersion: {
+                label: 'Minimum CLI version (cli.minimum_version)',
+                desc: 'Sets the minimum Grok Build CLI version required by managed or remote configuration.',
+            },
+            harnessDisableCodebaseUpload: {
+                label: 'Disable codebase upload (harness.disable_codebase_upload)',
+                desc: 'Blocks codebase upload by Grok Build hosting features.',
+            },
+            managedMcpsEnabled: {
+                label: 'Enable managed MCPs (managed_mcps.enabled)',
+                desc: 'Enables managed MCP servers distributed through organization or remote settings.',
+            },
+            compatCursorSkills: {
+                label: 'Discover Cursor skills (compat.cursor.skills)',
+                desc: 'Scans Cursor skill directories so Grok Build can use those skills. Default: on.',
+            },
+            compatCursorRules: {
+                label: 'Discover Cursor rules (compat.cursor.rules)',
+                desc: 'Scans .cursor/rules and loads the rules as Grok Build instructions. Default: on.',
+            },
+            compatCursorAgents: {
+                label: 'Discover Cursor agents (compat.cursor.agents)',
+                desc: 'Scans Cursor agent definitions so Grok Build can use those agents. Default: on.',
+            },
+            compatCursorMcps: {
+                label: 'Discover Cursor MCPs (compat.cursor.mcps)',
+                desc: 'Scans Cursor mcp.json configuration and imports its MCP servers. Default: on.',
+            },
+            compatCursorHooks: {
+                label: 'Discover Cursor hooks (compat.cursor.hooks)',
+                desc: 'Scans Cursor hook configuration and loads compatible hooks. Default: on.',
+            },
+            compatClaudeSkills: {
+                label: 'Discover Claude skills (compat.claude.skills)',
+                desc: 'Scans Claude Code skill directories so Grok Build can use those skills. Default: on.',
+            },
+            compatClaudeRules: {
+                label: 'Discover Claude rules (compat.claude.rules)',
+                desc: 'Scans Claude-compatible rules and loads them as Grok Build instructions. Default: on.',
+            },
+            compatClaudeAgents: {
+                label: 'Discover Claude agents (compat.claude.agents)',
+                desc: 'Scans Claude agent definitions plus CLAUDE.md and CLAUDE.local.md. Default: on.',
+            },
+            compatClaudeMcps: {
+                label: 'Discover Claude MCPs (compat.claude.mcps)',
+                desc: 'Scans Claude Code MCP configuration and imports its servers. Default: on.',
+            },
+            compatClaudeHooks: {
+                label: 'Discover Claude hooks (compat.claude.hooks)',
+                desc: 'Scans Claude Code hook configuration and loads compatible hooks. Default: on.',
+            },
+            modelsExtraHeaders: {
+                label: 'Shared model headers (models.extra_headers)',
+                desc: 'HTTP headers added to every model request; per-model values take precedence.',
+            },
+            modelsAllowedModels: {
+                label: 'Model allowlist (models.allowed_models)',
+                desc: 'Glob patterns restricting models selectable in the picker, as the default, or with -m.',
+            },
+            modelsHiddenModels: {
+                label: 'Hidden models (models.hidden_models)',
+                desc: 'Model IDs hidden from the picker but still usable with -m.',
+            },
+            modelsDisabledModels: {
+                label: 'Disabled models (models.disabled_models)',
+                desc: 'Model IDs removed from the catalog entirely; this takes precedence over hidden models.',
+            },
+            customModels: {
+                label: 'Custom model definitions (model.<id>)',
+                desc: 'Defines API connection, authentication, sampling, context, and retry settings for BYOK models.',
+            },
+            toolsetWebFetchAllowedDomains: {
+                label: 'Web fetch allowed domains (toolset.web_fetch.allowed_domains)',
+                desc: 'String array overriding the domains that web_fetch may access.',
+            },
+            mcpServers: {
+                label: 'MCP server definitions (mcp_servers.<name>)',
+                desc: 'Defines stdio or HTTP connections, environment variables, headers, and timeouts for MCP servers.',
+            },
+            permission: {
+                label: 'Permission rules (permission)',
+                desc: 'Defines tool allow, deny, and ask arrays plus detailed action, tool, and pattern rules.',
+            },
+            subagentsToggle: {
+                label: 'Per-subagent states (subagents.toggle)',
+                desc: 'Maps each subagent type to its enabled state.',
+            },
+            subagentsModels: {
+                label: 'Subagent models (subagents.models)',
+                desc: 'Maps each subagent type to the model ID it uses.',
+            },
+            skillsPaths: {
+                label: 'Additional skill paths (skills.paths)',
+                desc: 'Additional skill directories scanned by Grok Build.',
+            },
+            skillsDisabled: {
+                label: 'Disabled skills (skills.disabled)',
+                desc: 'Skill names that are discovered but not activated.',
+            },
+            pluginsPaths: {
+                label: 'Additional plugin paths (plugins.paths)',
+                desc: 'Additional plugin directories scanned by Grok Build.',
+            },
+            pluginsDisabled: {
+                label: 'Disabled plugins (plugins.disabled)',
+                desc: 'Plugin names that are discovered but not activated.',
+            },
+            pluginsEnabled: {
+                label: 'Enabled plugins (plugins.enabled)',
+                desc: 'Plugin names explicitly enabled, including project plugins that may default to off.',
             },
         },
     },

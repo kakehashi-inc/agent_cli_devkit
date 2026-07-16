@@ -161,6 +161,8 @@ export default {
         unsetWithDefault: 'Unset (default: {{default}})',
         enabled: 'Enabled',
         disabled: 'Disabled',
+        unknownValue: '{{value}} (saved value; not in current suggestions)',
+        directEditValue: 'Edit the file directly',
         saveSuccess: 'Settings saved',
         saveError: 'Failed to save settings',
         readError: 'Failed to read settings',
@@ -172,21 +174,20 @@ export default {
             security: 'Security & Behavior',
             display: 'Display',
             data: 'Data',
+            features: 'Agents & Features',
         },
         field: {
             model: {
                 label: 'Model (model)',
-                desc: 'Default model to use. Leave blank to unset.',
-                placeholder: 'e.g. gpt-5.5',
+                desc: 'Default model ID. Suggestions follow the current catalog; custom provider model IDs are accepted.',
             },
             modelProvider: {
                 label: 'Model provider (model_provider)',
                 desc: 'The model provider ID to use (any ID defined under [model_providers]). Default is openai.',
-                placeholder: 'e.g. openai',
             },
             modelReasoningEffort: {
                 label: 'Reasoning effort (model_reasoning_effort)',
-                desc: 'How much effort to spend reasoning. Higher improves quality and cost.',
+                desc: 'Model-dependent reasoning level from none through ultra. Higher levels improve depth but use more time and tokens.',
             },
             modelReasoningSummary: {
                 label: 'Reasoning summary (model_reasoning_summary)',
@@ -214,7 +215,7 @@ export default {
             },
             webSearch: {
                 label: 'Web search (web_search)',
-                desc: 'Web search behavior mode (disabled / cached / indexed / live). Default is cached.',
+                desc: 'Web search mode (disabled / cached / indexed / live). The normal default is cached, but full-access modes such as --yolo use live, so the unset label has no fixed default.',
             },
             personality: {
                 label: 'Personality (personality)',
@@ -259,6 +260,350 @@ export default {
             feedbackEnabled: {
                 label: 'Feedback (feedback.enabled)',
                 desc: 'Enable sending feedback.',
+            },
+            reviewModel: {
+                label: 'Review model (review_model)',
+                desc: 'Overrides the model used by /review. Unset uses the current session model. Custom model IDs are accepted.',
+            },
+            planModeReasoningEffort: {
+                label: 'Plan reasoning effort (plan_mode_reasoning_effort)',
+                desc: 'Overrides reasoning effort only while Codex is in plan mode. Unset follows model_reasoning_effort.',
+            },
+            modelAutoCompactTokenLimit: {
+                label: 'Auto-compact token limit (model_auto_compact_token_limit)',
+                desc: 'Overrides the token threshold that triggers conversation compaction. Unset uses model defaults.',
+            },
+            modelAutoCompactTokenLimitScope: {
+                label: 'Auto-compact token scope (model_auto_compact_token_limit_scope)',
+                desc: 'Measures the threshold against all tokens (total) or the body after the fixed prefix (body_after_prefix).',
+            },
+            toolOutputTokenLimit: {
+                label: 'Tool output token limit (tool_output_token_limit)',
+                desc: 'Maximum tokens retained in context for each tool output.',
+            },
+            modelCatalogJson: {
+                label: 'Model catalog JSON (model_catalog_json)',
+                desc: 'Path to a model-catalog override loaded only at startup.',
+            },
+            openAiBaseUrl: {
+                label: 'OpenAI API URL (openai_base_url)',
+                desc: 'Overrides the API base URL for the built-in OpenAI provider. This is separate from the ChatGPT login URL.',
+            },
+            ossProvider: {
+                label: 'OSS provider (oss_provider)',
+                desc: 'Local-model provider for --oss sessions. Unset prompts at startup; custom provider IDs are accepted.',
+            },
+            serviceTier: {
+                label: 'Service tier (service_tier)',
+                desc: 'Preferred service tier. Built-in examples are fast and flex; catalog-defined values are also accepted.',
+            },
+            approvalsReviewer: {
+                label: 'Approval reviewer (approvals_reviewer)',
+                desc: 'Chooses whether eligible approval requests go to the user or automatic review.',
+            },
+            defaultPermissions: {
+                label: 'Default permission profile (default_permissions)',
+                desc: 'Built-in or [permissions]-defined profile applied when Codex starts.',
+            },
+            sandboxNetworkAccess: {
+                label: 'Workspace network access (sandbox_workspace_write.network_access)',
+                desc: 'Allows outbound network access inside the workspace-write sandbox. Default: off.',
+            },
+            sandboxExcludeTmpdirEnvVar: {
+                label: 'Exclude TMPDIR writes (sandbox_workspace_write.exclude_tmpdir_env_var)',
+                desc: 'Excludes the directory named by $TMPDIR from workspace-write writable roots.',
+            },
+            sandboxExcludeSlashTmp: {
+                label: 'Exclude /tmp writes (sandbox_workspace_write.exclude_slash_tmp)',
+                desc: 'Excludes /tmp from workspace-write writable roots.',
+            },
+            tuiNotificationMethod: {
+                label: 'Terminal notification method (tui.notification_method)',
+                desc: 'Selects automatic detection, OSC 9, or the terminal bell for notifications.',
+            },
+            tuiNotificationCondition: {
+                label: 'Terminal notification condition (tui.notification_condition)',
+                desc: 'Notifies only when unfocused or always. Default: unfocused.',
+            },
+            tuiAlternateScreen: {
+                label: 'Alternate screen (tui.alternate_screen)',
+                desc: 'Selects automatic, always, or never for TUI alternate-screen use. auto preserves Zellij scrollback.',
+            },
+            tuiTheme: {
+                label: 'TUI theme (tui.theme)',
+                desc: 'Syntax-highlighting theme saved by /theme. Custom .tmTheme files under $CODEX_HOME/themes are supported.',
+            },
+            historyMaxBytes: {
+                label: 'History size limit (history.max_bytes)',
+                desc: 'Maximum history-file size in bytes. Oldest entries are trimmed when exceeded.',
+            },
+            checkForUpdateOnStartup: {
+                label: 'Check updates at startup (check_for_update_on_startup)',
+                desc: 'Checks for a newer Codex version at startup. Default: on.',
+            },
+            disablePasteBurst: {
+                label: 'Disable paste-burst detection (disable_paste_burst)',
+                desc: 'Disables TUI detection that treats a rapid burst of input as a paste. Default: off.',
+            },
+            modelInstructionsFile: {
+                label: 'Base instructions file (model_instructions_file)',
+                desc: 'Path to a file that replaces the built-in Codex base instructions.',
+            },
+            developerInstructions: {
+                label: 'Additional developer instructions (developer_instructions)',
+                desc: 'Additional user instructions injected before AGENTS.md.',
+            },
+            compactPrompt: {
+                label: 'Compact prompt (compact_prompt)',
+                desc: 'Inline override for the built-in history-compaction prompt.',
+            },
+            experimentalCompactPromptFile: {
+                label: 'Compact prompt file (experimental_compact_prompt_file)',
+                desc: 'Path to a file containing an experimental history-compaction prompt override.',
+            },
+            logDir: {
+                label: 'Log directory (log_dir)',
+                desc: 'Overrides the Codex log directory. Setting it explicitly also enables codex-tui.log.',
+            },
+            sqliteHome: {
+                label: 'SQLite state directory (sqlite_home)',
+                desc: 'Overrides the directory for SQLite-backed runtime state.',
+            },
+            backgroundTerminalMaxTimeout: {
+                label: 'Background terminal wait limit (background_terminal_max_timeout)',
+                desc: 'Maximum empty write_stdin wait in milliseconds for background terminals. Default: five minutes.',
+            },
+            cliAuthCredentialsStore: {
+                label: 'Login credential store (cli_auth_credentials_store)',
+                desc: 'Stores CLI login credentials in a file, OS keyring, or automatic selection. Default: file.',
+            },
+            chatgptBaseUrl: {
+                label: 'ChatGPT login URL (chatgpt_base_url)',
+                desc: 'Base URL for the ChatGPT authentication flow, separate from the OpenAI API endpoint.',
+            },
+            forcedChatgptWorkspaceId: {
+                label: 'Forced ChatGPT workspace (forced_chatgpt_workspace_id)',
+                desc: 'Restricts ChatGPT login to the specified workspace ID.',
+            },
+            forcedLoginMethod: {
+                label: 'Forced login method (forced_login_method)',
+                desc: 'Forces ChatGPT or API-key login instead of automatic selection.',
+            },
+            mcpOauthCredentialsStore: {
+                label: 'MCP OAuth credential store (mcp_oauth_credentials_store)',
+                desc: 'Stores MCP OAuth credentials in a file, OS keyring, or automatic selection. Default: auto.',
+            },
+            mcpOauthCallbackPort: {
+                label: 'MCP OAuth callback port (mcp_oauth_callback_port)',
+                desc: 'Fixes the local callback listener port for MCP OAuth to a value from 1 through 65535.',
+            },
+            mcpOauthCallbackUrl: {
+                label: 'MCP OAuth callback URL (mcp_oauth_callback_url)',
+                desc: 'Overrides the MCP OAuth redirect URL base for remote development environments and similar setups.',
+            },
+            windowsWslSetupAcknowledged: {
+                label: 'WSL setup acknowledged (windows_wsl_setup_acknowledged)',
+                desc: 'Records that Windows WSL onboarding was acknowledged. Normally managed by Codex.',
+            },
+            suppressUnstableFeaturesWarning: {
+                label: 'Hide unstable-feature warning (suppress_unstable_features_warning)',
+                desc: 'Suppresses the warning shown when development or experimental feature flags are enabled.',
+            },
+            shellEnvironmentInherit: {
+                label: 'Shell environment inheritance (shell_environment_policy.inherit)',
+                desc: 'Inherits all variables, core variables only, or none in child processes.',
+            },
+            shellEnvironmentIgnoreDefaultExcludes: {
+                label: 'Ignore secret-name exclusions (shell_environment_policy.ignore_default_excludes)',
+                desc: 'Disables default exclusion of names containing KEY, SECRET, or TOKEN. Use carefully to avoid exposing secrets.',
+            },
+            shellEnvironmentExperimentalUseProfile: {
+                label: 'Use shell profile (shell_environment_policy.experimental_use_profile)',
+                desc: 'Builds child-process environments through the user shell profile. Experimental.',
+            },
+            agentsMaxThreads: {
+                label: 'Concurrent agents (agents.max_threads)',
+                desc: 'Maximum concurrently open agent threads. Default: 6.',
+            },
+            agentsMaxDepth: {
+                label: 'Agent nesting depth (agents.max_depth)',
+                desc: 'Maximum depth at which subagents can spawn children. The root is depth 0; default is 1.',
+            },
+            agentsJobMaxRuntimeSeconds: {
+                label: 'Agent job runtime (agents.job_max_runtime_seconds)',
+                desc: 'Default maximum runtime per spawn_agents_on_csv worker. Unset falls back to 1800 seconds.',
+            },
+            agentsInterruptMessage: {
+                label: 'Record interrupt message (agents.interrupt_message)',
+                desc: 'Adds a model-visible history message when an agent turn is interrupted. Default: on.',
+            },
+            featuresGoals: {
+                label: 'Goals (features.goals)',
+                desc: 'Enables goal-based outcome and progress tracking for long tasks. Stable and on by default.',
+            },
+            featuresHooks: {
+                label: 'Lifecycle hooks (features.hooks)',
+                desc: 'Loads configured lifecycle hooks around events such as tool execution. On by default.',
+            },
+            featuresFastMode: {
+                label: 'Fast mode (features.fast_mode)',
+                desc: 'Makes fast mode available for supported models. Stable and on by default.',
+            },
+            featuresMemories: {
+                label: 'Local memories (features.memories)',
+                desc: 'Enables experimental generation and use of local memories from prior tasks. Off by default.',
+            },
+            memoriesGenerate: {
+                label: 'Generate memories (memories.generate_memories)',
+                desc: 'Generates local memories from eligible new tasks for future use. Requires features.memories.',
+            },
+            memoriesUse: {
+                label: 'Use memories (memories.use_memories)',
+                desc: 'Injects existing local memories into future session context. Requires features.memories.',
+            },
+            memoriesDisableOnExternalContext: {
+                label: 'Skip external-context memories (memories.disable_on_external_context)',
+                desc: 'Excludes tasks that used external context such as MCP, web search, or tool search from memory generation.',
+            },
+            memoriesMinRateLimitRemainingPercent: {
+                label: 'Memory rate-limit threshold (memories.min_rate_limit_remaining_percent)',
+                desc: 'Minimum remaining Codex rate-limit percentage, from 0 through 100, required before memory generation starts.',
+            },
+            memoriesExtractModel: {
+                label: 'Memory extraction model (memories.extract_model)',
+                desc: 'Overrides the model used to extract memory candidates from each task.',
+            },
+            memoriesConsolidationModel: {
+                label: 'Memory consolidation model (memories.consolidation_model)',
+                desc: 'Overrides the model used to organize and consolidate local memories.',
+            },
+            featuresMultiAgent: {
+                label: 'Multi-agent (features.multi_agent)',
+                desc: 'Enables spawning, steering, and waiting on subagents. On by default.',
+            },
+            featuresPersonality: {
+                label: 'Personality feature (features.personality)',
+                desc: 'Enables the personality setting and in-session response-style controls. On by default.',
+            },
+            featuresRemotePlugin: {
+                label: 'Remote plugins (features.remote_plugin)',
+                desc: 'Enables retrieval and use of remotely distributed Codex plugins. On by default.',
+            },
+            featuresShellSnapshot: {
+                label: 'Shell environment snapshot (features.shell_snapshot)',
+                desc: 'Captures the startup shell environment for reuse by later commands. On by default.',
+            },
+            featuresShellTool: {
+                label: 'Shell tool (features.shell_tool)',
+                desc: 'Enables the shell command-execution tool. Stable and on by default.',
+            },
+            featuresUnifiedExec: {
+                label: 'Unified execution sessions (features.unified_exec)',
+                desc: 'Enables the unified command and follow-up stdin execution backend. Stable and off by default.',
+            },
+            featuresApps: {
+                label: 'App connectors (features.apps)',
+                desc: 'Allows Codex to use connected apps and connectors. Stable and on by default.',
+            },
+            featuresNetworkProxy: {
+                label: 'Sandbox network proxy (features.network_proxy)',
+                desc: 'Enables permission-profile-controlled sandbox networking. Experimental and off by default.',
+            },
+            featuresEnableRequestCompression: {
+                label: 'Request compression (features.enable_request_compression)',
+                desc: 'Compresses transport data for supported model requests. Stable and on by default.',
+            },
+            featuresSkillMcpDependencyInstall: {
+                label: 'Install skill MCP dependencies (features.skill_mcp_dependency_install)',
+                desc: 'Enables the installation flow for MCP dependencies required by skills. Stable and on by default.',
+            },
+            featuresPreventIdleSleep: {
+                label: 'Prevent sleep while running (features.prevent_idle_sleep)',
+                desc: 'Prevents system idle sleep while Codex is working. Experimental and off by default.',
+            },
+            modelProviders: {
+                label: 'Model provider definitions (model_providers.<id>)',
+                desc: 'Defines endpoints, authentication, headers, and retry settings for custom model providers.',
+            },
+            approvalPolicyGranular: {
+                label: 'Granular approval policy (approval_policy.granular)',
+                desc: 'Controls sandbox escalation, rules, MCP elicitations, permission requests, and skill approvals separately.',
+            },
+            sandboxWritableRoots: {
+                label: 'Additional writable roots (sandbox_workspace_write.writable_roots)',
+                desc: 'Paths writable outside the workspace when the workspace-write sandbox is active.',
+            },
+            permissionsProfiles: {
+                label: 'Permission profiles (permissions.<name>)',
+                desc: 'Defines filesystem, workspace-root, and network rules for named permission profiles.',
+            },
+            notify: {
+                label: 'External notifier command (notify)',
+                desc: 'Program and argument array invoked for turn-completion notifications. Disabled when unset.',
+            },
+            tuiNotifications: {
+                label: 'TUI notification events (tui.notifications)',
+                desc: 'Enables or disables desktop notifications, or limits them to selected event IDs. On by default.',
+            },
+            tuiStatusLine: {
+                label: 'TUI status line (tui.status_line)',
+                desc: 'Orders footer item IDs such as model, remaining context, and Git branch.',
+            },
+            tuiTerminalTitle: {
+                label: 'Terminal title (tui.terminal_title)',
+                desc: 'Orders the item IDs shown in the terminal window or tab title.',
+            },
+            tuiKeymap: {
+                label: 'TUI key bindings (tui.keymap)',
+                desc: 'Overrides TUI action bindings for contexts such as global, composer, and chat.',
+            },
+            projectDocFallbackFilenames: {
+                label: 'Instruction fallback filenames (project_doc_fallback_filenames)',
+                desc: 'Ordered fallback filenames checked when AGENTS.md is absent at a directory level.',
+            },
+            projectRootMarkers: {
+                label: 'Project root markers (project_root_markers)',
+                desc: 'Filenames used while searching parent directories to determine the project root.',
+            },
+            shellEnvironmentExclude: {
+                label: 'Environment exclusion patterns (shell_environment_policy.exclude)',
+                desc: 'Case-insensitive glob patterns removed from the environment inherited by child processes.',
+            },
+            shellEnvironmentSet: {
+                label: 'Environment overrides (shell_environment_policy.set)',
+                desc: 'Key-value map that explicitly adds or overrides environment variables for child processes.',
+            },
+            shellEnvironmentIncludeOnly: {
+                label: 'Environment allowlist (shell_environment_policy.include_only)',
+                desc: 'When non-empty, limits inherited environment variables to matching names.',
+            },
+            projects: {
+                label: 'Project trust settings (projects)',
+                desc: 'Records trusted or untrusted worktree state by absolute path.',
+            },
+            agentsDefinitions: {
+                label: 'Agent definitions (agents.<name>)',
+                desc: 'Defines named subagents, including descriptions, config files, and nickname candidates.',
+            },
+            skillsConfig: {
+                label: 'Per-skill configuration (skills.config)',
+                desc: 'Array of tables that enables or disables a skill by its SKILL.md path.',
+            },
+            hooks: {
+                label: 'Lifecycle hooks (hooks)',
+                desc: 'Defines inline command hooks for events such as before and after tool use.',
+            },
+            mcpServers: {
+                label: 'MCP server definitions (mcp_servers.<id>)',
+                desc: 'Defines stdio or HTTP connections, authentication, timeouts, and tool controls for MCP servers.',
+            },
+            apps: {
+                label: 'Per-app configuration (apps.<id>)',
+                desc: 'Controls app enablement, destructive operations, approvals, and individual tools.',
+            },
+            toolSuggest: {
+                label: 'Tool suggestions (tool_suggest)',
+                desc: 'Defines which connectors or plugins Codex may suggest for installation and which are disabled.',
             },
         },
     },

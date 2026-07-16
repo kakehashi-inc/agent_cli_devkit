@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed the Claude, Codex, and Grok settings editors against current CLI references: added newly supported scalar and structured settings, updated model/reasoning/provider suggestions while retaining custom-value support, and gave every field a readable title with its exact key and a specific description. Structured settings now identify direct-file editing in their own value rows instead of using a global notice.
+- Improved unset handling across all settings editors: documented defaults are shown where confirmed, fields without a fixed default remain simply unset, text and number inputs no longer use unset placeholders, and clearing a saved input removes its configuration key.
+
+### Fixed
+
+- Saved values outside the current suggestions remain visible and preserved, while saving another field no longer removes untouched structured or future settings; invalid existing TOML is also rejected before changes are written.
+
 ## [0.5.5] - 2026-07-13
 
 ### Added

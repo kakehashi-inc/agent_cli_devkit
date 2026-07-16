@@ -166,6 +166,8 @@ export default {
         unsetWithDefault: '未設定（既定: {{default}}）',
         enabled: '有効',
         disabled: '無効',
+        unknownValue: '{{value}}（保存済みの値・現在の候補外）',
+        directEditValue: 'ファイルを直接編集',
         saveSuccess: '設定を保存しました',
         saveError: '設定の保存に失敗しました',
         readError: '設定の読み込みに失敗しました',
@@ -181,8 +183,7 @@ export default {
         field: {
             modelsDefault: {
                 label: '既定モデル（models.default）',
-                desc: '新規セッションで使用するモデル。空欄で未設定。',
-                placeholder: '例: grok-4.5',
+                desc: '新規セッションで使用するモデル ID。現在の候補とカスタムモデル ID の両方を入力できます。',
             },
             modelsWebSearch: {
                 label: 'Web検索モデル（models.web_search）',
@@ -190,7 +191,7 @@ export default {
             },
             modelsDefaultReasoningEffort: {
                 label: '推論の労力（models.default_reasoning_effort）',
-                desc: '既定モデルの推論にかける労力。',
+                desc: '既定モデルの推論レベル。対応モデルでは none から xhigh まで指定できます。',
             },
             modelsSessionSummary: {
                 label: 'セッション要約モデル（models.session_summary）',
@@ -210,8 +211,7 @@ export default {
             },
             sandboxProfile: {
                 label: 'サンドボックス（sandbox.profile）',
-                desc: 'ファイルシステムサンドボックスのプロファイル（off / workspace / read-only / strict / カスタム名）。',
-                placeholder: '例: workspace',
+                desc: 'ファイルシステムサンドボックスのプロファイル（off / workspace / devbox / read-only / strict / カスタム名）。',
             },
             sandboxAutoAllowBash: {
                 label: 'bash 自動許可（sandbox.auto_allow_bash）',
@@ -272,6 +272,246 @@ export default {
             featuresToolSearch: {
                 label: 'MCP ツール検索（features.tool_search）',
                 desc: 'MCP ツールの検索（オンデマンド読み込み）を有効にします。',
+            },
+            modelsImageDescription: {
+                label: '画像説明モデル（models.image_description）',
+                desc: '画像の内容を説明するときに使用するモデル ID です。現在の候補とカスタムモデル ID の両方を入力できます。',
+            },
+            modelsMaxRetries: {
+                label: '推論の再試行回数（models.max_retries）',
+                desc: 'モデル推論が失敗した場合に行う全モデル共通の最大再試行回数です。',
+            },
+            modelsStreamToolCalls: {
+                label: 'ツール呼出しをストリーム（models.stream_tool_calls）',
+                desc: 'モデル要求でツール呼び出しをストリーミング形式にします。対応しない BYOK エンドポイントでは無効にします。',
+            },
+            toolsetFileToolset: {
+                label: 'ファイル編集方式（toolset.file_toolset）',
+                desc: 'standard は通常のファイル編集、hashline は行ハッシュを使う編集ツール方式です。既定は standard です。',
+            },
+            toolsetBashTimeoutSecs: {
+                label: 'bash実行時間（toolset.bash.timeout_secs）',
+                desc: 'フォアグラウンド bash コマンドの既定タイムアウト秒数です。既定は 120 秒です。',
+            },
+            toolsetBashOutputByteLimit: {
+                label: 'bash出力上限（toolset.bash.output_byte_limit）',
+                desc: 'bash コマンドから取得する出力の最大バイト数です。既定は 20000 バイトです。',
+            },
+            toolsetBashMaxTimeoutSecs: {
+                label: 'bash最大実行時間（toolset.bash.max_timeout_secs）',
+                desc: 'モデルが要求できるフォアグラウンド bash タイムアウトの上限秒数です。既定は 36000 秒です。',
+            },
+            toolsetBashAutoBackground: {
+                label: 'タイムアウト時にバックグラウンド化（toolset.bash.auto_background_on_timeout）',
+                desc: 'bash コマンドがタイムアウトしたとき終了せずバックグラウンド実行へ移します。既定は有効です。',
+            },
+            toolsetWebFetchProxyEndpoint: {
+                label: 'WebFetchプロキシ（toolset.web_fetch.proxy_endpoint）',
+                desc: 'web_fetch の外向き通信に使用するプロキシ URL を指定します。',
+            },
+            uiCompactMode: {
+                label: 'コンパクト表示（ui.compact_mode）',
+                desc: 'TUI の余白や装飾を減らして、狭い端末に多くの内容を表示します。20行以下では自動的に使われます。',
+            },
+            uiScreenMode: {
+                label: '画面モード（ui.screen_mode）',
+                desc: 'fullscreen は標準の全画面TUI、minimal は確定済み出力を端末の通常スクロールバックへ残します。',
+            },
+            uiShowTimestamps: {
+                label: '時刻を表示（ui.show_timestamps）',
+                desc: '会話やツールイベントに時刻を表示します。既定は有効です。',
+            },
+            uiShowTimeline: {
+                label: 'タイムラインを表示（ui.show_timeline）',
+                desc: 'セッション内の進行を時系列のタイムラインとして表示します。',
+            },
+            uiSimpleMode: {
+                label: 'シンプル入力モード（ui.simple_mode）',
+                desc: 'Vim 入力モードを使わない簡素な入力操作にします。既定は有効です。',
+            },
+            uiTheme: {
+                label: 'TUIテーマ（ui.theme）',
+                desc: 'auto または組み込みの Grok Build カラーテーマを選びます。候補外の保存済みテーマも保持できます。',
+            },
+            uiRenderMermaid: {
+                label: 'Mermaid描画（ui.render_mermaid）',
+                desc: 'Mermaid 図の端末描画を自動判定、常時有効、無効から選びます。',
+            },
+            uiRememberToolApprovals: {
+                label: 'ツール承認を記憶（ui.remember_tool_approvals）',
+                desc: 'セッション中に許可したツール操作を記憶し、同じ承認確認の繰り返しを減らします。',
+            },
+            uiShowThinkingBlocks: {
+                label: '思考ブロックを表示（ui.show_thinking_blocks）',
+                desc: 'モデルの推論・思考ブロックを TUI に表示します。環境変数 GROK_SHOW_THINKING_BLOCKS と同じ機能です。',
+            },
+            uiPromptSuggestions: {
+                label: 'プロンプト候補（ui.prompt_suggestions）',
+                desc: '入力欄に状況に応じたプロンプト候補を表示します。',
+            },
+            uiGroupToolVerbs: {
+                label: 'ツール動作をまとめる（ui.group_tool_verbs）',
+                desc: '連続した類似ツール操作を一つの動作グループとして表示します。既定は有効です。',
+            },
+            uiCollapsedEditBlocks: {
+                label: '編集ブロックを折りたたむ（ui.collapsed_edit_blocks）',
+                desc: 'ファイル編集結果を既定で折りたたんで表示します。既定は無効です。',
+            },
+            uiScrollSpeed: {
+                label: 'スクロール速度（ui.scroll_speed）',
+                desc: 'TUI のスクロール速度を 1～100 で調整します。',
+            },
+            uiScrollMode: {
+                label: 'スクロール入力方式（ui.scroll_mode）',
+                desc: '入力機器を自動判定するか、ホイールまたはトラックパッド向けの挙動へ固定します。',
+            },
+            uiScrollLines: {
+                label: '1回のスクロール行数（ui.scroll_lines）',
+                desc: 'ホイール入力1回で移動する行数を 1～10 で指定します。',
+            },
+            uiInvertScroll: {
+                label: 'スクロール方向を反転（ui.invert_scroll）',
+                desc: 'マウスやトラックパッドによるTUIスクロールの方向を反転します。',
+            },
+            uiKeepTextSelection: {
+                label: 'テキスト選択の保持（ui.keep_text_selection）',
+                desc: '選択範囲を短く点滅、保持、単語選択向けの動作から選びます。候補外の保存済み値も保持できます。',
+            },
+            featuresRemoteFetch: {
+                label: 'リモート設定取得（features.remote_fetch）',
+                desc: 'xAI バックエンドからモデルカタログとリモート設定を取得します。無効時は同梱のモデル情報だけを使います。既定は有効です。',
+            },
+            featuresImageGen: {
+                label: '画像生成（features.image_gen）',
+                desc: 'Grok Build の画像生成ツールを有効にします。',
+            },
+            featuresImageEdit: {
+                label: '画像編集（features.image_edit）',
+                desc: 'Grok Build の画像編集ツールを有効にします。',
+            },
+            featuresVideoGen: {
+                label: '動画生成（features.video_gen）',
+                desc: 'Grok Build の動画生成ツールを有効にします。',
+            },
+            telemetryTraceUpload: {
+                label: 'トレース送信（telemetry.trace_upload）',
+                desc: '診断用のセッショントレースを xAI へアップロードできるようにします。',
+            },
+            cliUseLeader: {
+                label: 'リーダープロセスを使用（cli.use_leader）',
+                desc: '複数の Grok Build セッションを調整するリーダープロセスを利用します。',
+            },
+            cliMinimumVersion: {
+                label: 'CLI最低バージョン（cli.minimum_version）',
+                desc: '管理された設定などが要求する Grok Build CLI の最低バージョンを指定します。',
+            },
+            harnessDisableCodebaseUpload: {
+                label: 'コードベース送信を無効化（harness.disable_codebase_upload）',
+                desc: 'Grok Build のホスト機能によるコードベースのアップロードを禁止します。',
+            },
+            managedMcpsEnabled: {
+                label: '管理MCPを有効化（managed_mcps.enabled）',
+                desc: '組織またはリモート設定から配布される管理対象 MCP サーバーを有効にします。',
+            },
+            compatCursorSkills: {
+                label: 'Cursorスキルを検出（compat.cursor.skills）',
+                desc: 'Cursor のスキルディレクトリを検索し、Grok Build から利用できるようにします。既定は有効です。',
+            },
+            compatCursorRules: {
+                label: 'Cursorルールを検出（compat.cursor.rules）',
+                desc: '.cursor/rules のルールを検索し、Grok Build の指示として読み込みます。既定は有効です。',
+            },
+            compatCursorAgents: {
+                label: 'Cursorエージェントを検出（compat.cursor.agents）',
+                desc: 'Cursor のエージェント定義を検索し、Grok Build から利用できるようにします。既定は有効です。',
+            },
+            compatCursorMcps: {
+                label: 'Cursor MCPを検出（compat.cursor.mcps）',
+                desc: 'Cursor の mcp.json 設定を検索し、MCP サーバーを取り込みます。既定は有効です。',
+            },
+            compatCursorHooks: {
+                label: 'Cursorフックを検出（compat.cursor.hooks）',
+                desc: 'Cursor のフック設定を検索し、互換フックとして読み込みます。既定は有効です。',
+            },
+            compatClaudeSkills: {
+                label: 'Claudeスキルを検出（compat.claude.skills）',
+                desc: 'Claude Code のスキルディレクトリを検索し、Grok Build から利用できるようにします。既定は有効です。',
+            },
+            compatClaudeRules: {
+                label: 'Claudeルールを検出（compat.claude.rules）',
+                desc: 'Claude 互換のルールを検索し、Grok Build の指示として読み込みます。既定は有効です。',
+            },
+            compatClaudeAgents: {
+                label: 'Claudeエージェントを検出（compat.claude.agents）',
+                desc: 'Claude のエージェント定義と CLAUDE.md / CLAUDE.local.md を検索します。既定は有効です。',
+            },
+            compatClaudeMcps: {
+                label: 'Claude MCPを検出（compat.claude.mcps）',
+                desc: 'Claude Code の MCP 設定を検索し、MCP サーバーを取り込みます。既定は有効です。',
+            },
+            compatClaudeHooks: {
+                label: 'Claudeフックを検出（compat.claude.hooks）',
+                desc: 'Claude Code のフック設定を検索し、互換フックとして読み込みます。既定は有効です。',
+            },
+            modelsExtraHeaders: {
+                label: 'モデル共通ヘッダー（models.extra_headers）',
+                desc: 'すべてのモデル要求へ追加する HTTP ヘッダーのマップです。モデル個別の設定が優先します。',
+            },
+            modelsAllowedModels: {
+                label: 'モデル許可リスト（models.allowed_models）',
+                desc: 'モデル選択画面、既定モデル、-m で選べるモデルを glob パターンで制限する配列です。',
+            },
+            modelsHiddenModels: {
+                label: '非表示モデル（models.hidden_models）',
+                desc: 'モデル選択画面から隠すモデル ID の配列です。-m では引き続き指定できます。',
+            },
+            modelsDisabledModels: {
+                label: '無効モデル（models.disabled_models）',
+                desc: 'モデルカタログから完全に除外するモデル ID の配列です。非表示設定より優先します。',
+            },
+            customModels: {
+                label: 'カスタムモデル定義（model.<id>）',
+                desc: 'BYOK モデルごとの API 接続、認証、サンプリング、コンテキスト、再試行設定を定義します。',
+            },
+            toolsetWebFetchAllowedDomains: {
+                label: 'Web取得許可ドメイン（toolset.web_fetch.allowed_domains）',
+                desc: 'web_fetch がアクセスできるドメインを上書きする文字列配列です。',
+            },
+            mcpServers: {
+                label: 'MCPサーバー定義（mcp_servers.<name>）',
+                desc: 'MCP サーバーごとの stdio または HTTP 接続、環境変数、ヘッダー、タイムアウトを定義します。',
+            },
+            permission: {
+                label: '権限規則（permission）',
+                desc: 'ツール利用の allow、deny、ask 配列と、action・tool・pattern を持つ詳細規則を定義します。',
+            },
+            subagentsToggle: {
+                label: 'サブエージェント個別状態（subagents.toggle）',
+                desc: 'サブエージェントの種類ごとに有効・無効を指定するマップです。',
+            },
+            subagentsModels: {
+                label: 'サブエージェントモデル（subagents.models）',
+                desc: 'サブエージェントの種類ごとに使用するモデル ID を指定するマップです。',
+            },
+            skillsPaths: {
+                label: '追加スキルパス（skills.paths）',
+                desc: 'Grok Build が追加で検索するスキルディレクトリの配列です。',
+            },
+            skillsDisabled: {
+                label: '無効スキル（skills.disabled）',
+                desc: '検出はするものの有効化しないスキル名の配列です。',
+            },
+            pluginsPaths: {
+                label: '追加プラグインパス（plugins.paths）',
+                desc: 'Grok Build が追加で検索するプラグインディレクトリの配列です。',
+            },
+            pluginsDisabled: {
+                label: '無効プラグイン（plugins.disabled）',
+                desc: '検出はするものの有効化しないプラグイン名の配列です。',
+            },
+            pluginsEnabled: {
+                label: '有効プラグイン（plugins.enabled）',
+                desc: '明示的に有効化するプラグイン名の配列です。プロジェクトプラグインが既定で無効な場合に使用します。',
             },
         },
     },

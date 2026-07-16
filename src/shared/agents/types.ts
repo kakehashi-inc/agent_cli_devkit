@@ -310,28 +310,36 @@ export interface PluginCapabilities {
 // ============================================================
 
 // 設定項目の値の型。
-// - boolean: true/false（スイッチで編集）。
-// - string:  文字列（オプションで選択肢 choices を持つ場合はセレクト）。
+// - boolean: 未設定/true/false の 3 状態セレクトで編集。
+// - string: 文字列（choices のみならセレクト、allowCustom 付きなら候補入力）。
 // - number:  数値（オプションで min/max を持つ）。
-// - envFlag: env オブジェクト内の特定キー（envKey）の有無で ON/OFF するフラグ。
-//            ON で env[envKey] = onValue（既定 "1"）を設定、OFF で env[envKey] を削除する。
-export type SettingsFieldType = 'boolean' | 'string' | 'number' | 'envFlag';
+// - envFlag: env オブジェクト内の特定キー（envKey）を編集するフラグ。
+//            ON で env[envKey] = onValue（既定 "1"）を設定、OFF で削除する。
+//            onValue と異なる保存済み値は string として表示・保持する。
+// - directEdit: 配列・テーブル・オブジェクトなど、設定画面では編集せずファイルの直接編集へ案内する。
+export type SettingsFieldType = 'boolean' | 'string' | 'number' | 'envFlag' | 'directEdit';
 
-// 編集対象の 1 設定項目の定義（registry）。
-// この registry に項目を 1 つ追加すると、読み書き・UI 表示まで反映される。
+// 表示・編集対象の 1 設定項目の定義（registry）。
+// 編集可能型は読み書きと UI へ反映し、directEdit は UI の案内行だけを生成する。
 export interface SettingsFieldSpec {
     key: string; // i18n キー兼識別子
     path: string; // 設定ファイル上のキー（agent により JSON トップレベルキー / TOML ドット区切りキー）
     group: string; // UI のグループ見出し用キー。i18n: settings.group.<group>
     type: SettingsFieldType;
-    choices?: string[]; // type='string' で選択肢を限定する場合
+    choices?: string[]; // type='string' で表示する候補（allowCustom=false なら選択肢を限定）
+    // choices にないモデル ID なども受け付ける候補入力。保存済みの未知値もそのまま表示する。
+    allowCustom?: boolean;
     envKey?: string; // type='envFlag' のとき: env オブジェクト内の対象キー
     onValue?: string; // type='envFlag' のとき: ON 時に設定する値（既定 '1'）
     min?: number; // type='number' のとき: 最小値（クランプに使用）
     max?: number; // type='number' のとき: 最大値（クランプに使用）
+    integer?: boolean; // type='number' のとき: 整数へ丸める
     // type='boolean' のとき: 未設定時に agent が実際に採用する既定値。
     // UI で「未設定（既定: 有効/無効）」と表示するために使う。未確定なら省略する。
     defaultOn?: boolean;
+    // choices を持つ type='string' のとき: 未設定時に agent が採用する公式の固定既定値。
+    // UI で「未設定（既定: <値>）」と表示するために使う。環境依存・未確定なら省略する。
+    defaultValue?: string;
 }
 
 // 設定項目 1 件の現在値（読み取り結果）。
@@ -347,15 +355,15 @@ export interface SettingsReadResult {
     exists: boolean;
     // 各登録項目の現在値（key -> 値）。
     values: Record<string, SettingsFieldValue>;
-    // 編集対象項目の定義（registry）。レンダラーはこれを使って UI を描くため、
+    // 表示・編集対象項目の定義（registry）。レンダラーはこれを使って UI を描くため、
     // os 依存の shared/constants を import する必要がない（schema の単一ソースはメイン側）。
     fields: SettingsFieldSpec[];
     // 直接編集用: 設定ファイルの生テキスト全体（JSON / TOML）。存在しなければ null。
     raw: string | null;
 }
 
-// テーブル編集による設定保存の入力（key -> 値）。
-// 関係ない項目には触れず、登録項目のみを差分マージで反映する。
+// テーブル編集による設定保存の入力（変更した key -> 値）。
+// 関係ない項目と未編集項目には触れず、含まれる登録項目だけを差分マージで反映する。
 export type SettingsValues = Record<string, SettingsFieldValue>;
 
 // 設定保存の結果。
