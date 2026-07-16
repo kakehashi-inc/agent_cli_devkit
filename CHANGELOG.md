@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-07-16
+
 ### Changed
 
 - Refreshed the Claude, Codex, and Grok settings editors against current CLI references: added newly supported scalar and structured settings, updated model/reasoning/provider suggestions while retaining custom-value support, and gave every field a readable title with its exact key and a specific description. Structured settings now identify direct-file editing in their own value rows instead of using a global notice.
