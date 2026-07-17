@@ -23,6 +23,8 @@ import {
     CloudDownloadOutlined as CloudDownloadIcon,
 } from '@mui/icons-material';
 import type { AssetEntry, AssetKind, AssetListReport, ClaudeEnvironment } from '@shared/agents/claude/types';
+import { AssetSearchField } from '../../components/assets/AssetSearchField';
+import { filterAssetEntries } from '../../utils/assetSearch';
 import { AssetEntriesTable, computeFitWidth, type FmColumn } from './AssetEntriesTable';
 
 // セクションのタブ値: エージェント / スキル（AssetKind）に加え、設定タブを持つ。
@@ -69,6 +71,10 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         agents: new Set(),
         skills: new Set(),
     });
+    const [searchQueries, setSearchQueries] = useState<Record<AssetKind, string>>({
+        agents: '',
+        skills: '',
+    });
     const [busy, setBusy] = useState(false);
     // 上書き確認: zip / md 共通。uploadKind で確定 IPC を呼び分ける。
     const [confirm, setConfirm] = useState<{
@@ -99,6 +105,17 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
             setViewFull({ name: entry.name, content: result.content });
         } catch {
             onNotify(t('claude.assetManager.viewFullError'), 'error');
+        }
+    };
+
+    const handleReveal = async (entry: AssetEntry) => {
+        try {
+            const result = await window.agentCliDevkit.claude.asset.revealEntry(env, kind, entry.relPath);
+            if (!result.ok) {
+                onNotify(t('common.revealInFileManagerError'), 'error');
+            }
+        } catch {
+            onNotify(t('common.revealInFileManagerError'), 'error');
         }
     };
     // name 列の最大幅をウィンドウ幅の割合で算出するため、ウィンドウ幅を監視する。
@@ -144,6 +161,8 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     const report = reports[kind];
     const checkedKeys = checked[kind];
     const entries = useMemo(() => report?.entries ?? [], [report]);
+    const searchQuery = searchQueries[kind];
+    const filteredEntries = useMemo(() => filterAssetEntries(entries, searchQuery), [entries, searchQuery]);
     const columns = FRONTMATTER_COLUMNS[kind];
     // name（fit 列）の幅を実データから見積もる（内容に合わせて伸縮・最大幅はウィンドウ幅の割合でクランプ）。
     const fitWidth = useMemo(() => {
@@ -152,8 +171,8 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
             return 0;
         }
         const maxWidthPx = Math.round(windowWidth * (fitCol.maxWidthPct ?? 0.25));
-        return computeFitWidth(entries, maxWidthPx);
-    }, [columns, entries, windowWidth]);
+        return computeFitWidth(filteredEntries, maxWidthPx, true);
+    }, [columns, filteredEntries, windowWidth]);
     // 公式ダイアログ用の fit 幅（skills 列構成）。
     const officialFitWidth = useMemo(() => {
         const fitCol = OFFICIAL_COLUMNS.find(c => c.fit);
@@ -165,7 +184,12 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     }, [officialEntries, windowWidth]);
     // ファイル数列は skills のみ表示（agents は 1 ファイル固定なので不要）。
     const showFileCount = kind === 'skills';
-    const someChecked = entries.some(e => checkedKeys.has(e.relPath));
+    const selectedEntries = filteredEntries.filter(entry => checkedKeys.has(entry.relPath));
+    const someChecked = selectedEntries.length > 0;
+
+    const setKindSearchQuery = (query: string) => {
+        setSearchQueries(prev => ({ ...prev, [kind]: query }));
+    };
 
     const setKindChecked = (next: Set<string>) => {
         setChecked(prev => ({ ...prev, [kind]: next }));
@@ -181,17 +205,21 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         setKindChecked(next);
     };
 
-    const allChecked = entries.length > 0 && entries.every(e => checkedKeys.has(e.relPath));
+    const allChecked = filteredEntries.length > 0 && filteredEntries.every(e => checkedKeys.has(e.relPath));
     const toggleAll = () => {
-        if (allChecked) {
-            setKindChecked(new Set());
-        } else {
-            setKindChecked(new Set(entries.map(e => e.relPath)));
+        const next = new Set(checkedKeys);
+        for (const entry of filteredEntries) {
+            if (allChecked) {
+                next.delete(entry.relPath);
+            } else {
+                next.add(entry.relPath);
+            }
         }
+        setKindChecked(next);
     };
 
     const handleDownload = async () => {
-        const relPaths = entries.filter(e => checkedKeys.has(e.relPath)).map(e => e.relPath);
+        const relPaths = selectedEntries.map(entry => entry.relPath);
         if (relPaths.length === 0) {
             return;
         }
@@ -315,7 +343,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
 
     const handleConfirmDelete = async () => {
         setDeleteConfirmOpen(false);
-        const relPaths = entries.filter(e => checkedKeys.has(e.relPath)).map(e => e.relPath);
+        const relPaths = selectedEntries.map(entry => entry.relPath);
         if (relPaths.length === 0) {
             return;
         }
@@ -481,13 +509,19 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                             )}
                         </Box>
 
+                        <AssetSearchField value={searchQuery} onChange={setKindSearchQuery} />
+
                         {entries.length === 0 ? (
                             <Typography color='text.secondary' sx={{ py: 1 }}>
                                 {t('claude.assetManager.noEntries')}
                             </Typography>
+                        ) : filteredEntries.length === 0 ? (
+                            <Typography color='text.secondary' sx={{ py: 1 }}>
+                                {t('common.noSearchResults')}
+                            </Typography>
                         ) : (
                             <AssetEntriesTable
-                                entries={entries}
+                                entries={filteredEntries}
                                 columns={columns}
                                 fitWidth={fitWidth}
                                 showFileCount={showFileCount}
@@ -496,6 +530,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 onToggle={toggle}
                                 onToggleAll={toggleAll}
                                 onView={setViewEntry}
+                                onReveal={handleReveal}
                                 onViewFull={handleViewFull}
                             />
                         )}
@@ -543,7 +578,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 <DialogTitle>{t('claude.assetManager.deleteConfirmTitle')}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        {t('claude.assetManager.deleteConfirmBody', { count: checkedKeys.size })}
+                        {t('claude.assetManager.deleteConfirmBody', { count: selectedEntries.length })}
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>

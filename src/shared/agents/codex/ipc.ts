@@ -33,6 +33,7 @@ export type CodexIpcApi = {
         getEnvironments(): Promise<{ env: CodexEnvironment; label: string }[]>;
         list(env: CodexEnvironment, kind: AssetKind): Promise<AssetListReport>;
         readEntry(env: CodexEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
+        revealEntry(env: CodexEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
         download(env: CodexEnvironment, kind: AssetKind, relPaths: string[]): Promise<AssetOpResult>;
         inspectUpload(env: CodexEnvironment, kind: AssetKind): Promise<AssetOpResult>;
         upload(env: CodexEnvironment, kind: AssetKind, zipPath: string, overwrite: boolean): Promise<AssetOpResult>;

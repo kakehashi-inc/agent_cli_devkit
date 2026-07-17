@@ -24,6 +24,11 @@ export function registerCodexAssetHandlers(
         return manager.readEntry(env, kind, relPath);
     });
 
+    // OS 標準のファイルマネージャーで対象エントリを表示
+    ipcMain.handle(CODEX_ASSET_CHANNELS.REVEAL_ENTRY, (_, env: CodexEnvironment, kind: AssetKind, relPath: string) => {
+        return manager.revealEntry(env, kind, relPath);
+    });
+
     ipcMain.handle(CODEX_ASSET_CHANNELS.DOWNLOAD, (_, env: CodexEnvironment, kind: AssetKind, relPaths: string[]) => {
         return manager.download(env, kind, relPaths, getMainWindow());
     });

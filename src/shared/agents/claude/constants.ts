@@ -78,6 +78,7 @@ export const CLAUDE_ASSET_CHANNELS = {
     GET_ENVIRONMENTS: 'claude-asset:get-environments',
     LIST: 'claude-asset:list',
     READ_ENTRY: 'claude-asset:read-entry',
+    REVEAL_ENTRY: 'claude-asset:reveal-entry',
     DOWNLOAD: 'claude-asset:download',
     INSPECT_UPLOAD: 'claude-asset:inspect-upload',
     UPLOAD: 'claude-asset:upload',

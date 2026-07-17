@@ -52,6 +52,7 @@ export const CODEX_ASSET_CHANNELS = {
     GET_ENVIRONMENTS: 'codex-asset:get-environments',
     LIST: 'codex-asset:list',
     READ_ENTRY: 'codex-asset:read-entry',
+    REVEAL_ENTRY: 'codex-asset:reveal-entry',
     DOWNLOAD: 'codex-asset:download',
     INSPECT_UPLOAD: 'codex-asset:inspect-upload',
     UPLOAD: 'codex-asset:upload',

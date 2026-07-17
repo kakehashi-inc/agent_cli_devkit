@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Agent and skill lists for Claude, Codex, and Grok can now be filtered by name or description, with space-separated terms matched as an order-independent AND search.
+- Agent and skill names now include a shortcut that reveals the corresponding file or opens its directory in the operating system's default file manager, including WSL items through Windows Explorer.
+
 ## [0.5.6] - 2026-07-16
 
 ### Changed

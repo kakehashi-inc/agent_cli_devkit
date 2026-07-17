@@ -35,6 +35,8 @@ export const grokApi: GrokIpcApi = {
         list: (env: GrokEnvironment, kind: AssetKind) => ipcRenderer.invoke(GROK_ASSET_CHANNELS.LIST, env, kind),
         readEntry: (env: GrokEnvironment, kind: AssetKind, relPath: string) =>
             ipcRenderer.invoke(GROK_ASSET_CHANNELS.READ_ENTRY, env, kind, relPath),
+        revealEntry: (env: GrokEnvironment, kind: AssetKind, relPath: string) =>
+            ipcRenderer.invoke(GROK_ASSET_CHANNELS.REVEAL_ENTRY, env, kind, relPath),
         download: (env: GrokEnvironment, kind: AssetKind, relPaths: string[]) =>
             ipcRenderer.invoke(GROK_ASSET_CHANNELS.DOWNLOAD, env, kind, relPaths),
         inspectUpload: (env: GrokEnvironment, kind: AssetKind) =>

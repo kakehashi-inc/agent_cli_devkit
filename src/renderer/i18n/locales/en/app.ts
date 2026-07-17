@@ -27,6 +27,12 @@ export default {
         success: 'Success',
         loading: 'Loading...',
         refresh: 'Refresh',
+        assetSearchLabel: 'Search by name or description',
+        assetSearchPlaceholder: 'Separate terms with spaces for an AND search',
+        clearSearch: 'Clear search',
+        noSearchResults: 'No data matches the search criteria',
+        revealInFileManager: 'Show in file manager',
+        revealInFileManagerError: 'Failed to show the item in the file manager',
     },
     // プラグイン管理（agent 非依存の共通 UI 文言。タイトル等の agent 固有文言は各 agent ファイル）
     pluginManager: {

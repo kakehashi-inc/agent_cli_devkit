@@ -56,6 +56,7 @@ export const GROK_ASSET_CHANNELS = {
     GET_ENVIRONMENTS: 'grok-asset:get-environments',
     LIST: 'grok-asset:list',
     READ_ENTRY: 'grok-asset:read-entry',
+    REVEAL_ENTRY: 'grok-asset:reveal-entry',
     DOWNLOAD: 'grok-asset:download',
     INSPECT_UPLOAD: 'grok-asset:inspect-upload',
     UPLOAD: 'grok-asset:upload',

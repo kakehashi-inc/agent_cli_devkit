@@ -11,8 +11,9 @@ import {
     Checkbox,
     Button,
     Tooltip,
+    IconButton,
 } from '@mui/material';
-import { Visibility as ViewIcon, Article as FullViewIcon } from '@mui/icons-material';
+import { Visibility as ViewIcon, Article as FullViewIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import type { AssetEntry } from '@shared/agents/claude/types';
 import { formatCount, formatDateTime, isRecent, relativeTimeParts } from '../../utils/format';
 
@@ -36,14 +37,14 @@ const NAME_CHAR_PX = 8;
  * fit 列（name）の幅を実データから見積もる。名前とサブパスの長い方の文字数を基準に、
  * [NAME_MIN_WIDTH, maxWidthPx] の範囲へクランプする。
  */
-export function computeFitWidth(entries: AssetEntry[], maxWidthPx: number): number {
+export function computeFitWidth(entries: AssetEntry[], maxWidthPx: number, includeRevealAction = false): number {
     let maxChars = 0;
     for (const e of entries) {
         const nameLen = (e.frontmatter?.name ?? e.name ?? '').length;
         const subLen = relSubDir(e.relPath).length;
         maxChars = Math.max(maxChars, nameLen, subLen);
     }
-    const px = maxChars * NAME_CHAR_PX + 24; // セルの左右パディング分を加算
+    const px = maxChars * NAME_CHAR_PX + 24 + (includeRevealAction ? 24 : 0); // パディングと表示アイコン分
     return Math.min(Math.max(px, NAME_MIN_WIDTH), maxWidthPx);
 }
 
@@ -78,6 +79,8 @@ interface Props {
     onToggle: (relPath: string) => void;
     onToggleAll: () => void;
     onView: (entry: AssetEntry) => void;
+    // OS 標準のファイルマネージャーで対象を表示。本体一覧でのみ指定する。
+    onReveal?: (entry: AssetEntry) => void;
     // 「全体」参照（ファイル内容全体の表示）。未指定なら「全体」ボタンを表示しない（公式ダイアログ用）。
     onViewFull?: (entry: AssetEntry) => void;
 }
@@ -99,6 +102,7 @@ export const AssetEntriesTable: React.FC<Props> = ({
     onToggle,
     onToggleAll,
     onView,
+    onReveal,
     onViewFull,
 }) => {
     const { t } = useTranslation();
@@ -194,9 +198,34 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                                 verticalAlign: 'top',
                                             }}
                                         >
-                                            <Tooltip title={value} disableHoverListener={!value}>
-                                                <Box sx={valueSx}>{value}</Box>
-                                            </Tooltip>
+                                            {col.key === 'name' && onReveal ? (
+                                                <Box
+                                                    sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 0.25,
+                                                        minWidth: 0,
+                                                    }}
+                                                >
+                                                    <Tooltip title={value} disableHoverListener={!value}>
+                                                        <Box sx={{ ...valueSx, minWidth: 0 }}>{value}</Box>
+                                                    </Tooltip>
+                                                    <Tooltip title={t('common.revealInFileManager')}>
+                                                        <IconButton
+                                                            size='small'
+                                                            aria-label={t('common.revealInFileManager')}
+                                                            onClick={() => onReveal(entry)}
+                                                            sx={{ p: 0.25, flexShrink: 0 }}
+                                                        >
+                                                            <OpenInNewIcon sx={{ fontSize: 16 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                </Box>
+                                            ) : (
+                                                <Tooltip title={value} disableHoverListener={!value}>
+                                                    <Box sx={valueSx}>{value}</Box>
+                                                </Tooltip>
+                                            )}
                                             {subPath && (
                                                 <Tooltip title={subPath}>
                                                     <Box

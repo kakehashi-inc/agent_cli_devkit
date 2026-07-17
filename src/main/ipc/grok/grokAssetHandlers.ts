@@ -24,6 +24,11 @@ export function registerGrokAssetHandlers(manager: GrokAssetManager, getMainWind
         return manager.readEntry(env, kind, relPath);
     });
 
+    // OS 標準のファイルマネージャーで対象エントリを表示
+    ipcMain.handle(GROK_ASSET_CHANNELS.REVEAL_ENTRY, (_, env: GrokEnvironment, kind: AssetKind, relPath: string) => {
+        return manager.revealEntry(env, kind, relPath);
+    });
+
     // 選択したサブディレクトリを 1 つの ZIP にまとめてダウンロード
     ipcMain.handle(GROK_ASSET_CHANNELS.DOWNLOAD, (_, env: GrokEnvironment, kind: AssetKind, names: string[]) => {
         return manager.download(env, kind, names, getMainWindow());

@@ -33,6 +33,7 @@ export type GrokIpcApi = {
         getEnvironments(): Promise<{ env: GrokEnvironment; label: string }[]>;
         list(env: GrokEnvironment, kind: AssetKind): Promise<AssetListReport>;
         readEntry(env: GrokEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
+        revealEntry(env: GrokEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
         download(env: GrokEnvironment, kind: AssetKind, relPaths: string[]): Promise<AssetOpResult>;
         inspectUpload(env: GrokEnvironment, kind: AssetKind): Promise<AssetOpResult>;
         upload(env: GrokEnvironment, kind: AssetKind, zipPath: string, overwrite: boolean): Promise<AssetOpResult>;

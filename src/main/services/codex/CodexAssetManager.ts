@@ -24,6 +24,7 @@ import {
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { GitRunner } from '../common/git/GitRunner';
+import { revealAssetPath } from '../common/assets/revealAssetPath';
 import { parseFrontmatter } from '../../utils/frontmatter';
 import { recursiveDirStats } from '../../utils/fsSize';
 
@@ -236,6 +237,19 @@ export class CodexAssetManager {
             return { ok: false, message: 'not-found' };
         }
         return { ok: true, content };
+    }
+
+    /** OS 標準のファイルマネージャーで対象エントリを表示する。 */
+    async revealEntry(env: CodexEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult> {
+        if ((kind !== 'agents' && kind !== 'skills') || this.isUnsafeRelPath(relPath)) {
+            return { ok: false, message: 'not-found' };
+        }
+        const fs = this.fsFor(env);
+        const parentReal = await fs.resolveRealPath(this.parentRel(kind));
+        if (parentReal === null) {
+            return { ok: false, message: 'unavailable' };
+        }
+        return revealAssetPath(join(parentReal, relPath), kind === 'skills');
     }
 
     async download(
