@@ -52,7 +52,7 @@ export default {
         deleteSuccess: 'Cleanup completed',
         deletePartial: 'Some items were skipped because files were in use',
         deleteError: 'Failed to clean up some items',
-        columnName: 'Directory',
+        columnName: 'Item',
         columnDescription: 'Description',
         columnFiles: 'Files',
         columnSize: 'Size',

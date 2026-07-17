@@ -6,9 +6,11 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { SYSTEM_CHANNELS, UPDATER_CHANNELS, WINDOW_CHANNELS } from '../shared/constants';
 import type { IpcApi } from '../shared/ipc';
 import type { UpdateState } from '../shared/types';
+import { agyApi } from './agents/agy';
 import { claudeApi } from './agents/claude';
 import { codexApi } from './agents/codex';
 import { grokApi } from './agents/grok';
+import { opencodeApi } from './agents/opencode';
 
 const api: IpcApi = {
     system: {
@@ -39,7 +41,9 @@ const api: IpcApi = {
     // ===== agent 別 API =====
     claude: claudeApi,
     codex: codexApi,
+    agy: agyApi,
     grok: grokApi,
+    opencode: opencodeApi,
 };
 
 contextBridge.exposeInMainWorld('agentCliDevkit', api);

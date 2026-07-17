@@ -216,9 +216,7 @@ export class ClaudePluginManager {
             const rec = parsed as Record<string, unknown>;
             const installedIds = new Set<string>(
                 (Array.isArray(rec.installed) ? rec.installed : [])
-                    .map(item =>
-                        item && typeof item === 'object' ? (item as Record<string, unknown>).id : undefined
-                    )
+                    .map(item => (item && typeof item === 'object' ? (item as Record<string, unknown>).id : undefined))
                     .filter((id): id is string => typeof id === 'string')
             );
             const entries: PluginCatalogEntry[] = [];

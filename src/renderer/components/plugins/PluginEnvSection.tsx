@@ -11,12 +11,13 @@ import {
     DialogContent,
     DialogContentText,
     DialogTitle,
+    IconButton,
     Paper,
-    Switch,
     Tab,
     Table,
     TableBody,
     TableCell,
+    TableContainer,
     TableHead,
     TableRow,
     Tabs,
@@ -27,6 +28,8 @@ import {
     AddCircleOutlined as AddIcon,
     DeleteOutlined as DeleteIcon,
     StorefrontOutlined as MarketIcon,
+    ToggleOn as EnableIcon,
+    ToggleOff as DisableIcon,
 } from '@mui/icons-material';
 import type { AgentEnvironment, PluginEnvReport, PluginMarketplaceEntry } from '@shared/agents/types';
 import { AddMarketplaceDialog } from './AddMarketplaceDialog';
@@ -106,10 +109,7 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
         try {
             const result = await api.setEnabled(env, id, enabled);
             if (result.ok) {
-                onNotify(
-                    enabled ? t('pluginManager.enabledSuccess') : t('pluginManager.disabledSuccess'),
-                    'success'
-                );
+                onNotify(enabled ? t('pluginManager.enabledSuccess') : t('pluginManager.disabledSuccess'), 'success');
                 await load();
             } else {
                 console.error('Plugin enable/disable failed:', result.message);
@@ -149,8 +149,8 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
 
     if (loading) {
         return (
-            <Paper sx={{ p: 3, mb: 3, display: 'flex', justifyContent: 'center' }}>
-                <CircularProgress size={28} />
+            <Paper variant='outlined' sx={{ p: 2, mb: 2 }}>
+                <Typography color='text.secondary'>{t('common.loading')}</Typography>
             </Paper>
         );
     }
@@ -159,7 +159,7 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
     }
     if (!report.cliAvailable) {
         return (
-            <Paper sx={{ p: 2, mb: 3 }}>
+            <Paper variant='outlined' sx={{ p: 2, mb: 3 }}>
                 <Alert severity='info'>{t('pluginManager.cliNotFound')}</Alert>
             </Paper>
         );
@@ -186,32 +186,30 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
     };
 
     return (
-        <Paper sx={{ p: 2, mb: 3 }}>
-            {report.cliVersion && (
-                <Typography variant='caption' color='text.secondary'>
-                    {t('pluginManager.cliVersion', { version: report.cliVersion })}
-                </Typography>
-            )}
-            {report.error && (
-                <Alert severity='error' sx={{ my: 1 }}>
-                    {t('pluginManager.listError')}
-                    <Typography component='pre' variant='caption' sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
-                        {report.error}
-                    </Typography>
-                </Alert>
-            )}
+        <Paper variant='outlined' sx={{ mb: 3 }}>
+            <Tabs value={tab} onChange={(_, v: SectionTab) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+                <Tab value='plugins' label={t('pluginManager.tabPlugins')} />
+                {report.capabilities.marketplaceManagement && (
+                    <Tab value='marketplaces' label={t('pluginManager.tabMarketplaces')} />
+                )}
+            </Tabs>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                <Tabs value={tab} onChange={(_, v: SectionTab) => setTab(v)}>
-                    <Tab value='plugins' label={t('pluginManager.tabPlugins')} sx={{ textTransform: 'none' }} />
-                    <Tab
-                        value='marketplaces'
-                        label={t('pluginManager.tabMarketplaces')}
-                        sx={{ textTransform: 'none' }}
-                    />
-                </Tabs>
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                    {busy && <CircularProgress size={22} sx={{ alignSelf: 'center' }} />}
+            <Box sx={{ p: 2 }}>
+                {report.cliVersion && (
+                    <Typography variant='caption' color='text.secondary' sx={{ display: 'block', mb: 1 }}>
+                        {t('pluginManager.cliVersion', { version: report.cliVersion })}
+                    </Typography>
+                )}
+                {report.error && (
+                    <Alert severity='error' sx={{ mb: 2 }}>
+                        {t('pluginManager.listError')}
+                        <Typography component='pre' variant='caption' sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
+                            {report.error}
+                        </Typography>
+                    </Alert>
+                )}
+
+                <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center' }}>
                     {tab === 'plugins' ? (
                         <Button
                             variant='contained'
@@ -219,129 +217,162 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
                             startIcon={<AddIcon />}
                             disabled={busy}
                             onClick={() => setAddPluginOpen(true)}
-                            sx={{ textTransform: 'none' }}
                         >
                             {t('pluginManager.addPlugin')}
                         </Button>
-                    ) : (
+                    ) : report.capabilities.marketplaceManagement ? (
                         <Button
                             variant='contained'
                             size='small'
                             startIcon={<MarketIcon />}
                             disabled={busy}
                             onClick={() => setAddMarketOpen(true)}
-                            sx={{ textTransform: 'none' }}
                         >
                             {t('pluginManager.addMarketplace')}
                         </Button>
-                    )}
+                    ) : null}
+                    {busy && <CircularProgress size={22} />}
                 </Box>
-            </Box>
 
-            {tab === 'plugins' &&
-                (report.plugins.length === 0 ? (
-                    <Typography variant='body2' color='text.secondary' sx={{ p: 2 }}>
-                        {t('pluginManager.noPlugins')}
-                    </Typography>
-                ) : (
-                    <Table size='small'>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>{t('pluginManager.colName')}</TableCell>
-                                <TableCell>{t('pluginManager.colVersion')}</TableCell>
-                                <TableCell>{t('pluginManager.colMarketplace')}</TableCell>
-                                <TableCell>{t('pluginManager.colStatus')}</TableCell>
-                                <TableCell align='right'>{t('pluginManager.colActions')}</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {report.plugins.map(p => (
-                                <TableRow key={p.id} hover>
-                                    <TableCell sx={{ fontWeight: 500 }}>{p.name}</TableCell>
-                                    <TableCell>{p.version ?? '-'}</TableCell>
-                                    <TableCell>{p.marketplace ?? '-'}</TableCell>
-                                    <TableCell>
-                                        <Tooltip
-                                            title={p.enabled ? t('pluginManager.enabled') : t('pluginManager.disabled')}
-                                        >
-                                            <Switch
-                                                size='small'
-                                                checked={p.enabled}
-                                                disabled={busy}
-                                                onChange={(_, checked) => handleToggleEnabled(p.id, checked)}
-                                            />
-                                        </Tooltip>
-                                    </TableCell>
-                                    <TableCell align='right'>
-                                        <Button
-                                            size='small'
-                                            color='error'
-                                            startIcon={<DeleteIcon />}
-                                            disabled={busy}
-                                            onClick={() => setUninstallTarget({ id: p.id, name: p.name })}
-                                            sx={{ textTransform: 'none' }}
-                                        >
-                                            {t('pluginManager.uninstall')}
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                ))}
-
-            {tab === 'marketplaces' &&
-                (report.marketplaces.length === 0 ? (
-                    <Typography variant='body2' color='text.secondary' sx={{ p: 2 }}>
-                        {t('pluginManager.noMarketplaces')}
-                    </Typography>
-                ) : (
-                    <Table size='small'>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>{t('pluginManager.colName')}</TableCell>
-                                <TableCell>{t('pluginManager.colKind')}</TableCell>
-                                <TableCell>{t('pluginManager.colSource')}</TableCell>
-                                <TableCell />
-                                <TableCell align='right'>{t('pluginManager.colActions')}</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {report.marketplaces.map(m => {
-                                const disabledReason = removeDisabledReason(m);
-                                const removeButton = (
-                                    <Button
-                                        size='small'
-                                        color='error'
-                                        startIcon={<DeleteIcon />}
-                                        disabled={busy || disabledReason !== null}
-                                        onClick={() => setRemoveMarketTarget(m)}
-                                        sx={{ textTransform: 'none' }}
-                                    >
-                                        {t('pluginManager.remove')}
-                                    </Button>
-                                );
-                                return (
-                                    <TableRow key={m.name} hover>
-                                        <TableCell sx={{ fontWeight: 500 }}>{m.name}</TableCell>
-                                        <TableCell>{m.sourceKind}</TableCell>
-                                        <TableCell sx={{ wordBreak: 'break-all' }}>{m.sourceDetail}</TableCell>
-                                        <TableCell>{originChip(m)}</TableCell>
-                                        <TableCell align='right'>
-                                            {disabledReason ? (
-                                                <Tooltip title={disabledReason}>
-                                                    <span>{removeButton}</span>
-                                                </Tooltip>
-                                            ) : (
-                                                removeButton
-                                            )}
+                {tab === 'plugins' &&
+                    (report.plugins.length === 0 ? (
+                        <Typography color='text.secondary' sx={{ py: 1 }}>
+                            {t('pluginManager.noPlugins')}
+                        </Typography>
+                    ) : (
+                        <TableContainer>
+                            {/* tableLayout: fixed で列幅を画面幅の比率から決め、長い値は省略せず折り返す */}
+                            <Table size='small' sx={{ tableLayout: 'fixed', width: '100%' }}>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell>{t('pluginManager.colName')}</TableCell>
+                                        <TableCell width='110'>{t('pluginManager.colVersion')}</TableCell>
+                                        <TableCell width='22%'>{t('pluginManager.colMarketplace')}</TableCell>
+                                        <TableCell width='100'>{t('pluginManager.colStatus')}</TableCell>
+                                        <TableCell align='right' width='140'>
+                                            {t('pluginManager.colActions')}
                                         </TableCell>
                                     </TableRow>
-                                );
-                            })}
-                        </TableBody>
-                    </Table>
-                ))}
+                                </TableHead>
+                                <TableBody>
+                                    {report.plugins.map(p => (
+                                        <TableRow key={p.id} hover>
+                                            <TableCell sx={{ fontWeight: 500, wordBreak: 'break-all' }}>
+                                                {p.name}
+                                            </TableCell>
+                                            <TableCell sx={{ wordBreak: 'break-all' }}>{p.version ?? '-'}</TableCell>
+                                            <TableCell sx={{ wordBreak: 'break-all' }}>
+                                                {p.marketplace ?? '-'}
+                                            </TableCell>
+                                            <TableCell>
+                                                {p.enabled ? (
+                                                    <Tooltip title={t('pluginManager.disable')}>
+                                                        <span>
+                                                            <IconButton
+                                                                size='large'
+                                                                color='success'
+                                                                disabled={busy}
+                                                                onClick={() => handleToggleEnabled(p.id, false)}
+                                                            >
+                                                                <EnableIcon sx={{ fontSize: 40 }} />
+                                                            </IconButton>
+                                                        </span>
+                                                    </Tooltip>
+                                                ) : (
+                                                    <Tooltip title={t('pluginManager.enable')}>
+                                                        <span>
+                                                            <IconButton
+                                                                size='large'
+                                                                color='error'
+                                                                disabled={busy}
+                                                                onClick={() => handleToggleEnabled(p.id, true)}
+                                                            >
+                                                                <DisableIcon sx={{ fontSize: 40 }} />
+                                                            </IconButton>
+                                                        </span>
+                                                    </Tooltip>
+                                                )}
+                                            </TableCell>
+                                            <TableCell align='right'>
+                                                <Button
+                                                    size='small'
+                                                    color='error'
+                                                    startIcon={<DeleteIcon />}
+                                                    disabled={busy}
+                                                    onClick={() => setUninstallTarget({ id: p.id, name: p.name })}
+                                                    sx={{ textTransform: 'none' }}
+                                                >
+                                                    {t('pluginManager.uninstall')}
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    ))}
+
+                {report.capabilities.marketplaceManagement &&
+                    tab === 'marketplaces' &&
+                    (report.marketplaces.length === 0 ? (
+                        <Typography color='text.secondary' sx={{ py: 1 }}>
+                            {t('pluginManager.noMarketplaces')}
+                        </Typography>
+                    ) : (
+                        <TableContainer>
+                            {/* tableLayout: fixed で列幅を画面幅の比率から決め、長い値は省略せず折り返す */}
+                            <Table size='small' sx={{ tableLayout: 'fixed', width: '100%' }}>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell width='20%'>{t('pluginManager.colName')}</TableCell>
+                                        <TableCell width='100'>{t('pluginManager.colKind')}</TableCell>
+                                        <TableCell>{t('pluginManager.colSource')}</TableCell>
+                                        <TableCell width='110' />
+                                        <TableCell align='right' width='140'>
+                                            {t('pluginManager.colActions')}
+                                        </TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {report.marketplaces.map(m => {
+                                        const disabledReason = removeDisabledReason(m);
+                                        const removeButton = (
+                                            <Button
+                                                size='small'
+                                                color='error'
+                                                startIcon={<DeleteIcon />}
+                                                disabled={busy || disabledReason !== null}
+                                                onClick={() => setRemoveMarketTarget(m)}
+                                                sx={{ textTransform: 'none' }}
+                                            >
+                                                {t('pluginManager.remove')}
+                                            </Button>
+                                        );
+                                        return (
+                                            <TableRow key={m.name} hover>
+                                                <TableCell sx={{ fontWeight: 500, wordBreak: 'break-all' }}>
+                                                    {m.name}
+                                                </TableCell>
+                                                <TableCell>{m.sourceKind}</TableCell>
+                                                <TableCell sx={{ wordBreak: 'break-all' }}>{m.sourceDetail}</TableCell>
+                                                <TableCell>{originChip(m)}</TableCell>
+                                                <TableCell align='right'>
+                                                    {disabledReason ? (
+                                                        <Tooltip title={disabledReason}>
+                                                            <span>{removeButton}</span>
+                                                        </Tooltip>
+                                                    ) : (
+                                                        removeButton
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    ))}
+            </Box>
 
             {/* アンインストール確認 */}
             <Dialog open={uninstallTarget !== null} onClose={() => setUninstallTarget(null)}>
@@ -402,7 +433,7 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
             )}
 
             {/* マーケットプレイス追加 */}
-            {addMarketOpen && (
+            {report.capabilities.marketplaceManagement && addMarketOpen && (
                 <AddMarketplaceDialog
                     api={api}
                     env={env}

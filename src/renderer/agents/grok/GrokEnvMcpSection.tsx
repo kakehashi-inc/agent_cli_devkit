@@ -142,14 +142,15 @@ export const GrokEnvMcpSection: React.FC<Props> = ({ info, onNotify }) => {
         draggingIndex: number | null
     ) => (
         <TableContainer component={Paper}>
-            <Table>
+            {/* tableLayout: fixed で各列の最大幅を画面幅の比率から決め、長い値は省略せず折り返す */}
+            <Table sx={{ tableLayout: 'fixed' }}>
                 <TableHead>
                     <TableRow>
                         <TableCell width='40'></TableCell>
-                        <TableCell>{t('grok.grokMcp.serverName')}</TableCell>
-                        <TableCell>{t('grok.grokMcp.command')}</TableCell>
+                        <TableCell width='20%'>{t('grok.grokMcp.serverName')}</TableCell>
+                        <TableCell width='100'>{t('grok.grokMcp.actions')}</TableCell>
+                        <TableCell width='18%'>{t('grok.grokMcp.command')}</TableCell>
                         <TableCell>{t('grok.grokMcp.args')}</TableCell>
-                        <TableCell width='120'>{t('grok.grokMcp.actions')}</TableCell>
                     </TableRow>
                 </TableHead>
                 <TableBody>
@@ -170,18 +171,8 @@ export const GrokEnvMcpSection: React.FC<Props> = ({ info, onNotify }) => {
                                 <DragIcon sx={{ color: 'action.disabled' }} />
                             </TableCell>
                             <TableCell>
-                                <Typography variant='body2' sx={{ fontWeight: 'medium' }}>
+                                <Typography variant='body2' sx={{ fontWeight: 'medium', wordBreak: 'break-all' }}>
                                     {server.name}
-                                </Typography>
-                            </TableCell>
-                            <TableCell>
-                                <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                    {server.config.command ?? '-'}
-                                </Typography>
-                            </TableCell>
-                            <TableCell>
-                                <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                    {renderArgs(server)}
                                 </Typography>
                             </TableCell>
                             <TableCell>
@@ -206,6 +197,16 @@ export const GrokEnvMcpSection: React.FC<Props> = ({ info, onNotify }) => {
                                         </IconButton>
                                     </Tooltip>
                                 )}
+                            </TableCell>
+                            <TableCell>
+                                <Typography variant='body2' sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                                    {server.config.command ?? '-'}
+                                </Typography>
+                            </TableCell>
+                            <TableCell>
+                                <Typography variant='body2' sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                                    {renderArgs(server)}
+                                </Typography>
                             </TableCell>
                         </TableRow>
                     ))}

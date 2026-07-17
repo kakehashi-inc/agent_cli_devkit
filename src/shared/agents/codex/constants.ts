@@ -111,6 +111,9 @@ export const CODEX_BUILTIN_MARKETPLACES = ['openai-bundled', 'openai-primary-run
 export const CODEX_PLUGIN_CAPABILITIES: PluginCapabilities = {
     directInstall: false,
     marketplaceRemoteUrl: false,
+    catalog: true,
+    marketplaceManagement: true,
+    packageSource: false,
 };
 
 // ============================================================

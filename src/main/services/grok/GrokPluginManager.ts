@@ -153,7 +153,9 @@ export class GrokPluginManager {
                     ? (m.source as Record<string, unknown>)
                     : {};
             const detail =
-                (typeof source.url === 'string' && source.url) || (typeof source.path === 'string' && source.path) || '';
+                (typeof source.url === 'string' && source.url) ||
+                (typeof source.path === 'string' && source.path) ||
+                '';
             const origin = GROK_BUILTIN_MARKETPLACES.includes(name)
                 ? 'builtin'
                 : configNames.has(name)
@@ -252,7 +254,11 @@ export class GrokPluginManager {
             return { ok: false, entries: [], message: this.failureMessage(failed.stdout, failed.stderr) };
         }
         try {
-            const { entries: markets, qualifiers, homepages } = this.parseMarketplaces(marketResult.stdout, configNames);
+            const {
+                entries: markets,
+                qualifiers,
+                homepages,
+            } = this.parseMarketplaces(marketResult.stdout, configNames);
             // インストール元として選択可能なマーケットプレイスのプラグインのみカタログへ載せる
             // （Claude 由来の外部マーケットのプラグインを Grok のインストール候補にしない）。
             const selectableNames = new Set(markets.filter(m => m.selectable).map(m => m.name));

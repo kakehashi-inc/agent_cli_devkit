@@ -28,7 +28,10 @@ export function sourceFormatsText(
     capabilities: PluginCapabilities,
     directInstallContext: boolean
 ): string {
-    const formats = [t('pluginManager.formatOwnerRepo'), t('pluginManager.formatGitUrl'), t('pluginManager.formatLocalPath')];
+    const formats =
+        directInstallContext && capabilities.packageSource
+            ? [t('pluginManager.formatNpmPackage'), t('pluginManager.formatLocalPath')]
+            : [t('pluginManager.formatOwnerRepo'), t('pluginManager.formatGitUrl'), t('pluginManager.formatLocalPath')];
     if (!directInstallContext && capabilities.marketplaceRemoteUrl) {
         formats.push(t('pluginManager.formatRemoteUrl'));
     }

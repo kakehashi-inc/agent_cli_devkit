@@ -1,0 +1,332 @@
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+    Box,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Checkbox,
+    Button,
+    Tooltip,
+    IconButton,
+} from '@mui/material';
+import { Visibility as ViewIcon, Article as FullViewIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
+import type { AssetEntry } from '@shared/agents/types';
+import { formatCount, formatDateTime, isRecent, relativeTimeParts } from '../../utils/format';
+
+// frontmatter 列の表示設定（table-layout: fixed と併用）。
+// - fit:    内容に合わせて伸縮し、maxWidth で上限を制限する（name）。上限超過は省略（…）。
+// - width:  固定幅。
+// - flex:   残り幅をすべて使う伸縮列（description。width:auto で貪欲に確保）。
+export interface FmColumn {
+    key: string;
+    width?: number; // 固定幅（px）
+    maxWidthPct?: number; // fit 列の最大幅（ウィンドウ幅に対する割合 0〜1）
+    fit?: boolean; // 内容フィット（maxWidth 上限）
+    flex?: boolean; // 残り幅を使う伸縮列
+}
+
+// name（fit 列）の最小幅と、1 文字あたりの概算 px（幅見積り用）。
+const NAME_MIN_WIDTH = 80;
+const NAME_CHAR_PX = 8;
+
+/**
+ * fit 列（name）の幅を実データから見積もる。名前とサブパスの長い方の文字数を基準に、
+ * [NAME_MIN_WIDTH, maxWidthPx] の範囲へクランプする。
+ */
+export function computeFitWidth(entries: AssetEntry[], maxWidthPx: number, includeRevealAction = false): number {
+    let maxChars = 0;
+    for (const e of entries) {
+        const nameLen = (e.frontmatter?.name ?? e.name ?? '').length;
+        const subLen = relSubDir(e.relPath).length;
+        maxChars = Math.max(maxChars, nameLen, subLen);
+    }
+    const px = maxChars * NAME_CHAR_PX + 24 + (includeRevealAction ? 24 : 0); // パディングと表示アイコン分
+    return Math.min(Math.max(px, NAME_MIN_WIDTH), maxWidthPx);
+}
+
+/** 列の幅指定を sx 用に解決する。fit 列は事前計算した fitWidth を使う。 */
+function colWidthSx(col: FmColumn, fitWidth: number): { width?: number | string } {
+    if (col.flex) {
+        return { width: 'auto' };
+    }
+    if (col.fit) {
+        return { width: fitWidth };
+    }
+    return { width: col.width };
+}
+
+/**
+ * relPath（asset 親からの相対パス）のうち、サブディレクトリ部分（最後の '/' より前）を返す。
+ * 例: 'c-suite/cbdo.md' → 'c-suite/'、'foo.md' / 'apple-design' → ''（サブディレクトリなし）。
+ */
+export function relSubDir(relPath: string): string {
+    const idx = relPath.lastIndexOf('/');
+    return idx <= 0 ? '' : relPath.slice(0, idx + 1);
+}
+
+interface Props {
+    // i18n キーのプレフィックス（例 'agy.assets'）。col.* / columnLastModified 等を解決する。
+    i18nPrefix: string;
+    entries: AssetEntry[];
+    columns: FmColumn[];
+    fitWidth: number;
+    showFileCount: boolean;
+    // 最終更新日時列を表示するか。
+    showLastModified?: boolean;
+    checkedKeys: Set<string>;
+    onToggle: (relPath: string) => void;
+    onToggleAll: () => void;
+    onView: (entry: AssetEntry) => void;
+    // OS 標準のファイルマネージャーで対象を表示。本体一覧でのみ指定する。
+    onReveal?: (entry: AssetEntry) => void;
+    // 「全体」参照（ファイル内容全体の表示）。未指定なら「全体」ボタンを表示しない。
+    onViewFull?: (entry: AssetEntry) => void;
+}
+
+// 最終更新日時列の幅（px）。'YYYY-MM-DD HH:mm' ＋ NEW バッジが収まる固定幅。
+const LAST_MODIFIED_WIDTH = 140;
+
+/**
+ * Agent・Skill の一覧テーブル（agent 非依存の共通実装）。
+ * 既存 agent（Claude / Codex / Grok）の AssetEntriesTable と同じレイアウト。
+ */
+export const AssetEntriesTable: React.FC<Props> = ({
+    i18nPrefix,
+    entries,
+    columns,
+    fitWidth,
+    showFileCount,
+    showLastModified = false,
+    checkedKeys,
+    onToggle,
+    onToggleAll,
+    onView,
+    onReveal,
+    onViewFull,
+}) => {
+    const { t } = useTranslation();
+    const allChecked = entries.length > 0 && entries.every(e => checkedKeys.has(e.relPath));
+    const someChecked = entries.some(e => checkedKeys.has(e.relPath));
+
+    return (
+        <TableContainer>
+            <Table size='small' sx={{ tableLayout: 'fixed', width: '100%' }}>
+                <TableHead>
+                    <TableRow>
+                        <TableCell padding='checkbox' sx={{ width: 48 }}>
+                            <Checkbox
+                                indeterminate={someChecked && !allChecked}
+                                checked={allChecked}
+                                onChange={onToggleAll}
+                            />
+                        </TableCell>
+                        {columns.map(col => (
+                            <TableCell
+                                key={col.key}
+                                sx={{
+                                    ...colWidthSx(col, fitWidth),
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                }}
+                            >
+                                {t(`${i18nPrefix}.col.${col.key}`)}
+                            </TableCell>
+                        ))}
+                        {showLastModified && (
+                            <TableCell sx={{ width: LAST_MODIFIED_WIDTH, whiteSpace: 'nowrap' }}>
+                                {t(`${i18nPrefix}.columnLastModified`)}
+                            </TableCell>
+                        )}
+                        {showFileCount && (
+                            <TableCell align='right' sx={{ width: 72, whiteSpace: 'nowrap' }}>
+                                {t(`${i18nPrefix}.columnFiles`)}
+                            </TableCell>
+                        )}
+                        <TableCell align='center' sx={{ width: 96, whiteSpace: 'nowrap' }}>
+                            {t(`${i18nPrefix}.columnView`)}
+                        </TableCell>
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {entries.map(entry => {
+                        const recent = isRecent(entry.mtimeMs);
+                        const relPart = relativeTimeParts(entry.mtimeMs);
+                        const relText = relPart
+                            ? t(
+                                  `${i18nPrefix}.relative.${relPart.key}`,
+                                  relPart.count != null ? { count: relPart.count } : {}
+                              )
+                            : '';
+                        return (
+                            <TableRow key={entry.relPath} hover>
+                                <TableCell padding='checkbox' sx={{ width: 48 }}>
+                                    <Checkbox
+                                        checked={checkedKeys.has(entry.relPath)}
+                                        onChange={() => onToggle(entry.relPath)}
+                                    />
+                                </TableCell>
+                                {columns.map(col => {
+                                    // name 列はディレクトリ名 / ファイル名を基準に、frontmatter があれば優先。
+                                    const fmValue = entry.frontmatter?.[col.key];
+                                    const value = fmValue ?? (col.key === 'name' ? (entry.name ?? '') : '');
+                                    // name 列のみ: 親からの相対サブパスがあれば名前の下に控えめな色で表示。
+                                    const subPath = col.key === 'name' ? relSubDir(entry.relPath) : '';
+                                    // name（fit 列）は 1 行で内容フィット＋maxWidth 超過を省略。
+                                    // その他の列は最大 2 行まで表示して超過を省略する。
+                                    const valueSx = col.fit
+                                        ? {
+                                              whiteSpace: 'nowrap' as const,
+                                              overflow: 'hidden',
+                                              textOverflow: 'ellipsis',
+                                          }
+                                        : {
+                                              display: '-webkit-box',
+                                              WebkitBoxOrient: 'vertical' as const,
+                                              WebkitLineClamp: 2,
+                                              overflow: 'hidden',
+                                              overflowWrap: 'anywhere' as const,
+                                          };
+                                    return (
+                                        <TableCell
+                                            key={col.key}
+                                            sx={{
+                                                ...colWidthSx(col, fitWidth),
+                                                verticalAlign: 'top',
+                                            }}
+                                        >
+                                            {col.key === 'name' && onReveal ? (
+                                                <Box
+                                                    sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 0.25,
+                                                        minWidth: 0,
+                                                    }}
+                                                >
+                                                    <Tooltip title={value} disableHoverListener={!value}>
+                                                        <Box sx={{ ...valueSx, minWidth: 0 }}>{value}</Box>
+                                                    </Tooltip>
+                                                    <Tooltip title={t('common.revealInFileManager')}>
+                                                        <IconButton
+                                                            size='small'
+                                                            aria-label={t('common.revealInFileManager')}
+                                                            onClick={() => onReveal(entry)}
+                                                            sx={{ p: 0.25, flexShrink: 0 }}
+                                                        >
+                                                            <OpenInNewIcon sx={{ fontSize: 16 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                </Box>
+                                            ) : (
+                                                <Tooltip title={value} disableHoverListener={!value}>
+                                                    <Box sx={valueSx}>{value}</Box>
+                                                </Tooltip>
+                                            )}
+                                            {subPath && (
+                                                <Tooltip title={subPath}>
+                                                    <Box
+                                                        sx={{
+                                                            display: 'block',
+                                                            mt: 0.25,
+                                                            fontSize: '0.75rem',
+                                                            lineHeight: 1.3,
+                                                            color: 'text.secondary',
+                                                            whiteSpace: 'nowrap',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                        }}
+                                                    >
+                                                        {subPath}
+                                                    </Box>
+                                                </Tooltip>
+                                            )}
+                                        </TableCell>
+                                    );
+                                })}
+                                {showLastModified && (
+                                    <TableCell sx={{ width: LAST_MODIFIED_WIDTH, verticalAlign: 'top' }}>
+                                        <Box sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                            {formatDateTime(entry.mtimeMs)}
+                                        </Box>
+                                        {(recent || relText) && (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                                                {recent && (
+                                                    <Box
+                                                        component='span'
+                                                        sx={{
+                                                            px: 0.75,
+                                                            py: 0.125,
+                                                            borderRadius: 0.75,
+                                                            bgcolor: 'error.main',
+                                                            color: 'error.contrastText',
+                                                            fontSize: '0.7rem',
+                                                            fontWeight: 700,
+                                                            lineHeight: 1.4,
+                                                            letterSpacing: '0.05em',
+                                                        }}
+                                                    >
+                                                        {t(`${i18nPrefix}.newBadge`)}
+                                                    </Box>
+                                                )}
+                                                {relText && (
+                                                    <Box
+                                                        component='span'
+                                                        sx={{
+                                                            fontSize: '0.75rem',
+                                                            lineHeight: 1.3,
+                                                            color: 'text.secondary',
+                                                            whiteSpace: 'nowrap',
+                                                        }}
+                                                    >
+                                                        {relText}
+                                                    </Box>
+                                                )}
+                                            </Box>
+                                        )}
+                                    </TableCell>
+                                )}
+                                {showFileCount && (
+                                    <TableCell
+                                        align='right'
+                                        sx={{ width: 72, whiteSpace: 'nowrap', verticalAlign: 'top' }}
+                                    >
+                                        {formatCount(entry.fileCount ?? 0)}
+                                    </TableCell>
+                                )}
+                                <TableCell
+                                    align='center'
+                                    sx={{ width: 96, whiteSpace: 'nowrap', verticalAlign: 'top' }}
+                                >
+                                    <Button
+                                        size='small'
+                                        startIcon={<ViewIcon />}
+                                        disabled={!entry.frontmatterRaw}
+                                        onClick={() => onView(entry)}
+                                        sx={{ display: 'flex', mx: 'auto', py: 0, minWidth: 0 }}
+                                    >
+                                        {t(`${i18nPrefix}.viewHeader`)}
+                                    </Button>
+                                    {onViewFull && (
+                                        <Button
+                                            size='small'
+                                            startIcon={<FullViewIcon />}
+                                            onClick={() => onViewFull(entry)}
+                                            sx={{ display: 'flex', mx: 'auto', py: 0, minWidth: 0, mt: 0.5 }}
+                                        >
+                                            {t(`${i18nPrefix}.viewFull`)}
+                                        </Button>
+                                    )}
+                                </TableCell>
+                            </TableRow>
+                        );
+                    })}
+                </TableBody>
+            </Table>
+        </TableContainer>
+    );
+};

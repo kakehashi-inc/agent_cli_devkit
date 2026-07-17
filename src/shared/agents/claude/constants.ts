@@ -125,6 +125,9 @@ export const CLAUDE_BUILTIN_MARKETPLACES = ['claude-plugins-official'];
 export const CLAUDE_PLUGIN_CAPABILITIES: PluginCapabilities = {
     directInstall: false,
     marketplaceRemoteUrl: true,
+    catalog: true,
+    marketplaceManagement: true,
+    packageSource: false,
 };
 
 // ============================================================

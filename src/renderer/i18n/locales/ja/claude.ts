@@ -52,7 +52,7 @@ export default {
         deleteSuccess: 'クリーンアップが完了しました',
         deletePartial: '使用中のファイルがあったため、一部をスキップしました',
         deleteError: '一部の項目の削除に失敗しました',
-        columnName: 'ディレクトリ',
+        columnName: '項目',
         columnDescription: '説明',
         columnFiles: 'ファイル数',
         columnSize: 'サイズ',

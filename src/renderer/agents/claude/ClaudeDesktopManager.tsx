@@ -251,14 +251,15 @@ export const ClaudeDesktopManager: React.FC = () => {
                     <Alert severity='info'>{t('claude.claudeDesktop.noServers')}</Alert>
                 ) : (
                     <TableContainer component={Paper}>
-                        <Table>
+                        {/* tableLayout: fixed で各列の最大幅を画面幅の比率から決め、長い値は省略せず折り返す */}
+                        <Table sx={{ tableLayout: 'fixed' }}>
                             <TableHead>
                                 <TableRow>
                                     <TableCell width='40'></TableCell>
-                                    <TableCell>{t('claude.claudeDesktop.serverName')}</TableCell>
-                                    <TableCell>{t('claude.claudeDesktop.command')}</TableCell>
+                                    <TableCell width='20%'>{t('claude.claudeDesktop.serverName')}</TableCell>
+                                    <TableCell width='100'>{t('claude.claudeDesktop.actions')}</TableCell>
+                                    <TableCell width='18%'>{t('claude.claudeDesktop.command')}</TableCell>
                                     <TableCell>{t('claude.claudeDesktop.args')}</TableCell>
-                                    <TableCell width='120'>{t('claude.claudeDesktop.actions')}</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -279,24 +280,24 @@ export const ClaudeDesktopManager: React.FC = () => {
                                             <DragIcon sx={{ color: 'action.disabled' }} />
                                         </TableCell>
                                         <TableCell>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <Typography variant='body2' sx={{ fontWeight: 'medium' }}>
+                                            <Box
+                                                sx={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 1,
+                                                    flexWrap: 'wrap',
+                                                }}
+                                            >
+                                                <Typography
+                                                    variant='body2'
+                                                    sx={{ fontWeight: 'medium', wordBreak: 'break-all' }}
+                                                >
                                                     {server.name}
                                                 </Typography>
                                                 {server.config.type && (
                                                     <Chip label={server.config.type} size='small' variant='outlined' />
                                                 )}
                                             </Box>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                                {server.config.command}
-                                            </Typography>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                                {server.config.args?.join(' ') || '-'}
-                                            </Typography>
                                         </TableCell>
                                         <TableCell>
                                             <Tooltip title={t('claude.claudeDesktop.disable')}>
@@ -308,6 +309,22 @@ export const ClaudeDesktopManager: React.FC = () => {
                                                     <EnableIcon sx={{ fontSize: 40 }} />
                                                 </IconButton>
                                             </Tooltip>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography
+                                                variant='body2'
+                                                sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
+                                            >
+                                                {server.config.command}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography
+                                                variant='body2'
+                                                sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
+                                            >
+                                                {server.config.args?.join(' ') || '-'}
+                                            </Typography>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -331,14 +348,15 @@ export const ClaudeDesktopManager: React.FC = () => {
                     <Alert severity='info'>{t('claude.claudeDesktop.noServers')}</Alert>
                 ) : (
                     <TableContainer component={Paper}>
-                        <Table>
+                        {/* tableLayout: fixed で各列の最大幅を画面幅の比率から決め、長い値は省略せず折り返す */}
+                        <Table sx={{ tableLayout: 'fixed' }}>
                             <TableHead>
                                 <TableRow>
                                     <TableCell width='40'></TableCell>
-                                    <TableCell>{t('claude.claudeDesktop.serverName')}</TableCell>
-                                    <TableCell>{t('claude.claudeDesktop.command')}</TableCell>
+                                    <TableCell width='20%'>{t('claude.claudeDesktop.serverName')}</TableCell>
+                                    <TableCell width='100'>{t('claude.claudeDesktop.actions')}</TableCell>
+                                    <TableCell width='18%'>{t('claude.claudeDesktop.command')}</TableCell>
                                     <TableCell>{t('claude.claudeDesktop.args')}</TableCell>
-                                    <TableCell width='120'>{t('claude.claudeDesktop.actions')}</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -359,24 +377,24 @@ export const ClaudeDesktopManager: React.FC = () => {
                                             <DragIcon sx={{ color: 'action.disabled' }} />
                                         </TableCell>
                                         <TableCell>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <Typography variant='body2' sx={{ fontWeight: 'medium' }}>
+                                            <Box
+                                                sx={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 1,
+                                                    flexWrap: 'wrap',
+                                                }}
+                                            >
+                                                <Typography
+                                                    variant='body2'
+                                                    sx={{ fontWeight: 'medium', wordBreak: 'break-all' }}
+                                                >
                                                     {server.name}
                                                 </Typography>
                                                 {server.config.type && (
                                                     <Chip label={server.config.type} size='small' variant='outlined' />
                                                 )}
                                             </Box>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                                {server.config.command}
-                                            </Typography>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                                {server.config.args?.join(' ') || '-'}
-                                            </Typography>
                                         </TableCell>
                                         <TableCell>
                                             <Tooltip title={t('claude.claudeDesktop.enable')}>
@@ -388,6 +406,22 @@ export const ClaudeDesktopManager: React.FC = () => {
                                                     <DisableIcon sx={{ fontSize: 40 }} />
                                                 </IconButton>
                                             </Tooltip>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography
+                                                variant='body2'
+                                                sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
+                                            >
+                                                {server.config.command}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography
+                                                variant='body2'
+                                                sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
+                                            >
+                                                {server.config.args?.join(' ') || '-'}
+                                            </Typography>
                                         </TableCell>
                                     </TableRow>
                                 ))}

@@ -32,7 +32,7 @@ export default {
         deleteSuccess: 'Cleanup completed',
         deletePartial: 'Some files were in use and were skipped',
         deleteError: 'Failed to delete some items',
-        columnName: 'Directory',
+        columnName: 'Item',
         columnDescription: 'Description',
         columnFiles: 'Files',
         columnSize: 'Size',

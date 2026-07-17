@@ -2,7 +2,7 @@
 
 ## 1. System Overview
 
-Agent CLI DevKit is an Electron desktop tool that manages the development environments of AI agent CLIs (Claude Code / Codex CLI / Grok CLI, etc.) in a single application. It merges all features of Claude Developer Tool and Codex Developer Tool, adds support for Grok CLI (Grok Build), and presents everything in a UI grouped by agent (Claude / Codex / Grok).
+Agent CLI DevKit is an Electron desktop tool that manages the development environments of AI agent CLIs (Claude Code / Codex CLI / Antigravity CLI / Grok CLI / OpenCode) in a single application. It presents each CLI's tools in the fixed order Claude / Codex / Agy / Grok / OpenCode.
 
 ### Features
 
@@ -17,18 +17,34 @@ Agent CLI DevKit is an Electron desktop tool that manages the development enviro
 **Codex group**
 
 - **Codex MCP Manager** — Enable, disable, and reorder Codex (CLI) MCP servers (~/.codex/config.toml). Supports both the native OS and WSL distributions.
-- **Codex Agent / Skill Manager** — Manage Codex custom agents (~/.codex/agents) and skills (~/.agents/skills), and import official OpenAI skills.
+- **Codex Agent / Skill Manager** — Manage Codex custom agents (`~/.codex/agents`) and skills (`~/.agents/skills`), and import official OpenAI skills.
 - **Codex Settings** — Edit ~/.codex/config.toml items in a table, or edit the file directly.
 - **Codex Cleanup** — Reclaim disk space by deleting history, caches, temporary files, logs, and sessions under ~/.codex.
+
+**Agy group (Antigravity CLI only)**
+
+- **Agy CLI MCP Manager** — Manage the global MCP configuration shared with Gemini CLI at ~/.gemini/config/mcp_config.json.
+- **Agy CLI Agent / Skill Manager** — Manage shared custom agents at `~/.gemini/config/agents/<name>/agent.md` and the one Agy CLI skill location at `~/.gemini/antigravity-cli/skills/<name>/SKILL.md`. Locations owned by the separate Agy product and Antigravity IDE are excluded.
+- **Agy CLI Plugin Manager** — Install, uninstall, enable, and disable plugins with `agy plugin`, including plugins in the Gemini-shared ~/.gemini/config/plugins directory.
+- **Agy CLI Settings** — Edit scalar settings in ~/.gemini/antigravity-cli/settings.json, with arrays and objects available through direct JSON editing.
+- **Agy CLI Cleanup** — Selectively remove Agy CLI caches, logs, crashes, history, and conversation data without touching settings, skills, binaries, or shared Gemini configuration.
 
 **Grok group**
 
 - **Grok MCP Manager** — Enable, disable, and reorder Grok (CLI) MCP servers (~/.grok/config.toml). Supports both the native OS and WSL distributions.
-- **Grok Agent / Skill Manager** — Manage Grok custom agents (~/.grok/agents) and skills (~/.grok/skills), and import official xAI skills.
+- **Grok Agent / Skill Manager** — Manage Grok custom agents (`~/.grok/agents`) and skills (`~/.grok/skills`), and import official xAI skills.
 - **Grok Settings** — Edit ~/.grok/config.toml items in a table, or edit the file directly.
 - **Grok Cleanup** — Reclaim disk space by deleting history, memory, and logs under ~/.grok, plus old executable versions (about 130 MB each) left behind by updates.
 
-The dashboard and the title-bar navigation display every feature grouped by Claude / Codex / Grok. The internal structure is also split into per-agent files, making it easy to add new agent CLIs (see `Documents/システム仕様.md` for details).
+**OpenCode group**
+
+- **OpenCode MCP Manager** — Enable, disable, and reorder MCP entries in ~/.config/opencode/opencode.json while preserving unrelated JSONC content.
+- **OpenCode Agent / Skill Manager** — Manage ~/.config/opencode/agents/*.md and ~/.config/opencode/skills/<name>/SKILL.md. Claude-compatible and agents-compatible directories are deliberately excluded.
+- **OpenCode Plugin Manager** — Manage npm plugin entries and local .js/.ts plugins under ~/.config/opencode/plugins, including enable/disable and uninstall operations.
+- **OpenCode Settings** — Edit scalar server/runtime settings in a table or edit JSONC directly; arrays, maps, objects, and union values are direct-edit only. TUI keybindings are outside this feature scope.
+- **OpenCode Cleanup** — Selectively remove data from OpenCode's official XDG cache, data, and state directories while excluding configuration, assets, and credentials.
+
+The dashboard shows the Claude / Codex / Agy / Grok / OpenCode groups as an exclusive accordion (the last expanded group is restored on the next launch), and every feature is reachable from the title bar and the burger menu (a two-level cascading menu per agent). Theme (light/dark) and language (Japanese/English) are changed on the App Settings screen and take effect when you press Save (the OS settings are inherited until saved). The internal structure is split into per-agent files with shared agent-independent managers (see `Documents/システム仕様.md` for details).
 
 ### Naming / Distribution
 
@@ -123,19 +139,23 @@ src/
 │   ├── ipc/                 # IPC handlers
 │   │   ├── claude/          #   Claude handlers
 │   │   ├── codex/           #   Codex handlers
-│   │   └── grok/            #   Grok handlers
+│   │   ├── agy/             #   Antigravity CLI handlers
+│   │   ├── grok/            #   Grok handlers
+│   │   └── opencode/        #   OpenCode handlers
 │   ├── services/            # Services
 │   │   ├── claude/          #   Claude managers
 │   │   ├── codex/           #   Codex managers
+│   │   ├── agy/             #   Antigravity CLI managers
 │   │   ├── grok/            #   Grok managers
+│   │   ├── opencode/        #   OpenCode managers
 │   │   └── common/          #   Agent-agnostic shared implementations (WSL/git)
 │   └── utils/               # Utilities
 ├── preload/                 # Safely bridges APIs to the renderer
-│   └── agents/              #   Per-agent bridges (claude.ts / codex.ts / grok.ts)
+│   └── agents/              #   Per-agent bridges
 ├── renderer/                # React + MUI UI
-│   ├── agents/              #   Per-agent screens (claude/ codex/ grok/) and registry
-│   ├── components/          #   Shared components (TitleBar/Dashboard, etc.)
-│   └── i18n/locales/        #   Locales (ja/ en/ × app/claude/codex/grok)
+│   ├── agents/              #   Per-agent screens and registry
+│   ├── components/          #   Shared components (TitleBar/Dashboard/AppSettings and agent-agnostic views)
+│   └── i18n/locales/        #   Locales (ja/ en/ × app and every agent)
 ├── shared/                  # Type definitions / constants
 │   └── agents/              #   Agent-common types and per-agent constants/types
 └── public/                  # Icons, etc.

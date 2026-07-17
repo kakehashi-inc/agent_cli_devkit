@@ -120,6 +120,9 @@ export const GROK_SELECTABLE_EXTERNAL_MARKETPLACES = ['claude-plugins-official']
 export const GROK_PLUGIN_CAPABILITIES: PluginCapabilities = {
     directInstall: true,
     marketplaceRemoteUrl: false,
+    catalog: true,
+    marketplaceManagement: true,
+    packageSource: false,
 };
 
 // ============================================================

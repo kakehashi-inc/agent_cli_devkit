@@ -6,11 +6,13 @@ import {
     Typography,
     Menu,
     MenuItem,
+    MenuList,
     ListItemIcon,
     ListItemText,
-    ListSubheader,
     Divider,
     Tooltip,
+    Popper,
+    Paper,
 } from '@mui/material';
 import {
     Menu as MenuIcon,
@@ -20,28 +22,26 @@ import {
     Close as CloseIcon,
     Dashboard as DashboardIcon,
     PowerSettingsNew as ExitIcon,
-    Brightness4 as DarkIcon,
-    Brightness7 as LightIcon,
-    Language as LanguageIcon,
+    Settings as AppSettingsIcon,
     KeyboardArrowDown as ExpandGroupIcon,
     KeyboardArrowUp as CollapseGroupIcon,
+    ChevronLeft as SubMenuIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAppStore } from '../store/useAppStore';
 import { useTranslation } from 'react-i18next';
 import { AGENT_MODULES } from '../agents/index';
 
 export const TitleBar: React.FC = () => {
-    const { t, i18n } = useTranslation();
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
-    const { theme, language, setTheme, setLanguage } = useAppStore();
     const [isMaximized, setIsMaximized] = useState(false);
     const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-    const [langMenuAnchor, setLangMenuAnchor] = useState<null | HTMLElement>(null);
     const [appVersion, setAppVersion] = useState<string>('');
     // タイトルバーで展開中の agent グループ（null = すべて閉じる）。
     const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+    // バーガーメニューでホバー中の agent グループのサブメニュー（カスケード表示）。
+    const [subMenu, setSubMenu] = useState<{ anchorEl: HTMLElement; agentId: string } | null>(null);
 
     // 現在のルートが属するグループを自動展開する（ダッシュボードやメニューからの遷移に追従）。
     useEffect(() => {
@@ -85,28 +85,12 @@ export const TitleBar: React.FC = () => {
 
     const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
         setMenuAnchor(event.currentTarget);
+        setSubMenu(null);
     };
 
     const handleMenuClose = () => {
         setMenuAnchor(null);
-    };
-
-    const handleLanguageMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-        setLangMenuAnchor(event.currentTarget);
-    };
-
-    const handleLanguageMenuClose = () => {
-        setLangMenuAnchor(null);
-    };
-
-    const handleLanguageSelect = (lang: 'en' | 'ja') => {
-        setLanguage(lang);
-        i18n.changeLanguage(lang);
-        handleLanguageMenuClose();
-    };
-
-    const handleThemeToggle = () => {
-        setTheme(theme === 'light' ? 'dark' : 'light');
+        setSubMenu(null);
     };
 
     const handleExit = () => {
@@ -199,11 +183,11 @@ export const TitleBar: React.FC = () => {
                                     return (
                                         <Tooltip key={feature.path} title={`${module.label}: ${t(feature.navKey)}`}>
                                             <IconButton
-                                                size='medium'
+                                                size='small'
                                                 onClick={() => navigate(feature.path)}
-                                                sx={navIconSx(active)}
+                                                sx={{ ...navIconSx(active), p: 0.75 }}
                                             >
-                                                <feature.Icon />
+                                                <feature.Icon sx={{ fontSize: 22 }} />
                                             </IconButton>
                                         </Tooltip>
                                     );
@@ -215,58 +199,16 @@ export const TitleBar: React.FC = () => {
                 {/* スペーサー */}
                 <Box sx={{ width: 16 }} />
 
-                {/* テーマ切り替え */}
-                <Tooltip title={t('theme.' + (theme === 'light' ? 'dark' : 'light'))}>
+                {/* アプリ設定（アイコンのみ・バーガーメニューの左） */}
+                <Tooltip title={t('nav.appSettings')}>
                     <IconButton
                         size='medium'
-                        onClick={handleThemeToggle}
-                        sx={{
-                            color: 'text.primary',
-                        }}
+                        onClick={() => navigate('/app-settings')}
+                        sx={navIconSx(location.pathname === '/app-settings')}
                     >
-                        {theme === 'light' ? <DarkIcon /> : <LightIcon />}
+                        <AppSettingsIcon />
                     </IconButton>
                 </Tooltip>
-
-                {/* 言語ドロップダウン */}
-                <Tooltip title={t('language.' + language)}>
-                    <IconButton
-                        size='medium'
-                        onClick={handleLanguageMenuOpen}
-                        sx={{
-                            color: 'text.primary',
-                        }}
-                    >
-                        <LanguageIcon />
-                    </IconButton>
-                </Tooltip>
-
-                <Menu
-                    anchorEl={langMenuAnchor}
-                    open={Boolean(langMenuAnchor)}
-                    onClose={handleLanguageMenuClose}
-                    anchorOrigin={{
-                        vertical: 'bottom',
-                        horizontal: 'right',
-                    }}
-                    transformOrigin={{
-                        vertical: 'top',
-                        horizontal: 'right',
-                    }}
-                >
-                    <MenuItem onClick={() => handleLanguageSelect('ja')} selected={language === 'ja'}>
-                        <ListItemText
-                            primary={t('language.ja')}
-                            slotProps={{ primary: { sx: { fontSize: '0.95rem' } } }}
-                        />
-                    </MenuItem>
-                    <MenuItem onClick={() => handleLanguageSelect('en')} selected={language === 'en'}>
-                        <ListItemText
-                            primary={t('language.en')}
-                            slotProps={{ primary: { sx: { fontSize: '0.95rem' } } }}
-                        />
-                    </MenuItem>
-                </Menu>
 
                 {/* バーガーメニュー */}
                 <IconButton
@@ -292,7 +234,11 @@ export const TitleBar: React.FC = () => {
                         horizontal: 'right',
                     }}
                 >
-                    <MenuItem selected={location.pathname === '/'} onClick={() => handleNavigate('/')}>
+                    <MenuItem
+                        selected={location.pathname === '/'}
+                        onClick={() => handleNavigate('/')}
+                        onMouseEnter={() => setSubMenu(null)}
+                    >
                         <ListItemIcon>
                             <DashboardIcon />
                         </ListItemIcon>
@@ -301,28 +247,48 @@ export const TitleBar: React.FC = () => {
                             slotProps={{ primary: { sx: { fontSize: '0.95rem' } } }}
                         />
                     </MenuItem>
-                    {AGENT_MODULES.flatMap(module => [
-                        <ListSubheader key={`${module.id}-header`} sx={{ lineHeight: '32px', bgcolor: 'transparent' }}>
-                            {module.label}
-                        </ListSubheader>,
-                        ...module.features.map(feature => (
+                    {/* agent グループ（1 階層目）。ホバーで機能一覧のサブメニューを横に展開する */}
+                    {AGENT_MODULES.map(module => {
+                        const groupActive = module.features.some(f => f.path === location.pathname);
+                        return (
                             <MenuItem
-                                key={feature.path}
-                                selected={location.pathname === feature.path}
-                                onClick={() => handleNavigate(feature.path)}
+                                key={module.id}
+                                onMouseEnter={e =>
+                                    setSubMenu({ anchorEl: e.currentTarget, agentId: module.id })
+                                }
+                                onClick={e =>
+                                    setSubMenu({ anchorEl: e.currentTarget, agentId: module.id })
+                                }
                             >
                                 <ListItemIcon>
-                                    <feature.Icon />
+                                    <SubMenuIcon sx={{ color: 'text.secondary' }} />
                                 </ListItemIcon>
                                 <ListItemText
-                                    primary={t(feature.navKey)}
-                                    slotProps={{ primary: { sx: { fontSize: '0.95rem' } } }}
+                                    primary={module.label}
+                                    slotProps={{
+                                        primary: {
+                                            sx: { fontSize: '0.95rem', fontWeight: groupActive ? 600 : 400 },
+                                        },
+                                    }}
                                 />
                             </MenuItem>
-                        )),
-                    ])}
+                        );
+                    })}
                     <Divider />
-                    <MenuItem onClick={handleExit}>
+                    <MenuItem
+                        selected={location.pathname === '/app-settings'}
+                        onClick={() => handleNavigate('/app-settings')}
+                        onMouseEnter={() => setSubMenu(null)}
+                    >
+                        <ListItemIcon>
+                            <AppSettingsIcon />
+                        </ListItemIcon>
+                        <ListItemText
+                            primary={t('nav.appSettings')}
+                            slotProps={{ primary: { sx: { fontSize: '0.95rem' } } }}
+                        />
+                    </MenuItem>
+                    <MenuItem onClick={handleExit} onMouseEnter={() => setSubMenu(null)}>
                         <ListItemIcon>
                             <ExitIcon />
                         </ListItemIcon>
@@ -332,6 +298,35 @@ export const TitleBar: React.FC = () => {
                         />
                     </MenuItem>
                 </Menu>
+
+                {/* agent グループのサブメニュー。バーガーメニューはウィンドウ右端に開くため
+                    右側に空きがなく、常に左横へカスケード表示する（矢印 ◀ も左向きに合わせる） */}
+                <Popper
+                    open={Boolean(subMenu)}
+                    anchorEl={subMenu?.anchorEl ?? null}
+                    placement='left-start'
+                    sx={{ zIndex: theme => theme.zIndex.modal + 1 }}
+                >
+                    <Paper elevation={8}>
+                        <MenuList>
+                            {AGENT_MODULES.find(m => m.id === subMenu?.agentId)?.features.map(feature => (
+                                <MenuItem
+                                    key={feature.path}
+                                    selected={location.pathname === feature.path}
+                                    onClick={() => handleNavigate(feature.path)}
+                                >
+                                    <ListItemIcon>
+                                        <feature.Icon />
+                                    </ListItemIcon>
+                                    <ListItemText
+                                        primary={t(feature.navKey)}
+                                        slotProps={{ primary: { sx: { fontSize: '0.95rem' } } }}
+                                    />
+                                </MenuItem>
+                            ))}
+                        </MenuList>
+                    </Paper>
+                </Popper>
             </Box>
 
             {/* ウィンドウコントロールボタン */}

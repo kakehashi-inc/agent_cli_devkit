@@ -47,13 +47,14 @@ interface Props {
  * プラグイン追加ダイアログ。
  * - 「マーケットプレイスから」: カタログ（plugin list --available）を一覧表示して選択インストール。
  * - 「リポジトリ / ローカルから」:
- *   - capabilities.directInstall=true（grok）: ソースを 1 コマンドで直接インストール。
- *   - false（claude / codex）: ソースをマーケットプレイスとして追加し、そのカタログへ誘導する 2 段階。
+ *   - capabilities.directInstall=true: ソースを 1 操作で直接インストール。
+ *   - false: ソースをマーケットプレイスとして追加し、そのカタログへ誘導する 2 段階。
+ * - capabilities.catalog=false: カタログ切替を隠し、直接ソース入力だけを表示する。
  * インストール実行前には信頼確認を挟む（プラグインは任意コード実行が可能なため）。
  */
 export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marketplaces, onNotify, onClose }) => {
     const { t } = useTranslation();
-    const [mode, setMode] = useState<Mode>('catalog');
+    const [mode, setMode] = useState<Mode>(capabilities.catalog ? 'catalog' : 'source');
     const [entries, setEntries] = useState<PluginCatalogEntry[]>([]);
     const [catalogLoading, setCatalogLoading] = useState(false);
     const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -63,16 +64,14 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
     const [busy, setBusy] = useState(false);
     const [errorDetail, setErrorDetail] = useState<string | null>(null);
     // 信頼確認の対象（カタログの 1 件 or ソース直接インストール）。
-    const [trustTarget, setTrustTarget] = useState<{ kind: 'catalog'; entry: PluginCatalogEntry } | { kind: 'source' } | null>(
-        null
-    );
+    const [trustTarget, setTrustTarget] = useState<
+        { kind: 'catalog'; entry: PluginCatalogEntry } | { kind: 'source' } | null
+    >(null);
     // このダイアログ内で行った変更（インストール / マーケットプレイス追加）の有無。
     const [changed, setChanged] = useState(false);
     // カタログモードで選択できるマーケットプレイス名（2 段階フローで増えることがある）。
     // インストール元として選択可能（selectable）なもののみ提示する。
-    const [marketNames, setMarketNames] = useState<string[]>(
-        marketplaces.filter(m => m.selectable).map(m => m.name)
-    );
+    const [marketNames, setMarketNames] = useState<string[]>(marketplaces.filter(m => m.selectable).map(m => m.name));
 
     const loadCatalog = async () => {
         setCatalogLoading(true);
@@ -92,7 +91,9 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
     };
 
     useEffect(() => {
-        loadCatalog();
+        if (capabilities.catalog) {
+            loadCatalog();
+        }
         // env / api は安定参照。マウント時に一度ロードする。
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -207,25 +208,27 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
         <Dialog open fullWidth maxWidth='md' onClose={() => !busy && onClose(changed)}>
             <DialogTitle>{t('pluginManager.addPluginTitle')}</DialogTitle>
             <DialogContent>
-                <ToggleButtonGroup
-                    exclusive
-                    size='small'
-                    value={mode}
-                    onChange={(_, v: Mode | null) => {
-                        if (v !== null && !busy) {
-                            setMode(v);
-                            setErrorDetail(null);
-                        }
-                    }}
-                    sx={{ mb: 2 }}
-                >
-                    <ToggleButton value='catalog' sx={{ textTransform: 'none' }}>
-                        {t('pluginManager.modeCatalog')}
-                    </ToggleButton>
-                    <ToggleButton value='source' sx={{ textTransform: 'none' }}>
-                        {t('pluginManager.modeSource')}
-                    </ToggleButton>
-                </ToggleButtonGroup>
+                {capabilities.catalog && (
+                    <ToggleButtonGroup
+                        exclusive
+                        size='small'
+                        value={mode}
+                        onChange={(_, v: Mode | null) => {
+                            if (v !== null && !busy) {
+                                setMode(v);
+                                setErrorDetail(null);
+                            }
+                        }}
+                        sx={{ mb: 2 }}
+                    >
+                        <ToggleButton value='catalog' sx={{ textTransform: 'none' }}>
+                            {t('pluginManager.modeCatalog')}
+                        </ToggleButton>
+                        <ToggleButton value='source' sx={{ textTransform: 'none' }}>
+                            {t('pluginManager.modeSource')}
+                        </ToggleButton>
+                    </ToggleButtonGroup>
+                )}
 
                 {mode === 'catalog' && (
                     <>
@@ -273,7 +276,12 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                                     <ListItem key={entry.id} divider alignItems='flex-start' sx={{ gap: 1.5 }}>
                                         <Box sx={{ flex: 1, minWidth: 0 }}>
                                             <Box
-                                                sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}
+                                                sx={{
+                                                    display: 'flex',
+                                                    gap: 0.5,
+                                                    alignItems: 'center',
+                                                    flexWrap: 'wrap',
+                                                }}
                                             >
                                                 <Typography component='span' sx={{ fontWeight: 500 }}>
                                                     {entry.name}

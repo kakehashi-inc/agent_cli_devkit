@@ -2,9 +2,11 @@
 // agent 固有の API 型は shared/agents/<agent>/ipc.ts に定義し、
 // ここでは agent 名のキーで束ねるだけにする（agent 追加時はここに 1 行追加する）。
 import type { UpdateState } from './types';
+import type { AgyIpcApi } from './agents/agy/ipc';
 import type { ClaudeIpcApi } from './agents/claude/ipc';
 import type { CodexIpcApi } from './agents/codex/ipc';
 import type { GrokIpcApi } from './agents/grok/ipc';
+import type { OpenCodeIpcApi } from './agents/opencode/ipc';
 
 export type IpcApi = {
     // システム情報
@@ -33,7 +35,9 @@ export type IpcApi = {
     // ===== agent 別 API（agent 追加時はここに 1 エントリ追加）=====
     claude: ClaudeIpcApi;
     codex: CodexIpcApi;
+    agy: AgyIpcApi;
     grok: GrokIpcApi;
+    opencode: OpenCodeIpcApi;
 };
 
 declare global {

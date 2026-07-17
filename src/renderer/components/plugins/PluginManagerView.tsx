@@ -68,17 +68,24 @@ export const PluginManagerView: React.FC<Props> = ({ titleKey, descKey, api }) =
 
     return (
         <Box sx={{ p: 3 }}>
-            <Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant='h4' component='h1'>
-                    {t(titleKey)}
-                </Typography>
-                <Button variant='outlined' startIcon={<RefreshIcon />} onClick={load} sx={{ textTransform: 'none' }}>
+            <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2 }}>
+                <Box>
+                    <Typography variant='h4' component='h1' sx={{ mb: 1 }}>
+                        {t(titleKey)}
+                    </Typography>
+                    <Typography variant='body2' color='text.secondary'>
+                        {t(descKey)}
+                    </Typography>
+                </Box>
+                <Button
+                    variant='outlined'
+                    startIcon={<RefreshIcon />}
+                    onClick={load}
+                    sx={{ textTransform: 'none', flexShrink: 0 }}
+                >
                     {t('common.refresh')}
                 </Button>
             </Box>
-            <Typography variant='body2' color='text.secondary' sx={{ mb: 3 }}>
-                {t(descKey)}
-            </Typography>
 
             {nativeEnvs.map(info => (
                 <Box key={`${envId(info.env)}-${reloadKey}`}>

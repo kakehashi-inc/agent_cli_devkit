@@ -1,7 +1,7 @@
 {
   "name": "agent-cli-devkit",
   "version": "0.5.7",
-  "description": "GUI for managing Claude and OpenAI Codex CLI: MCP servers, agents & skills, config, and cleanup.",
+  "description": "GUI for managing Claude, Codex, Agy, Grok, and OpenCode CLI environments.",
   "main": "dist/main/index.js",
   "engines": {
     "node": ">=22.0.0",

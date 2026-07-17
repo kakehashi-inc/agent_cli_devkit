@@ -2,9 +2,10 @@ import React, { useMemo, useEffect } from 'react';
 import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from './store/useAppStore';
+import { LANGUAGE_STORAGE_KEY, THEME_STORAGE_KEY, useAppStore } from './store/useAppStore';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
+import { AppSettings } from './components/AppSettings';
 import { UpdateNotification } from './components/UpdateNotification';
 import { AGENT_MODULES } from './agents/index';
 
@@ -15,25 +16,33 @@ export const App: React.FC = () => {
     const { theme, setTheme, setLanguage } = useAppStore();
     const { i18n } = useTranslation();
 
-    // OSの設定を読み込み
+    // アプリ設定画面で保存した値を優先し、未保存の場合のみ OS の設定を引き継ぐ
     useEffect(() => {
-        const loadSystemSettings = async () => {
+        const loadSettings = async () => {
             try {
-                // OSのテーマ設定を取得
-                const systemTheme = await window.agentCliDevkit.system.getTheme();
-                setTheme(systemTheme);
+                const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+                const theme =
+                    storedTheme === 'light' || storedTheme === 'dark'
+                        ? storedTheme
+                        : await window.agentCliDevkit.system.getTheme();
+                setTheme(theme);
 
-                // OSの言語設定を取得
-                const systemLocale = await window.agentCliDevkit.system.getLocale();
-                const language = systemLocale.startsWith('ja') ? 'ja' : 'en';
+                const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+                let language: 'en' | 'ja';
+                if (storedLanguage === 'en' || storedLanguage === 'ja') {
+                    language = storedLanguage;
+                } else {
+                    const systemLocale = await window.agentCliDevkit.system.getLocale();
+                    language = systemLocale.startsWith('ja') ? 'ja' : 'en';
+                }
                 setLanguage(language);
                 i18n.changeLanguage(language);
             } catch (error) {
-                console.error('Failed to load system settings:', error);
+                console.error('Failed to load app settings:', error);
             }
         };
 
-        loadSystemSettings();
+        loadSettings();
     }, [setTheme, setLanguage, i18n]);
 
     const muiTheme = useMemo(
@@ -53,6 +62,7 @@ export const App: React.FC = () => {
                 <Layout>
                     <Routes>
                         <Route path='/' element={<Dashboard />} />
+                        <Route path='/app-settings' element={<AppSettings />} />
                         {/* 各 agent の機能ルートは registry から生成する */}
                         {AGENT_MODULES.flatMap(module =>
                             module.features.map(feature => (

@@ -30,7 +30,7 @@ export interface WslDistroInfo {
 // MCP サーバー設定。command / args / env のほか、
 // agent 固有の任意キー（type / startup_timeout_sec など）も落とさず保持する。
 export interface MCPServerConfig {
-    command?: string;
+    command?: string | string[];
     args?: string[];
     env?: Record<string, string>;
     disabled?: boolean;
@@ -298,11 +298,17 @@ export interface PluginOpResult {
 
 // GUI 側の機能出し分け（agent ごとの constants で宣言する registry）
 export interface PluginCapabilities {
-    // 個別リポジトリ / ローカルパスから 1 コマンドで直接インストールできるか（grok のみ true）。
+    // 個別リポジトリ / ローカルパス / package から 1 操作で直接インストールできるか。
     // false の agent は「マーケットプレイスとして追加 → 含まれるプラグインを選択」の 2 段階で行う。
     directInstall: boolean;
     // マーケットプレイスソースにリモート marketplace.json の URL を指定できるか（claude のみ true）
     marketplaceRemoteUrl: boolean;
+    // カタログ一覧を CLI から取得できるか。false の agent は追加画面を直接ソース入力だけにする。
+    catalog: boolean;
+    // マーケットプレイスの一覧・追加・削除をサポートするか。
+    marketplaceManagement: boolean;
+    // 直接インストール元として npm パッケージ名を受け付けるか（OpenCode）。
+    packageSource: boolean;
 }
 
 // ============================================================
@@ -337,9 +343,9 @@ export interface SettingsFieldSpec {
     // type='boolean' のとき: 未設定時に agent が実際に採用する既定値。
     // UI で「未設定（既定: 有効/無効）」と表示するために使う。未確定なら省略する。
     defaultOn?: boolean;
-    // choices を持つ type='string' のとき: 未設定時に agent が採用する公式の固定既定値。
+    // type='string' / 'number' のとき: 未設定時に agent が採用する公式の固定既定値。
     // UI で「未設定（既定: <値>）」と表示するために使う。環境依存・未確定なら省略する。
-    defaultValue?: string;
+    defaultValue?: string | number;
 }
 
 // 設定項目 1 件の現在値（読み取り結果）。

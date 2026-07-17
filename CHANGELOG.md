@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added an Agy group that manages Agy CLI (Antigravity CLI) development environments. Data from the separate Agy product and Antigravity IDE is excluded.
+- Added an OpenCode group that manages OpenCode development environments. Only OpenCode-owned global locations are managed.
+- Added an App Settings screen for theme (light/dark) and language (Japanese/English). Edits take effect only when Save is pressed and are persisted for the next launch; until first saved, the OS theme and language are inherited as before.
+
+### Changed
+
+- The dashboard now shows each agent group as an exclusive accordion (opening one closes the others), and the last expanded group is restored on the next launch.
+- The burger menu is now grouped by agent as a two-level cascading menu whose submenus open on hover, the per-feature tool buttons in the title bar are slightly smaller, and theme/language switching moved from the title bar to the App Settings screen.
+- All MCP management screens now use a unified table layout: column widths are derived from the window width with the arguments column widest, long values wrap instead of being truncated, and the enable/disable toggle sits right after the server name.
+
 ## [0.5.7] - 2026-07-17
 
 ### Added

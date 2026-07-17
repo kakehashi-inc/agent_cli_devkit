@@ -6,10 +6,17 @@ export default {
     },
     nav: {
         dashboard: 'Dashboard',
+        appSettings: 'App Settings',
     },
     dashboard: {
         title: 'Dashboard',
-        subtitle: 'Select a feature to use.',
+    },
+    appSettings: {
+        title: 'App Settings',
+        theme: 'Theme',
+        language: 'Language',
+        save: 'Save',
+        saved: 'Settings saved',
     },
     theme: {
         light: 'Light',
@@ -51,6 +58,8 @@ export default {
         colSource: 'Source',
         enabled: 'Enabled',
         disabled: 'Disabled',
+        enable: 'Enable',
+        disable: 'Disable',
         enabledSuccess: 'Plugin enabled',
         disabledSuccess: 'Plugin disabled',
         toggleError: 'Failed to toggle the plugin',
@@ -91,6 +100,7 @@ export default {
             'The specified repository / directory is added as a marketplace, then you pick the plugins it contains to install.',
         sourceFormats: 'Accepted formats: {{formats}}',
         formatOwnerRepo: 'GitHub owner/repo',
+        formatNpmPackage: 'npm package',
         formatGitUrl: 'Git URL',
         formatLocalPath: 'local path',
         formatRemoteUrl: 'marketplace.json URL',

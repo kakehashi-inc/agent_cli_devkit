@@ -26,6 +26,9 @@ export interface AgentModule {
     id: string;
     // グループ表示名（固有名詞のため翻訳しない）
     label: string;
+    // ダッシュボード見出し用の表示名（省略時は label を使う）。
+    // タイトルバーは幅が限られるため短い label のままにし、こちらだけ補足を付けられる。
+    dashboardLabel?: string;
     // 提供する機能一覧（ダッシュボード・タイトルバー・ルートに表示順で並ぶ）
     features: AgentFeature[];
 }

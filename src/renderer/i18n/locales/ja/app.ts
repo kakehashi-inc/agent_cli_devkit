@@ -6,10 +6,17 @@ export default {
     },
     nav: {
         dashboard: 'ダッシュボード',
+        appSettings: 'アプリ設定',
     },
     dashboard: {
         title: 'ダッシュボード',
-        subtitle: '利用する機能を選択してください。',
+    },
+    appSettings: {
+        title: 'アプリ設定',
+        theme: 'テーマ',
+        language: '言語',
+        save: '保存',
+        saved: '設定を保存しました',
     },
     theme: {
         light: 'ライト',
@@ -51,6 +58,8 @@ export default {
         colSource: 'ソース',
         enabled: '有効',
         disabled: '無効',
+        enable: '有効化',
+        disable: '無効化',
         enabledSuccess: 'プラグインを有効化しました',
         disabledSuccess: 'プラグインを無効化しました',
         toggleError: 'プラグインの有効/無効の切り替えに失敗しました',
@@ -91,6 +100,7 @@ export default {
             '指定したリポジトリ / ディレクトリをマーケットプレイスとして追加し、含まれるプラグインを選択してインストールします。',
         sourceFormats: '指定できる形式: {{formats}}',
         formatOwnerRepo: 'GitHub の owner/repo',
+        formatNpmPackage: 'npm パッケージ',
         formatGitUrl: 'Git URL',
         formatLocalPath: 'ローカルパス',
         formatRemoteUrl: 'marketplace.json の URL',

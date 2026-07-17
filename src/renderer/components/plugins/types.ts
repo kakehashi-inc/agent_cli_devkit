@@ -1,11 +1,6 @@
 // プラグイン管理画面（agent 非依存の共通 UI）が使う API アダプタ型。
 // 各 agent の薄いラッパー画面が preload の <agent>.plugin をそのまま渡す。
-import type {
-    AgentEnvironment,
-    PluginCatalogReport,
-    PluginEnvReport,
-    PluginOpResult,
-} from '@shared/agents/types';
+import type { AgentEnvironment, PluginCatalogReport, PluginEnvReport, PluginOpResult } from '@shared/agents/types';
 
 export interface PluginManagerApi {
     getEnvironments(): Promise<{ env: AgentEnvironment; label: string }[]>;
