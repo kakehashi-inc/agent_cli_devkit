@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-07-18
+
 ### Added
 
 - Added an Agy group that manages Agy CLI (Antigravity CLI) development environments. Data from the separate Agy product and Antigravity IDE is excluded.
