@@ -17,3 +17,11 @@ export interface UpdateState {
     // 直近のエラーメッセージ (status='error' 時のみ)
     error?: string;
 }
+
+// アプリ設定（~/.agent_cli_devkit/settings.json に保存する）
+export interface AppSettingsData {
+    // テーマ。未保存時は OS 設定を引き継ぐ
+    theme?: 'light' | 'dark';
+    // 言語。未保存時は OS ロケールを引き継ぐ
+    language?: 'en' | 'ja';
+}

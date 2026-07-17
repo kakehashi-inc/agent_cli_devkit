@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { AGENT_MODULES } from '../agents/index';
 
 // 最後に展開していた agent をアプリ再起動後に復元するための保存キー。
+// アプリ設定（settings.json）ではなく Electron 側の保存（localStorage）を使う。
 // '' は「すべて閉じた状態で終了した」ことを表す。
 const EXPANDED_AGENT_STORAGE_KEY = 'dashboard.expandedAgent';
 

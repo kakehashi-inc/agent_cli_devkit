@@ -6,6 +6,7 @@ import { registerClaudeIpcHandlers } from './claude/index';
 import { registerCodexIpcHandlers } from './codex/index';
 import { registerGrokIpcHandlers } from './grok/index';
 import { registerOpenCodeIpcHandlers } from './opencode/index';
+import { registerAppSettingsHandlers } from './appSettingsHandlers';
 import { registerSystemHandlers } from './systemHandlers';
 import { registerWindowHandlers } from './windowHandlers';
 import { registerUpdaterIpcHandlers } from './updater';
@@ -28,6 +29,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null) {
 
     // ===== アプリ共通 IPC ハンドラ =====
     registerSystemHandlers();
+    registerAppSettingsHandlers();
     registerWindowHandlers();
 
     // 自動アップデート関連の IPC ハンドラ

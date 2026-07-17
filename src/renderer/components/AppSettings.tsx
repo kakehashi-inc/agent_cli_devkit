@@ -12,11 +12,12 @@ import {
     Typography,
 } from '@mui/material';
 import { Save as SaveIcon } from '@mui/icons-material';
-import { LANGUAGE_STORAGE_KEY, THEME_STORAGE_KEY, useAppStore } from '../store/useAppStore';
+import { useAppStore } from '../store/useAppStore';
 
 /**
  * アプリ設定画面（テーマ / 言語）。
- * 編集内容はローカル state に保持し、「保存」を押した時点で初めてアプリへ反映＋永続化する。
+ * 編集内容はローカル state に保持し、「保存」を押した時点で初めてアプリへ反映し、
+ * ~/.agent_cli_devkit/settings.json へ永続化する。
  * 保存値がない初回起動時は OS 設定から引き継ぐ（App.tsx 参照）。
  */
 export const AppSettings: React.FC = () => {
@@ -29,9 +30,12 @@ export const AppSettings: React.FC = () => {
 
     const dirty = draftTheme !== theme || draftLanguage !== language;
 
-    const handleSave = () => {
-        window.localStorage.setItem(THEME_STORAGE_KEY, draftTheme);
-        window.localStorage.setItem(LANGUAGE_STORAGE_KEY, draftLanguage);
+    const handleSave = async () => {
+        try {
+            await window.agentCliDevkit.appSettings.write({ theme: draftTheme, language: draftLanguage });
+        } catch (error) {
+            console.error('Failed to save app settings:', error);
+        }
         setTheme(draftTheme);
         setLanguage(draftLanguage);
         i18n.changeLanguage(draftLanguage);

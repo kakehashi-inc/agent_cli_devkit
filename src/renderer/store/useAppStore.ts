@@ -1,10 +1,8 @@
 import { create } from 'zustand';
 
-// アプリ設定画面で「保存」したテーマ / 言語の永続化キー。
-// 保存値がない場合は OS 設定から引き継ぐ（App.tsx の起動時ロジック）。
-export const THEME_STORAGE_KEY = 'app.theme';
-export const LANGUAGE_STORAGE_KEY = 'app.language';
-
+// テーマ / 言語の実行時ストア。
+// 永続化は window.agentCliDevkit.appSettings（~/.agent_cli_devkit/settings.json）で行い、
+// 起動時に App.tsx が読み込んでこのストアへ反映する（保存値がなければ OS 設定を引き継ぐ）。
 interface AppState {
     theme: 'light' | 'dark';
     language: 'en' | 'ja';

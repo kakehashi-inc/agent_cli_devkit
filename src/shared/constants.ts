@@ -27,6 +27,13 @@ export const WINDOW_CHANNELS = {
     IS_MAXIMIZED: 'window:is-maximized',
 } as const;
 
+// アプリ設定（~/.agent_cli_devkit/settings.json）用
+export const APP_SETTINGS_FILENAME = 'settings.json';
+export const APP_SETTINGS_CHANNELS = {
+    READ: 'app-settings:read',
+    WRITE: 'app-settings:write',
+} as const;
+
 // システム情報用
 export const SYSTEM_CHANNELS = {
     GET_THEME: 'system:get-theme',

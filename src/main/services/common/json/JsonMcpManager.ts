@@ -63,7 +63,10 @@ export class JsonMcpManager {
 
     private async readConfig(env: AgentEnvironment): Promise<{ fs: HomeFs; raw: string }> {
         const fs = this.fsFor(env);
-        const raw = (await fs.readText(this.options.configRel)) ?? '{}\n';
+        // ファイルなし（null）だけでなく空・空白のみのファイルも空オブジェクト扱いにする
+        // （JSON.parse('') の SyntaxError を防ぐ）
+        const text = await fs.readText(this.options.configRel);
+        const raw = text !== null && text.trim().length > 0 ? text : '{}\n';
         return { fs, raw };
     }
 
