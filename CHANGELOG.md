@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-07-17
+
 ### Added
 
 - Agent and skill lists for Claude, Codex, and Grok can now be filtered by name or description, with space-separated terms matched as an order-independent AND search.
