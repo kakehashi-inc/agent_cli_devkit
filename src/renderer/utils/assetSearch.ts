@@ -1,7 +1,7 @@
 import type { AssetEntry } from '@shared/agents/types';
 
 /** 検索時に大文字小文字と全角半角の違いを吸収する。 */
-function normalizeSearchText(value: string): string {
+export function normalizeSearchText(value: string): string {
     return value.normalize('NFKC').toLowerCase();
 }
 

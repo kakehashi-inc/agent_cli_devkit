@@ -35,6 +35,7 @@ export default {
         loading: '読み込み中...',
         refresh: '再取得',
         assetSearchLabel: '名前または説明を検索',
+        settingsSearchLabel: '設定キー・項目名または説明を検索',
         assetSearchPlaceholder: '複数語はスペース区切りでAND検索',
         clearSearch: '検索をクリア',
         noSearchResults: '検索条件に一致するデータはありません',

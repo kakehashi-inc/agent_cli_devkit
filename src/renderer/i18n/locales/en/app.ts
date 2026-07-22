@@ -35,6 +35,7 @@ export default {
         loading: 'Loading...',
         refresh: 'Refresh',
         assetSearchLabel: 'Search by name or description',
+        settingsSearchLabel: 'Search by setting key, name, or description',
         assetSearchPlaceholder: 'Separate terms with spaces for an AND search',
         clearSearch: 'Clear search',
         noSearchResults: 'No data matches the search criteria',

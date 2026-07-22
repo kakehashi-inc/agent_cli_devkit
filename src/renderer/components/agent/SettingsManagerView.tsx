@@ -27,14 +27,11 @@ import {
     KeyboardArrowRight as CollapseIcon,
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import type {
-    AgentEnvironment,
-    SettingsFieldSpec,
-    SettingsFieldValue,
-    SettingsValues,
-} from '@shared/agents/types';
+import type { AgentEnvironment, SettingsFieldSpec, SettingsFieldValue, SettingsValues } from '@shared/agents/types';
 import { SettingsValueEditor } from '../settings/SettingsValueEditor';
+import { AssetSearchField } from '../assets/AssetSearchField';
 import { envId } from '../../utils/format';
+import { filterSettingsFields } from '../../utils/settingsSearch';
 import type { Notify, SettingsApi } from './types';
 
 interface Props {
@@ -66,6 +63,9 @@ const SettingsSection: React.FC<{
     const [rawOpen, setRawOpen] = useState(false);
     const [rawText, setRawText] = useState('');
 
+    // 設定キー・表示名・説明に対するキーワードフィルター。
+    const [searchQuery, setSearchQuery] = useState('');
+
     // 展開中のグループ。初期は先頭グループのみ展開する。
     const [expandedGroups, setExpandedGroups] = useState<Set<string> | null>(null);
     const toggleGroup = (group: string) => {
@@ -80,10 +80,21 @@ const SettingsSection: React.FC<{
         });
     };
 
+    const filteredFields = useMemo(
+        () =>
+            filterSettingsFields(
+                fields,
+                searchQuery,
+                f => t(`${agentId}.settings.field.${f.key}.label`),
+                f => t(`${agentId}.settings.field.${f.key}.desc`)
+            ),
+        [fields, searchQuery, agentId, t]
+    );
+
     const groupedFields = useMemo(() => {
         const order: string[] = [];
         const byGroup = new Map<string, SettingsFieldSpec[]>();
-        for (const f of fields) {
+        for (const f of filteredFields) {
             if (!byGroup.has(f.group)) {
                 byGroup.set(f.group, []);
                 order.push(f.group);
@@ -91,9 +102,13 @@ const SettingsSection: React.FC<{
             byGroup.get(f.group)!.push(f);
         }
         return order.map(group => ({ group, items: byGroup.get(group)! }));
-    }, [fields]);
+    }, [filteredFields]);
 
-    const expanded = expandedGroups ?? new Set(groupedFields.length > 0 ? [groupedFields[0].group] : []);
+    // フィルター中はマッチした項目を含むグループをすべて展開する。
+    const searching = searchQuery.trim().length > 0;
+    const expanded = searching
+        ? new Set(groupedFields.map(item => item.group))
+        : (expandedGroups ?? new Set(groupedFields.length > 0 ? [groupedFields[0].group] : []));
 
     const unsetLabel = (f: SettingsFieldSpec): string => {
         if (typeof f.defaultOn === 'boolean') {
@@ -216,77 +231,85 @@ const SettingsSection: React.FC<{
 
     return (
         <Box>
-            <TableContainer>
-                <Table size='small'>
-                    <TableHead>
-                        <TableRow>
-                            <TableCell sx={{ width: '40%' }}>{t(`${agentId}.settings.item`)}</TableCell>
-                            <TableCell>{t(`${agentId}.settings.value`)}</TableCell>
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        {groupedFields.map(({ group, items }) => {
-                            const groupExpanded = expanded.has(group);
-                            return (
-                                <React.Fragment key={group}>
-                                    <TableRow
-                                        hover
-                                        onClick={() => toggleGroup(group)}
-                                        sx={{ cursor: 'pointer', userSelect: 'none' }}
-                                    >
-                                        <TableCell
-                                            colSpan={2}
-                                            sx={{
-                                                bgcolor: 'action.hover',
-                                                fontWeight: 700,
-                                                py: 0.75,
-                                                borderBottom: 1,
-                                                borderColor: 'divider',
-                                            }}
+            <AssetSearchField value={searchQuery} onChange={setSearchQuery} label={t('common.settingsSearchLabel')} />
+
+            {searching && groupedFields.length === 0 ? (
+                <Typography color='text.secondary' sx={{ py: 1 }}>
+                    {t('common.noSearchResults')}
+                </Typography>
+            ) : (
+                <TableContainer>
+                    <Table size='small'>
+                        <TableHead>
+                            <TableRow>
+                                <TableCell sx={{ width: '40%' }}>{t(`${agentId}.settings.item`)}</TableCell>
+                                <TableCell>{t(`${agentId}.settings.value`)}</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {groupedFields.map(({ group, items }) => {
+                                const groupExpanded = expanded.has(group);
+                                return (
+                                    <React.Fragment key={group}>
+                                        <TableRow
+                                            hover
+                                            onClick={() => toggleGroup(group)}
+                                            sx={{ cursor: 'pointer', userSelect: 'none' }}
                                         >
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                {groupExpanded ? (
-                                                    <ExpandIcon fontSize='small' />
-                                                ) : (
-                                                    <CollapseIcon fontSize='small' />
-                                                )}
-                                                {t(`${agentId}.settings.group.${group}`)}
-                                            </Box>
-                                        </TableCell>
-                                    </TableRow>
-                                    {groupExpanded &&
-                                        items.map(f => (
-                                            <TableRow key={f.key}>
-                                                <TableCell sx={{ verticalAlign: 'top', pl: 3 }}>
-                                                    <Typography variant='body2' sx={{ fontWeight: 600 }}>
-                                                        {t(`${agentId}.settings.field.${f.key}.label`)}
-                                                    </Typography>
-                                                    <Typography variant='caption' color='text.secondary'>
-                                                        {t(`${agentId}.settings.field.${f.key}.desc`)}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <SettingsValueEditor
-                                                        field={f}
-                                                        value={editValues[f.key]}
-                                                        unsetLabel={unsetLabel(f)}
-                                                        enabledLabel={t(`${agentId}.settings.enabled`)}
-                                                        disabledLabel={t(`${agentId}.settings.disabled`)}
-                                                        directEditLabel={t(`${agentId}.settings.directEditValue`)}
-                                                        unknownValueLabel={value =>
-                                                            t(`${agentId}.settings.unknownValue`, { value })
-                                                        }
-                                                        onChange={value => setValue(f.key, value)}
-                                                    />
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                </React.Fragment>
-                            );
-                        })}
-                    </TableBody>
-                </Table>
-            </TableContainer>
+                                            <TableCell
+                                                colSpan={2}
+                                                sx={{
+                                                    bgcolor: 'action.hover',
+                                                    fontWeight: 700,
+                                                    py: 0.75,
+                                                    borderBottom: 1,
+                                                    borderColor: 'divider',
+                                                }}
+                                            >
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                    {groupExpanded ? (
+                                                        <ExpandIcon fontSize='small' />
+                                                    ) : (
+                                                        <CollapseIcon fontSize='small' />
+                                                    )}
+                                                    {t(`${agentId}.settings.group.${group}`)}
+                                                </Box>
+                                            </TableCell>
+                                        </TableRow>
+                                        {groupExpanded &&
+                                            items.map(f => (
+                                                <TableRow key={f.key}>
+                                                    <TableCell sx={{ verticalAlign: 'top', pl: 3 }}>
+                                                        <Typography variant='body2' sx={{ fontWeight: 600 }}>
+                                                            {t(`${agentId}.settings.field.${f.key}.label`)}
+                                                        </Typography>
+                                                        <Typography variant='caption' color='text.secondary'>
+                                                            {t(`${agentId}.settings.field.${f.key}.desc`)}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <SettingsValueEditor
+                                                            field={f}
+                                                            value={editValues[f.key]}
+                                                            unsetLabel={unsetLabel(f)}
+                                                            enabledLabel={t(`${agentId}.settings.enabled`)}
+                                                            disabledLabel={t(`${agentId}.settings.disabled`)}
+                                                            directEditLabel={t(`${agentId}.settings.directEditValue`)}
+                                                            unknownValueLabel={value =>
+                                                                t(`${agentId}.settings.unknownValue`, { value })
+                                                            }
+                                                            onChange={value => setValue(f.key, value)}
+                                                        />
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </TableBody>
+                    </Table>
+                </TableContainer>
+            )}
 
             {/* テーブル下部: 左に 保存 / キャンセル、右端に 直接編集 */}
             <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'center' }}>

@@ -25,6 +25,8 @@ import {
     KeyboardArrowRight as CollapseIcon,
 } from '@mui/icons-material';
 import { SettingsValueEditor } from '../../components/settings/SettingsValueEditor';
+import { AssetSearchField } from '../../components/assets/AssetSearchField';
+import { filterSettingsFields } from '../../utils/settingsSearch';
 import type { GrokEnvironment, SettingsFieldSpec, SettingsFieldValue, SettingsValues } from '@shared/agents/grok/types';
 
 interface Props {
@@ -57,6 +59,9 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
 
     const [fields, setFields] = useState<SettingsFieldSpec[]>([]);
 
+    // 設定キー・表示名・説明に対するキーワードフィルター。
+    const [searchQuery, setSearchQuery] = useState('');
+
     // 展開中のグループ。初期は model / security のみ展開する。
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set(['model', 'security']));
     const toggleGroup = (group: string) => {
@@ -71,10 +76,21 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         });
     };
 
+    const filteredFields = useMemo(
+        () =>
+            filterSettingsFields(
+                fields,
+                searchQuery,
+                f => t(`grok.settings.field.${f.key}.label`),
+                f => t(`grok.settings.field.${f.key}.desc`)
+            ),
+        [fields, searchQuery, t]
+    );
+
     const groupedFields = useMemo(() => {
         const order: string[] = [];
         const byGroup = new Map<string, SettingsFieldSpec[]>();
-        for (const f of fields) {
+        for (const f of filteredFields) {
             if (!byGroup.has(f.group)) {
                 byGroup.set(f.group, []);
                 order.push(f.group);
@@ -82,7 +98,10 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
             byGroup.get(f.group)!.push(f);
         }
         return order.map(group => ({ group, items: byGroup.get(group)! }));
-    }, [fields]);
+    }, [filteredFields]);
+
+    // フィルター中はマッチした項目を含むグループをすべて展開する。
+    const searching = searchQuery.trim().length > 0;
 
     const unsetLabel = (f: SettingsFieldSpec): string => {
         if (typeof f.defaultOn === 'boolean') {
@@ -210,77 +229,85 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
 
     return (
         <Box>
-            <TableContainer>
-                <Table size='small'>
-                    <TableHead>
-                        <TableRow>
-                            <TableCell sx={{ width: '40%' }}>{t('grok.settings.colItem')}</TableCell>
-                            <TableCell>{t('grok.settings.colValue')}</TableCell>
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        {groupedFields.map(({ group, items }) => {
-                            const expanded = expandedGroups.has(group);
-                            return (
-                                <React.Fragment key={group}>
-                                    <TableRow
-                                        hover
-                                        onClick={() => toggleGroup(group)}
-                                        sx={{ cursor: 'pointer', userSelect: 'none' }}
-                                    >
-                                        <TableCell
-                                            colSpan={2}
-                                            sx={{
-                                                bgcolor: 'action.hover',
-                                                fontWeight: 700,
-                                                py: 0.75,
-                                                borderBottom: 1,
-                                                borderColor: 'divider',
-                                            }}
+            <AssetSearchField value={searchQuery} onChange={setSearchQuery} label={t('common.settingsSearchLabel')} />
+
+            {searching && groupedFields.length === 0 ? (
+                <Typography color='text.secondary' sx={{ py: 1 }}>
+                    {t('common.noSearchResults')}
+                </Typography>
+            ) : (
+                <TableContainer>
+                    <Table size='small'>
+                        <TableHead>
+                            <TableRow>
+                                <TableCell sx={{ width: '40%' }}>{t('grok.settings.colItem')}</TableCell>
+                                <TableCell>{t('grok.settings.colValue')}</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {groupedFields.map(({ group, items }) => {
+                                const expanded = searching || expandedGroups.has(group);
+                                return (
+                                    <React.Fragment key={group}>
+                                        <TableRow
+                                            hover
+                                            onClick={() => toggleGroup(group)}
+                                            sx={{ cursor: 'pointer', userSelect: 'none' }}
                                         >
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                {expanded ? (
-                                                    <ExpandIcon fontSize='small' />
-                                                ) : (
-                                                    <CollapseIcon fontSize='small' />
-                                                )}
-                                                {t(`grok.settings.group.${group}`)}
-                                            </Box>
-                                        </TableCell>
-                                    </TableRow>
-                                    {expanded &&
-                                        items.map(f => (
-                                            <TableRow key={f.key}>
-                                                <TableCell sx={{ verticalAlign: 'top', pl: 3 }}>
-                                                    <Typography variant='body2' sx={{ fontWeight: 600 }}>
-                                                        {t(`grok.settings.field.${f.key}.label`)}
-                                                    </Typography>
-                                                    <Typography variant='caption' color='text.secondary'>
-                                                        {t(`grok.settings.field.${f.key}.desc`)}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <SettingsValueEditor
-                                                        field={f}
-                                                        value={editValues[f.key]}
-                                                        unsetLabel={unsetLabel(f)}
-                                                        enabledLabel={t('grok.settings.enabled')}
-                                                        disabledLabel={t('grok.settings.disabled')}
-                                                        directEditLabel={t('grok.settings.directEditValue')}
-                                                        unknownValueLabel={value =>
-                                                            t('grok.settings.unknownValue', { value })
-                                                        }
-                                                        onChange={value => setValue(f.key, value)}
-                                                    />
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                </React.Fragment>
-                            );
-                        })}
-                    </TableBody>
-                </Table>
-            </TableContainer>
+                                            <TableCell
+                                                colSpan={2}
+                                                sx={{
+                                                    bgcolor: 'action.hover',
+                                                    fontWeight: 700,
+                                                    py: 0.75,
+                                                    borderBottom: 1,
+                                                    borderColor: 'divider',
+                                                }}
+                                            >
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                    {expanded ? (
+                                                        <ExpandIcon fontSize='small' />
+                                                    ) : (
+                                                        <CollapseIcon fontSize='small' />
+                                                    )}
+                                                    {t(`grok.settings.group.${group}`)}
+                                                </Box>
+                                            </TableCell>
+                                        </TableRow>
+                                        {expanded &&
+                                            items.map(f => (
+                                                <TableRow key={f.key}>
+                                                    <TableCell sx={{ verticalAlign: 'top', pl: 3 }}>
+                                                        <Typography variant='body2' sx={{ fontWeight: 600 }}>
+                                                            {t(`grok.settings.field.${f.key}.label`)}
+                                                        </Typography>
+                                                        <Typography variant='caption' color='text.secondary'>
+                                                            {t(`grok.settings.field.${f.key}.desc`)}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <SettingsValueEditor
+                                                            field={f}
+                                                            value={editValues[f.key]}
+                                                            unsetLabel={unsetLabel(f)}
+                                                            enabledLabel={t('grok.settings.enabled')}
+                                                            disabledLabel={t('grok.settings.disabled')}
+                                                            directEditLabel={t('grok.settings.directEditValue')}
+                                                            unknownValueLabel={value =>
+                                                                t('grok.settings.unknownValue', { value })
+                                                            }
+                                                            onChange={value => setValue(f.key, value)}
+                                                        />
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </TableBody>
+                    </Table>
+                </TableContainer>
+            )}
 
             {/* テーブル下部: 左に 保存 / キャンセル、右端に 直接編集 */}
             <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'center' }}>
