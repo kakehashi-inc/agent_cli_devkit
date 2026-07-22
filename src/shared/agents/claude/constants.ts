@@ -456,14 +456,15 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         min: 1,
         integer: true,
     },
-    { key: 'attribution', path: 'attribution', group: 'behavior', type: 'directEdit' },
+    { key: 'attributionCommit', path: 'attribution.commit', group: 'behavior', type: 'string' },
+    { key: 'attributionPr', path: 'attribution.pr', group: 'behavior', type: 'string' },
+    { key: 'autoModeClassifyAllShell', path: 'autoMode.classifyAllShell', group: 'behavior', type: 'boolean' },
     { key: 'autoMode', path: 'autoMode', group: 'behavior', type: 'directEdit' },
     { key: 'companyAnnouncements', path: 'companyAnnouncements', group: 'behavior', type: 'directEdit' },
     { key: 'env', path: 'env', group: 'behavior', type: 'directEdit' },
-    { key: 'fileSuggestion', path: 'fileSuggestion', group: 'behavior', type: 'directEdit' },
+    { key: 'fileSuggestionType', path: 'fileSuggestion.type', group: 'behavior', type: 'string', choices: ['command'] },
+    { key: 'fileSuggestionCommand', path: 'fileSuggestion.command', group: 'behavior', type: 'string' },
     { key: 'hooks', path: 'hooks', group: 'behavior', type: 'directEdit' },
-    { key: 'permissions', path: 'permissions', group: 'behavior', type: 'directEdit' },
-    { key: 'sandbox', path: 'sandbox', group: 'behavior', type: 'directEdit' },
     { key: 'skillOverrides', path: 'skillOverrides', group: 'behavior', type: 'directEdit' },
     { key: 'sshConfigs', path: 'sshConfigs', group: 'behavior', type: 'directEdit' },
     { key: 'worktreeSymlinkDirectories', path: 'worktree.symlinkDirectories', group: 'behavior', type: 'directEdit' },
@@ -471,10 +472,153 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'enabledPlugins', path: 'enabledPlugins', group: 'behavior', type: 'directEdit' },
     { key: 'pluginConfigs', path: 'pluginConfigs', group: 'behavior', type: 'directEdit' },
     { key: 'extraKnownMarketplaces', path: 'extraKnownMarketplaces', group: 'behavior', type: 'directEdit' },
+
+    // === 権限（permissions オブジェクト内の定義済みキー） ===
+    // scalar（defaultMode / disableBypassPermissionsMode）はドット区切り path でネスト編集する。
+    // 配列（allow / ask / deny / additionalDirectories）は directEdit として一覧表示のみ。
+    {
+        key: 'permissionsDefaultMode',
+        path: 'permissions.defaultMode',
+        group: 'permissions',
+        type: 'string',
+        choices: ['default', 'acceptEdits', 'plan', 'dontAsk', 'bypassPermissions'],
+        defaultValue: 'default',
+    },
+    {
+        key: 'permissionsDisableBypassPermissionsMode',
+        path: 'permissions.disableBypassPermissionsMode',
+        group: 'permissions',
+        type: 'string',
+        choices: ['disable'],
+    },
+    { key: 'permissionsAllow', path: 'permissions.allow', group: 'permissions', type: 'directEdit' },
+    { key: 'permissionsAsk', path: 'permissions.ask', group: 'permissions', type: 'directEdit' },
+    { key: 'permissionsDeny', path: 'permissions.deny', group: 'permissions', type: 'directEdit' },
+    {
+        key: 'permissionsAdditionalDirectories',
+        path: 'permissions.additionalDirectories',
+        group: 'permissions',
+        type: 'directEdit',
+    },
+    {
+        key: 'permissionsDisableAutoMode',
+        path: 'permissions.disableAutoMode',
+        group: 'permissions',
+        type: 'string',
+        choices: ['disable'],
+    },
+
+    // === サンドボックス（sandbox オブジェクト内の定義済みキー） ===
+    // scalar はネスト編集し、配列（excludedCommands / filesystem.allowWrite 等）や
+    // credentials は sandbox 全体の directEdit で扱う。
+    { key: 'sandboxEnabled', path: 'sandbox.enabled', group: 'sandbox', type: 'boolean', defaultOn: false },
+    {
+        key: 'sandboxFailIfUnavailable',
+        path: 'sandbox.failIfUnavailable',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'sandboxAllowUnsandboxedCommands',
+        path: 'sandbox.allowUnsandboxedCommands',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: true,
+    },
+    {
+        key: 'sandboxAutoAllowBashIfSandboxed',
+        path: 'sandbox.autoAllowBashIfSandboxed',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: true,
+    },
+    {
+        key: 'sandboxAllowAppleEvents',
+        path: 'sandbox.allowAppleEvents',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'sandboxEnableWeakerNetworkIsolation',
+        path: 'sandbox.enableWeakerNetworkIsolation',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'sandboxEnableWeakerNestedSandbox',
+        path: 'sandbox.enableWeakerNestedSandbox',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'sandboxFilesystemDisabled',
+        path: 'sandbox.filesystem.disabled',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'sandboxNetworkHttpProxyPort',
+        path: 'sandbox.network.httpProxyPort',
+        group: 'sandbox',
+        type: 'number',
+        min: 1,
+        max: 65535,
+        integer: true,
+    },
+    {
+        key: 'sandboxNetworkSocksProxyPort',
+        path: 'sandbox.network.socksProxyPort',
+        group: 'sandbox',
+        type: 'number',
+        min: 1,
+        max: 65535,
+        integer: true,
+    },
+    { key: 'sandbox', path: 'sandbox', group: 'sandbox', type: 'directEdit' },
+
+    // === ステータスライン（display 配下のネストオブジェクト） ===
+    { key: 'statusLineType', path: 'statusLine.type', group: 'display', type: 'string', choices: ['command'] },
+    { key: 'statusLineCommand', path: 'statusLine.command', group: 'display', type: 'string' },
+    {
+        key: 'statusLinePadding',
+        path: 'statusLine.padding',
+        group: 'display',
+        type: 'number',
+        min: 0,
+        integer: true,
+        defaultValue: 0,
+    },
+    {
+        key: 'statusLineRefreshInterval',
+        path: 'statusLine.refreshInterval',
+        group: 'display',
+        type: 'number',
+        min: 1,
+        integer: true,
+    },
+    {
+        key: 'statusLineHideVimModeIndicator',
+        path: 'statusLine.hideVimModeIndicator',
+        group: 'display',
+        type: 'boolean',
+    },
+    {
+        key: 'subagentStatusLineType',
+        path: 'subagentStatusLine.type',
+        group: 'display',
+        type: 'string',
+        choices: ['command'],
+    },
+    { key: 'subagentStatusLineCommand', path: 'subagentStatusLine.command', group: 'display', type: 'string' },
 ];
 
 // グループの表示順（UI の見出し順）。
-export const SETTINGS_GROUP_ORDER: string[] = ['model', 'agent', 'display', 'behavior'];
+export const SETTINGS_GROUP_ORDER: string[] = ['model', 'agent', 'display', 'behavior', 'permissions', 'sandbox'];
 
 // ============================================================
 // 公式スキルリポジトリ（Anthropic 公式 skills）

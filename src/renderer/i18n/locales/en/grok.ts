@@ -171,6 +171,8 @@ export default {
         readError: 'Failed to read settings',
         invalidToml: 'The TOML syntax is invalid',
         invalidExisting: 'The existing config.toml is broken and cannot be saved. Fix it via direct edit.',
+        verifyFailed:
+            'Verification of the edit result failed, so saving was aborted. The file is unchanged. Change this item via direct edit.',
         unavailable: 'The settings for this environment cannot be accessed.',
         group: {
             model: 'Model',

@@ -106,6 +106,8 @@ export default {
         readError: '設定の読み込みに失敗しました',
         invalidJson: 'JSON の構文が正しくありません',
         invalidExisting: '既存の JSON が壊れています。先に直接編集で修正してください。',
+        verifyFailed:
+            '編集結果の検証に失敗したため保存を中止しました。ファイルは変更されていません。この項目は「直接編集」で変更してください。',
         unavailable: 'この環境の設定へアクセスできません。',
         group: { appearance: '表示', behavior: '動作', security: 'セキュリティ', data: 'データ', advanced: '直接編集' },
         field: {

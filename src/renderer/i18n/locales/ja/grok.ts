@@ -173,6 +173,8 @@ export default {
         readError: '設定の読み込みに失敗しました',
         invalidToml: 'TOML の構文が正しくありません',
         invalidExisting: '既存の config.toml が壊れているため保存できません。直接編集で修正してください。',
+        verifyFailed:
+            '編集結果の検証に失敗したため保存を中止しました。ファイルは変更されていません。この項目は「直接編集」で変更してください。',
         unavailable: 'この環境の設定にはアクセスできません。',
         group: {
             model: 'モデル',

@@ -196,12 +196,16 @@ export default {
         readError: 'Failed to load settings',
         invalidJson: 'The JSON syntax is not valid',
         invalidExisting: 'The existing settings.json is broken and cannot be saved. Fix it via Direct Edit.',
+        verifyFailed:
+            'Verification of the edit result failed, so saving was aborted. The file is unchanged. Change this item via Direct Edit.',
         unavailable: 'Settings for this environment cannot be accessed.',
         group: {
             model: 'Model & Thinking',
             display: 'Display & Notifications',
             behavior: 'Behavior & Data',
             agent: 'Agents',
+            permissions: 'Permissions',
+            sandbox: 'Sandbox',
         },
         field: {
             model: {
@@ -508,9 +512,17 @@ export default {
                 label: 'Voice input (voice)',
                 desc: 'Configures voice input enablement, hold or tap mode, and automatic submission.',
             },
-            attribution: {
-                label: 'Attribution (attribution)',
-                desc: 'Configures attribution separately for Git commits, pull requests, and session URLs.',
+            attributionCommit: {
+                label: 'Commit attribution (attribution.commit)',
+                desc: 'Attribution text added to Git commits (Co-Authored-By etc.). Set an empty string to hide it.',
+            },
+            attributionPr: {
+                label: 'PR attribution (attribution.pr)',
+                desc: 'Attribution text added to pull request descriptions. Set an empty string to hide it.',
+            },
+            autoModeClassifyAllShell: {
+                label: 'Classify all shell commands (autoMode.classifyAllShell)',
+                desc: 'Routes every Bash / PowerShell command through the auto-mode classifier.',
             },
             autoMode: {
                 label: 'Auto mode rules (autoMode)',
@@ -524,21 +536,117 @@ export default {
                 label: 'Environment variables (env)',
                 desc: 'Environment variables applied to Claude Code sessions and the child processes they start.',
             },
-            fileSuggestion: {
-                label: 'File suggestion command (fileSuggestion)',
-                desc: 'Configures the command and type used to generate @ file-completion candidates.',
+            fileSuggestionType: {
+                label: 'File suggestion type (fileSuggestion.type)',
+                desc: 'How @ file-completion candidates are generated. "command" uses an external command.',
+            },
+            fileSuggestionCommand: {
+                label: 'File suggestion command (fileSuggestion.command)',
+                desc: 'External command that generates @ file-completion candidates.',
             },
             hooks: {
                 label: 'Lifecycle hooks (hooks)',
                 desc: 'Defines command, HTTP, prompt, and other hooks that run at Claude Code lifecycle events.',
             },
-            permissions: {
-                label: 'Permission rules (permissions)',
-                desc: 'Groups tool allow, ask, and deny rules, additional directories, and the default permission mode.',
+            permissionsDefaultMode: {
+                label: 'Default permission mode (permissions.defaultMode)',
+                desc: 'Permission mode at session start. default = prompt on first tool use, acceptEdits = auto-accept file edits, plan = start in plan mode, dontAsk = skip confirmations (explicit deny rules still apply), bypassPermissions = skip all permission prompts.',
+            },
+            permissionsDisableBypassPermissionsMode: {
+                label: 'Disable bypassPermissions (permissions.disableBypassPermissionsMode)',
+                desc: 'Set "disable" to prevent the bypassPermissions mode from being used. Intended for managed policies.',
+            },
+            permissionsAllow: {
+                label: 'Allow rules (permissions.allow)',
+                desc: 'Array of permission rules that allow tool use without confirmation.',
+            },
+            permissionsAsk: {
+                label: 'Ask rules (permissions.ask)',
+                desc: 'Array of permission rules that always require confirmation before tool use.',
+            },
+            permissionsDeny: {
+                label: 'Deny rules (permissions.deny)',
+                desc: 'Array of permission rules that deny tool use. Also useful for restricting access to sensitive files.',
+            },
+            permissionsAdditionalDirectories: {
+                label: 'Additional directories (permissions.additionalDirectories)',
+                desc: 'Array of directories outside the working directory that Claude may access.',
+            },
+            permissionsDisableAutoMode: {
+                label: 'Disable auto mode (permissions.disableAutoMode)',
+                desc: 'Set "disable" to prevent auto mode from being used.',
+            },
+            sandboxEnabled: {
+                label: 'Enable sandbox (sandbox.enabled)',
+                desc: 'Runs Bash commands inside the OS sandboxing mechanism.',
+            },
+            sandboxFailIfUnavailable: {
+                label: 'Fail if unavailable (sandbox.failIfUnavailable)',
+                desc: 'Fails startup when the sandbox dependencies are not available.',
+            },
+            sandboxAllowUnsandboxedCommands: {
+                label: 'Allow unsandboxed commands (sandbox.allowUnsandboxedCommands)',
+                desc: 'Permits running commands outside the sandbox. Disable for a strict sandbox.',
+            },
+            sandboxAutoAllowBashIfSandboxed: {
+                label: 'Auto-allow sandboxed Bash (sandbox.autoAllowBashIfSandboxed)',
+                desc: 'Automatically approves Bash commands that run inside the sandbox.',
+            },
+            sandboxAllowAppleEvents: {
+                label: 'Allow Apple Events (sandbox.allowAppleEvents)',
+                desc: 'Permits sending Apple Events on macOS (user / managed / CLI settings only).',
+            },
+            sandboxEnableWeakerNetworkIsolation: {
+                label: 'Weaker network isolation (sandbox.enableWeakerNetworkIsolation)',
+                desc: 'Runs network isolation in a weaker mode.',
+            },
+            sandboxEnableWeakerNestedSandbox: {
+                label: 'Weaker nested sandbox (sandbox.enableWeakerNestedSandbox)',
+                desc: 'Uses a weaker sandbox for nested environments such as Docker containers.',
+            },
+            sandboxFilesystemDisabled: {
+                label: 'Disable filesystem isolation (sandbox.filesystem.disabled)',
+                desc: 'Disables sandbox filesystem isolation (v2.1.216+, user / managed / CLI only).',
+            },
+            sandboxNetworkHttpProxyPort: {
+                label: 'HTTP proxy port (sandbox.network.httpProxyPort)',
+                desc: 'Port number of the HTTP proxy used by sandbox network isolation.',
+            },
+            sandboxNetworkSocksProxyPort: {
+                label: 'SOCKS proxy port (sandbox.network.socksProxyPort)',
+                desc: 'Port number of the SOCKS proxy used by sandbox network isolation.',
             },
             sandbox: {
                 label: 'Sandbox details (sandbox)',
-                desc: 'Configures Bash sandbox enablement, excluded commands, and readable or writable paths.',
+                desc: 'Object holding the remaining structured settings: excluded commands, read/write paths, allowed domains, and credentials.',
+            },
+            statusLineType: {
+                label: 'Status line type (statusLine.type)',
+                desc: 'How the status line is generated. "command" shows the output of an external command.',
+            },
+            statusLineCommand: {
+                label: 'Status line command (statusLine.command)',
+                desc: 'Script path or shell command whose output is shown in the status line.',
+            },
+            statusLinePadding: {
+                label: 'Status line padding (statusLine.padding)',
+                desc: 'Extra horizontal space characters for the status line. Default 0.',
+            },
+            statusLineRefreshInterval: {
+                label: 'Status line refresh interval (statusLine.refreshInterval)',
+                desc: 'Interval in seconds (minimum 1) to re-run the status line command, e.g. for clocks.',
+            },
+            statusLineHideVimModeIndicator: {
+                label: 'Hide Vim mode indicator (statusLine.hideVimModeIndicator)',
+                desc: 'Suppresses the -- INSERT -- style Vim mode indicator when the status line is active.',
+            },
+            subagentStatusLineType: {
+                label: 'Subagent status line type (subagentStatusLine.type)',
+                desc: 'How the subagent status line is generated. "command" uses an external command.',
+            },
+            subagentStatusLineCommand: {
+                label: 'Subagent status line command (subagentStatusLine.command)',
+                desc: 'Command whose output is shown in the subagent status line.',
             },
             skillOverrides: {
                 label: 'Skill visibility overrides (skillOverrides)',

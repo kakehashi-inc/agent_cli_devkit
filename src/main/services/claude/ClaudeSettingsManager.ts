@@ -15,6 +15,14 @@ import {
 } from '../../../shared/agents/claude/types';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
+import { deleteJsoncProperty, parseJsonc, setJsoncProperty } from '../../utils/jsoncEdit';
+import {
+    deepEqualLoose,
+    deleteNestedValue,
+    getNestedValue,
+    setNestedValue,
+    withoutEmptyObjects,
+} from '../../utils/nestedValue';
 
 /**
  * Claude Code (CLI) の設定ファイル ~/.claude/settings.json を管理する。
@@ -80,7 +88,7 @@ export class ClaudeSettingsManager {
         let parsed: Record<string, unknown> = {};
         if (exists) {
             try {
-                const obj = JSON.parse(raw);
+                const obj = parseJsonc(raw);
                 if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
                     parsed = obj as Record<string, unknown>;
                 }
@@ -92,7 +100,7 @@ export class ClaudeSettingsManager {
 
         const values: Record<string, SettingsFieldValue> = {};
         for (const field of SETTINGS_FIELDS) {
-            values[field.key] = this.extractValue(field, parsed[field.path]);
+            values[field.key] = this.extractValue(field, getNestedValue(parsed, field.path.split('.')));
         }
 
         return { env, label, available: true, exists, values, fields: SETTINGS_FIELDS, raw: raw };
@@ -120,13 +128,24 @@ export class ClaudeSettingsManager {
             // 数値以外（キーが無い場合の undefined を含む）は未設定として扱う。
             return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
         }
+        if (field.type === 'enum') {
+            // 型混在候補。scalar（boolean / 有限数 / 文字列）はそのまま、それ以外は未設定扱い。
+            return typeof raw === 'boolean' ||
+                typeof raw === 'string' ||
+                (typeof raw === 'number' && Number.isFinite(raw))
+                ? raw
+                : undefined;
+        }
         // string
         return typeof raw === 'string' ? raw : undefined;
     }
 
     /**
-     * テーブル編集の保存。既存 JSON を読み込み、登録項目だけを差分マージして書き戻す。
-     * 登録外のトップレベルキーには触れない。
+     * テーブル編集の保存。既存テキストへ登録項目だけを外科的に反映して書き戻す。
+     * コメント・空行・インデント・キー順など、対象外の文字列は一切変更しない。
+     *
+     * 安全弁: 編集後テキストの parse 結果が「編集前の parse 結果へ意図した変更を適用した
+     * 期待モデル」と deep 一致することを検証し、一致しない場合はファイルを書かずに失敗を返す。
      */
     async write(env: ClaudeEnvironment, values: SettingsValues): Promise<SettingsWriteResult> {
         const fs = this.fsFor(env);
@@ -134,29 +153,43 @@ export class ClaudeSettingsManager {
 
         // 既存ファイルを読み込む（壊れている場合は安全のため上書きを拒否する）。
         const raw = await fs.readText(rel);
-        let obj: Record<string, unknown> = {};
-        if (raw !== null && raw.trim().length > 0) {
+        let text = raw ?? '';
+        const expected: Record<string, unknown> = {};
+        if (text.trim().length > 0) {
             try {
-                const parsed = JSON.parse(raw);
+                const parsed = parseJsonc(text);
                 if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
                     return { ok: false, message: 'invalid-existing-json' };
                 }
-                obj = parsed as Record<string, unknown>;
+                Object.assign(expected, parsed as Record<string, unknown>);
             } catch (error) {
                 console.error(`Failed to parse existing settings.json (${JSON.stringify(env)}):`, error);
                 return { ok: false, message: 'invalid-existing-json' };
             }
+        } else {
+            text = '{}\n';
         }
 
-        // 登録項目だけを反映する。
+        // 登録項目だけをテキストと期待モデルの両方へ反映する。
         for (const field of SETTINGS_FIELDS) {
             if (!Object.prototype.hasOwnProperty.call(values, field.key)) continue;
-            this.applyField(obj, field, values[field.key]);
+            text = this.applyField(text, expected, field, values[field.key]);
         }
 
-        const content = `${JSON.stringify(obj, null, 2)}\n`;
+        // 検証: 編集後テキストが期待モデルと一致しなければ書き込まない。
+        // 空オブジェクトは正規化で無視する（コメントだけが残った親はテキスト側に {} として残るため）。
         try {
-            await fs.writeText(rel, content);
+            if (!deepEqualLoose(withoutEmptyObjects(parseJsonc(text)), withoutEmptyObjects(expected))) {
+                console.error(`Settings edit verification mismatch (${JSON.stringify(env)})`);
+                return { ok: false, message: 'verify-failed' };
+            }
+        } catch (error) {
+            console.error(`Settings edit verification parse error (${JSON.stringify(env)}):`, error);
+            return { ok: false, message: 'verify-failed' };
+        }
+
+        try {
+            await fs.writeText(rel, text.endsWith('\n') ? text : `${text}\n`);
             return { ok: true };
         } catch (error) {
             console.error(`Failed to write settings.json (${JSON.stringify(env)}):`, error);
@@ -164,47 +197,46 @@ export class ClaudeSettingsManager {
         }
     }
 
-    /** 1 項目を既存オブジェクトへ反映する（型ごとの上書き/削除ルール）。 */
-    private applyField(obj: Record<string, unknown>, field: SettingsFieldSpec, value: SettingsFieldValue): void {
+    /**
+     * 1 項目をテキストと期待モデルの両方へ反映し、更新後テキストを返す。
+     * 値の設定/削除は path（ドット区切り、envFlag は末尾に envKey を連結）への操作に正規化する。
+     */
+    private applyField(
+        text: string,
+        model: Record<string, unknown>,
+        field: SettingsFieldSpec,
+        value: SettingsFieldValue
+    ): string {
         if (field.type === 'directEdit') {
-            return;
+            return text;
         }
-        const path = field.path;
+        let path = field.path.split('.');
+        let resolved: unknown;
         if (field.type === 'envFlag') {
             // env オブジェクト内の対象キー（envKey）のみを操作する。
-            // ON: env[envKey] = onValue（既定 '1'）を設定。OFF: 当該キーを削除。
-            // env 内の他キーには触れず、env が空になったら env キーごと削除する。
+            // ON: env[envKey] = onValue（既定 '1'）。OFF: 当該キーを削除（env が空になれば env ごと削除）。
             if (!field.envKey) {
-                return;
+                return text;
             }
-            const current = obj[path];
-            const envObj: Record<string, unknown> =
-                current && typeof current === 'object' && !Array.isArray(current)
-                    ? (current as Record<string, unknown>)
-                    : {};
+            path = [...path, field.envKey];
             if (value === true) {
-                envObj[field.envKey] = field.onValue ?? '1';
+                resolved = field.onValue ?? '1';
             } else if (typeof value === 'string' && value.length > 0) {
-                envObj[field.envKey] = value;
+                resolved = value;
             } else {
-                delete envObj[field.envKey];
+                resolved = undefined;
             }
-            if (Object.keys(envObj).length === 0) {
-                delete obj[path]; // env が空になったらキーごと削除（空オブジェクトを残さない）
-            } else {
-                obj[path] = envObj;
-            }
-            return;
-        }
-        if (field.type === 'boolean') {
-            if (typeof value === 'boolean') {
-                obj[path] = value;
-            } else {
-                delete obj[path];
-            }
-            return;
-        }
-        if (field.type === 'number') {
+        } else if (field.type === 'boolean') {
+            resolved = typeof value === 'boolean' ? value : undefined;
+        } else if (field.type === 'enum') {
+            // 選択された候補の値を型のまま反映する。空文字は未設定として扱う。
+            resolved =
+                typeof value === 'boolean' ||
+                typeof value === 'number' ||
+                (typeof value === 'string' && value.length > 0)
+                    ? value
+                    : undefined;
+        } else if (field.type === 'number') {
             // 未設定（undefined / 非数）はキー削除。数値は min/max でクランプして設定する。
             if (typeof value === 'number' && Number.isFinite(value)) {
                 let n = value;
@@ -215,18 +247,21 @@ export class ClaudeSettingsManager {
                     n = field.max;
                 }
                 if (field.integer) n = Math.trunc(n);
-                obj[path] = n;
+                resolved = n;
             } else {
-                delete obj[path];
+                resolved = undefined;
             }
-            return;
-        }
-        // string: 空文字 / undefined はキー削除、それ以外は設定。
-        if (typeof value === 'string' && value.length > 0) {
-            obj[path] = value;
         } else {
-            delete obj[path];
+            // string: 空文字 / undefined はキー削除、それ以外は設定。
+            resolved = typeof value === 'string' && value.length > 0 ? value : undefined;
         }
+
+        if (resolved === undefined) {
+            deleteNestedValue(model, path, true);
+            return deleteJsoncProperty(text, path);
+        }
+        setNestedValue(model, path, resolved);
+        return setJsoncProperty(text, path, resolved);
     }
 
     /**

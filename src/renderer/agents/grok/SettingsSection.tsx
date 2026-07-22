@@ -160,7 +160,9 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                     t(
                         result.message === 'invalid-existing-toml'
                             ? 'grok.settings.invalidExisting'
-                            : 'grok.settings.saveError'
+                            : result.message === 'verify-failed'
+                              ? 'grok.settings.verifyFailed'
+                              : 'grok.settings.saveError'
                     ),
                     'error'
                 );
@@ -296,6 +298,12 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                             unknownValueLabel={value =>
                                                                 t('grok.settings.unknownValue', { value })
                                                             }
+                                                            enumOptions={f.enumChoices?.map(choice => ({
+                                                                value: choice.value,
+                                                                label: t(
+                                                                    `grok.settings.field.${f.key}.choice.${choice.labelKey}`
+                                                                ),
+                                                            }))}
                                                             onChange={value => setValue(f.key, value)}
                                                         />
                                                     </TableCell>

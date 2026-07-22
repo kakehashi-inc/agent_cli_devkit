@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-07-22
+
+### Added
+
+- Settings editors for every agent (Claude / Codex / Grok / Agy / OpenCode) can now be filtered by keyword, matching the setting key, display name, or description with space-separated terms as an order-independent AND search. Matching groups expand automatically while filtering.
+- Nested scalar settings can now be edited from the settings form instead of only through direct file editing. Any setting whose object keys lead to a single string, number, or boolean value (with no arrays or open-ended maps along the way) is now a first-class form field — for example Claude's `permissions.defaultMode`, `sandbox.*`, `statusLine.*`, and `attribution.*`; Codex's `otel.*`, `memories.*`, and `apps._default.*`; and OpenCode's `server.*`, `compaction.*`, and `permission.*`.
+
+### Fixed
+
+- Saving settings from the form no longer discards comments, blank lines, or formatting elsewhere in the settings file. Only the changed values are rewritten, so the rest of the file — including hand-written comments — is left intact.
+
 ## [0.5.8] - 2026-07-18
 
 ### Added

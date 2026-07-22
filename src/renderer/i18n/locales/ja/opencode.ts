@@ -107,8 +107,21 @@ export default {
         readError: '設定の読み込みに失敗しました',
         invalidJson: 'JSON・JSONC の構文が正しくありません',
         invalidExisting: '既存の JSON・JSONC が壊れています。先に直接編集で修正してください。',
+        verifyFailed:
+            '編集結果の検証に失敗したため保存を中止しました。ファイルは変更されていません。この項目は「直接編集」で変更してください。',
         unavailable: 'この環境の設定へアクセスできません。',
-        group: { model: 'モデル・エージェント', behavior: '動作', advanced: '直接編集' },
+        group: {
+            model: 'モデル・エージェント',
+            behavior: '動作',
+            server: 'サーバー',
+            attachment: '添付',
+            toolOutput: 'ツール出力',
+            compaction: '会話圧縮',
+            permission: '権限',
+            experimental: '実験設定',
+            enterprise: 'Enterprise',
+            advanced: '直接編集',
+        },
         field: {
             model: {
                 label: 'モデル（model）',
@@ -137,7 +150,11 @@ export default {
                 label: 'スナップショット（snapshot）',
                 desc: 'ファイル変更を追跡し、元に戻せるようにします。',
             },
-            autoupdate: { label: '自動更新（autoupdate）', desc: '真偽値または notify の複合型なので直接編集します。' },
+            autoupdate: {
+                label: '自動更新（autoupdate）',
+                desc: '起動時の自動更新の挙動。有効にすると自動更新し、「通知のみ」では更新を知らせるだけにします。',
+                choice: { enabled: '有効', disabled: '無効', notify: '通知のみ' },
+            },
             skills: {
                 label: '追加スキルソース（skills）',
                 desc: '追加フォルダー・URL のオブジェクトなので直接編集します。',
@@ -174,6 +191,150 @@ export default {
                 desc: 'プロバイダー許可リストなので直接編集します。',
             },
             experimental: { label: '実験設定（experimental）', desc: '不安定な設定マップなので直接編集します。' },
+            serverPort: {
+                label: 'サーバーポート（server.port）',
+                desc: 'ヘッドレスサーバーが待ち受ける TCP ポートです。1〜65535 の整数を指定します。',
+            },
+            serverHostname: {
+                label: 'サーバーホスト名（server.hostname）',
+                desc: 'サーバーがバインドするホスト名です。既定は 0.0.0.0（全アドレス）です。',
+            },
+            serverMdns: {
+                label: 'mDNS 公開（server.mdns）',
+                desc: 'ローカルネットワークへ mDNS でサーバーを公開するかどうかです。',
+            },
+            serverMdnsDomain: {
+                label: 'mDNS ドメイン（server.mdnsDomain）',
+                desc: 'mDNS 公開時に使うローカルドメイン名です。',
+            },
+            attachmentImageAutoResize: {
+                label: '画像自動リサイズ（attachment.image.auto_resize）',
+                desc: '添付画像を上限サイズに合わせて自動的に縮小します。',
+            },
+            attachmentImageMaxWidth: {
+                label: '画像最大幅（attachment.image.max_width）',
+                desc: '添付画像の最大幅（ピクセル）です。',
+            },
+            attachmentImageMaxHeight: {
+                label: '画像最大高さ（attachment.image.max_height）',
+                desc: '添付画像の最大高さ（ピクセル）です。',
+            },
+            attachmentImageMaxBase64Bytes: {
+                label: '画像 Base64 上限（attachment.image.max_base64_bytes）',
+                desc: 'Base64 エンコード後の添付画像の最大バイト数です。',
+            },
+            toolOutputMaxLines: {
+                label: 'ツール出力最大行数（tool_output.max_lines）',
+                desc: 'ツール出力として保持する最大行数です。超過分は切り詰めます。',
+            },
+            toolOutputMaxBytes: {
+                label: 'ツール出力最大バイト数（tool_output.max_bytes）',
+                desc: 'ツール出力として保持する最大バイト数です。超過分は切り詰めます。',
+            },
+            compactionAuto: {
+                label: '自動圧縮（compaction.auto）',
+                desc: 'コンテキストが上限に近づいたとき会話を自動的に圧縮します。',
+            },
+            compactionPrune: {
+                label: '圧縮時の刈り込み（compaction.prune）',
+                desc: '圧縮時に古いメッセージを削除して整理します。',
+            },
+            compactionTailTurns: {
+                label: '保持ターン数（compaction.tail_turns）',
+                desc: '圧縮時にそのまま残す直近のやり取り数です。',
+            },
+            compactionPreserveRecentTokens: {
+                label: '直近保持トークン数（compaction.preserve_recent_tokens）',
+                desc: '圧縮時に保持する直近トークンのおおよその量です。',
+            },
+            compactionReserved: {
+                label: '予約トークン数（compaction.reserved）',
+                desc: '圧縮の計算で確保しておくトークン量です。',
+            },
+            permissionRead: {
+                label: 'ファイル読み取り権限（permission.read）',
+                desc: 'read ツール（ファイル読み取り）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionEdit: {
+                label: 'ファイル編集権限（permission.edit）',
+                desc: 'edit ツール（ファイル編集）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionGlob: {
+                label: 'ファイル検索権限（permission.glob）',
+                desc: 'glob ツール（ファイル名検索）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionGrep: {
+                label: '本文検索権限（permission.grep）',
+                desc: 'grep ツール（本文検索）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionList: {
+                label: '一覧表示権限（permission.list）',
+                desc: 'list ツール（ディレクトリ一覧）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionBash: {
+                label: 'シェル実行権限（permission.bash）',
+                desc: 'bash ツール（シェルコマンド実行）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionTask: {
+                label: 'タスク起動権限（permission.task）',
+                desc: 'task ツール（サブエージェント起動）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionExternalDirectory: {
+                label: 'ワークスペース外アクセス権限（permission.external_directory）',
+                desc: 'ワークスペース外ディレクトリへのアクセスの許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionLsp: {
+                label: 'LSP 権限（permission.lsp）',
+                desc: 'lsp ツール（言語サーバー）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionSkill: {
+                label: 'スキル実行権限（permission.skill）',
+                desc: 'skill ツール（スキル実行）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionTodowrite: {
+                label: 'TODO 更新権限（permission.todowrite）',
+                desc: 'todowrite ツール（TODO 更新）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionQuestion: {
+                label: '質問権限（permission.question）',
+                desc: 'question ツール（ユーザーへの質問）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionWebfetch: {
+                label: 'Web 取得権限（permission.webfetch）',
+                desc: 'webfetch ツール（URL 取得）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionWebsearch: {
+                label: 'Web 検索権限（permission.websearch）',
+                desc: 'websearch ツール（Web 検索）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            permissionDoomLoop: {
+                label: '連続実行抑止権限（permission.doom_loop）',
+                desc: 'doom_loop（同一処理の連続実行の抑止）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            },
+            experimentalDisablePasteSummary: {
+                label: '貼り付け要約の無効化（experimental.disable_paste_summary）',
+                desc: '大きな貼り付けを要約表示する機能を無効にします。実験的な設定です。',
+            },
+            experimentalBatchTool: {
+                label: 'バッチツール（experimental.batch_tool）',
+                desc: '複数のツール呼び出しをまとめて実行する実験的機能を有効にします。',
+            },
+            experimentalOpenTelemetry: {
+                label: 'OpenTelemetry（experimental.openTelemetry）',
+                desc: 'OpenTelemetry によるトレース出力を有効にする実験的な設定です。',
+            },
+            experimentalContinueLoopOnDeny: {
+                label: '拒否時のループ継続（experimental.continue_loop_on_deny）',
+                desc: '権限拒否後もエージェントのループを継続する実験的な設定です。',
+            },
+            experimentalMcpTimeout: {
+                label: 'MCP タイムアウト（experimental.mcp_timeout）',
+                desc: 'MCP 呼び出しのタイムアウト（ミリ秒）です。実験的な設定です。',
+            },
+            enterpriseUrl: {
+                label: 'Enterprise URL（enterprise.url）',
+                desc: 'Enterprise 接続先のベース URL です。',
+            },
         },
     },
     cleanup: {

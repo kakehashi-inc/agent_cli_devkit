@@ -108,6 +108,8 @@ export default {
         readError: 'Failed to read settings',
         invalidJson: 'The JSON syntax is invalid',
         invalidExisting: 'The existing JSON is invalid. Fix it with direct edit first.',
+        verifyFailed:
+            'Verification of the edit result failed, so saving was aborted. The file is unchanged. Change this item via direct edit.',
         unavailable: 'These settings cannot be accessed.',
         group: {
             appearance: 'Appearance',

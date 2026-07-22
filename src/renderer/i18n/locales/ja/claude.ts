@@ -198,12 +198,16 @@ export default {
         readError: '設定の読み込みに失敗しました',
         invalidJson: 'JSON の構文が正しくありません',
         invalidExisting: '既存の settings.json が壊れているため保存できません。直接編集で修正してください。',
+        verifyFailed:
+            '編集結果の検証に失敗したため保存を中止しました。ファイルは変更されていません。この項目は「直接編集」で変更してください。',
         unavailable: 'この環境の設定にはアクセスできません。',
         group: {
             model: 'モデル・思考',
             display: '表示・通知',
             behavior: '動作・データ',
             agent: 'エージェント',
+            permissions: '権限',
+            sandbox: 'サンドボックス',
         },
         field: {
             model: {
@@ -510,9 +514,17 @@ export default {
                 label: '音声入力（voice）',
                 desc: '音声入力の有効化、hold/tap モード、自動送信をまとめて指定するオブジェクトです。',
             },
-            attribution: {
-                label: '帰属表記（attribution）',
-                desc: 'Git コミット、プルリクエスト、セッション URL の帰属表記を個別に設定するオブジェクトです。',
+            attributionCommit: {
+                label: 'コミット帰属表記（attribution.commit）',
+                desc: 'Git コミットに付与する帰属表記（Co-Authored-By 等）。空文字を設定すると非表示になります。',
+            },
+            attributionPr: {
+                label: 'PR 帰属表記（attribution.pr）',
+                desc: 'プルリクエスト説明に付与する帰属表記。空文字を設定すると非表示になります。',
+            },
+            autoModeClassifyAllShell: {
+                label: '全シェルを自動分類（autoMode.classifyAllShell）',
+                desc: 'すべての Bash / PowerShell コマンドを自動モード分類器に通します。',
             },
             autoMode: {
                 label: '自動モード規則（autoMode）',
@@ -526,21 +538,117 @@ export default {
                 label: '環境変数（env）',
                 desc: 'Claude Code の各セッションと、そのセッションが起動する子プロセスへ渡す環境変数のマップです。',
             },
-            fileSuggestion: {
-                label: 'ファイル候補コマンド（fileSuggestion）',
-                desc: '@ ファイル補完の候補を生成するコマンドと方式を指定するオブジェクトです。',
+            fileSuggestionType: {
+                label: 'ファイル候補方式（fileSuggestion.type）',
+                desc: '@ ファイル補完の候補生成方式。"command" で外部コマンドを使用します。',
+            },
+            fileSuggestionCommand: {
+                label: 'ファイル候補コマンド（fileSuggestion.command）',
+                desc: '@ ファイル補完の候補を生成する外部コマンド。',
             },
             hooks: {
                 label: 'ライフサイクルフック（hooks）',
                 desc: 'Claude Code の各ライフサイクルイベントで実行するコマンド、HTTP、プロンプト等のフック定義です。',
             },
-            permissions: {
-                label: '権限規則（permissions）',
-                desc: 'ツール利用の allow、ask、deny、追加ディレクトリ、既定権限モードをまとめたオブジェクトです。',
+            permissionsDefaultMode: {
+                label: '既定の権限モード（permissions.defaultMode）',
+                desc: 'セッション開始時の権限モード。default=初回使用時に確認、acceptEdits=ファイル編集を自動承認、plan=プランモードで開始、dontAsk=確認を省略（明示的な拒否ルールは適用）、bypassPermissions=すべての権限確認をスキップ。',
+            },
+            permissionsDisableBypassPermissionsMode: {
+                label: 'bypassPermissions の禁止（permissions.disableBypassPermissionsMode）',
+                desc: '"disable" を設定すると bypassPermissions モードを使用できなくします。管理ポリシーでの制限に使います。',
+            },
+            permissionsAllow: {
+                label: '許可ルール（permissions.allow）',
+                desc: 'ツール使用を確認なしで許可する権限ルールの配列です。',
+            },
+            permissionsAsk: {
+                label: '確認ルール（permissions.ask）',
+                desc: 'ツール使用前に必ず確認を求める権限ルールの配列です。',
+            },
+            permissionsDeny: {
+                label: '拒否ルール（permissions.deny）',
+                desc: 'ツール使用を拒否する権限ルールの配列です。機密ファイルへのアクセス制限にも使えます。',
+            },
+            permissionsAdditionalDirectories: {
+                label: '追加作業ディレクトリ（permissions.additionalDirectories）',
+                desc: '作業ディレクトリ以外にアクセスを許可するディレクトリの配列です。',
+            },
+            permissionsDisableAutoMode: {
+                label: '自動モードの禁止（permissions.disableAutoMode）',
+                desc: '"disable" を設定すると自動モードを使用できなくします。',
+            },
+            sandboxEnabled: {
+                label: 'サンドボックス有効化（sandbox.enabled）',
+                desc: 'Bash コマンドを OS のサンドボックス機構内で実行します。',
+            },
+            sandboxFailIfUnavailable: {
+                label: '利用不可時に失敗（sandbox.failIfUnavailable）',
+                desc: 'サンドボックスの依存機構が使えない場合、起動を失敗させます。',
+            },
+            sandboxAllowUnsandboxedCommands: {
+                label: '非サンドボックス実行許可（sandbox.allowUnsandboxedCommands）',
+                desc: 'サンドボックス外での実行を許可します。無効にすると厳格サンドボックスになります。',
+            },
+            sandboxAutoAllowBashIfSandboxed: {
+                label: 'サンドボックス時に自動許可（sandbox.autoAllowBashIfSandboxed）',
+                desc: 'サンドボックス内で実行される Bash コマンドを自動承認します。',
+            },
+            sandboxAllowAppleEvents: {
+                label: 'Apple Events 許可（sandbox.allowAppleEvents）',
+                desc: 'macOS の Apple Events 送信を許可します（user / managed / CLI 設定のみ有効）。',
+            },
+            sandboxEnableWeakerNetworkIsolation: {
+                label: '弱いネットワーク分離（sandbox.enableWeakerNetworkIsolation）',
+                desc: 'ネットワーク分離を弱いモードで動作させます。',
+            },
+            sandboxEnableWeakerNestedSandbox: {
+                label: '弱いネストサンドボックス（sandbox.enableWeakerNestedSandbox）',
+                desc: 'Docker コンテナ内などネスト環境向けに弱いサンドボックスを使用します。',
+            },
+            sandboxFilesystemDisabled: {
+                label: 'ファイルシステム分離無効（sandbox.filesystem.disabled）',
+                desc: 'サンドボックスのファイルシステム分離を無効にします（v2.1.216 以降、user / managed / CLI のみ）。',
+            },
+            sandboxNetworkHttpProxyPort: {
+                label: 'HTTP プロキシポート（sandbox.network.httpProxyPort）',
+                desc: 'サンドボックスのネットワーク分離が使う HTTP プロキシのポート番号。',
+            },
+            sandboxNetworkSocksProxyPort: {
+                label: 'SOCKS プロキシポート（sandbox.network.socksProxyPort）',
+                desc: 'サンドボックスのネットワーク分離が使う SOCKS プロキシのポート番号。',
             },
             sandbox: {
                 label: 'サンドボックス詳細（sandbox）',
-                desc: 'Bash サンドボックスの有効化、除外コマンド、読書き可能パスなどを指定するオブジェクトです。',
+                desc: '除外コマンド、読書き可能パス、許可ドメイン、資格情報など上記以外の構造設定を含むオブジェクトです。',
+            },
+            statusLineType: {
+                label: 'ステータスライン方式（statusLine.type）',
+                desc: 'ステータスラインの生成方式。"command" で外部コマンドの出力を表示します。',
+            },
+            statusLineCommand: {
+                label: 'ステータスラインコマンド（statusLine.command）',
+                desc: 'ステータスラインに表示する内容を出力するスクリプトパスまたはシェルコマンド。',
+            },
+            statusLinePadding: {
+                label: 'ステータスライン余白（statusLine.padding）',
+                desc: 'ステータスラインの水平方向の追加スペース文字数。既定は 0。',
+            },
+            statusLineRefreshInterval: {
+                label: 'ステータスライン更新間隔（statusLine.refreshInterval）',
+                desc: 'ステータスラインコマンドを定期再実行する間隔（秒、最小 1）。時刻表示などに使います。',
+            },
+            statusLineHideVimModeIndicator: {
+                label: 'Vim モード表示を隠す（statusLine.hideVimModeIndicator）',
+                desc: 'ステータスライン使用時の -- INSERT -- などの Vim モード表示を抑制します。',
+            },
+            subagentStatusLineType: {
+                label: 'サブエージェント用ステータスライン方式（subagentStatusLine.type）',
+                desc: 'サブエージェント表示用ステータスラインの生成方式。"command" で外部コマンドを使用します。',
+            },
+            subagentStatusLineCommand: {
+                label: 'サブエージェント用ステータスラインコマンド（subagentStatusLine.command）',
+                desc: 'サブエージェント表示用ステータスラインの内容を出力するコマンド。',
             },
             skillOverrides: {
                 label: 'スキル表示上書き（skillOverrides）',

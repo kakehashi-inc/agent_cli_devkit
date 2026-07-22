@@ -169,6 +169,8 @@ export default {
         readError: '設定の読み込みに失敗しました',
         invalidToml: 'TOML の構文が正しくありません',
         invalidExisting: '既存の config.toml が壊れているため保存できません。直接編集で修正してください。',
+        verifyFailed:
+            '編集結果の検証に失敗したため保存を中止しました。ファイルは変更されていません。この項目は「直接編集」で変更してください。',
         unavailable: 'この環境の設定にはアクセスできません。',
         group: {
             model: 'モデル',
@@ -208,7 +210,7 @@ export default {
             },
             approvalPolicy: {
                 label: '承認ポリシー（approval_policy）',
-                desc: 'コマンド実行時に確認を求めるタイミング。',
+                desc: 'コマンド実行時に確認を求めるタイミング。単純値（on-request 等）でも詳細テーブル（granular）でも指定でき、型が一定でないため直接編集で変更します。',
             },
             sandboxMode: {
                 label: 'サンドボックス（sandbox_mode）',
@@ -216,7 +218,7 @@ export default {
             },
             webSearch: {
                 label: 'Web検索（web_search）',
-                desc: 'Web検索の動作モード（disabled / cached / indexed / live）。通常の既定は cached ですが、--yolo などのフルアクセス時は live になるため、未設定時の表示は固定しません。',
+                desc: 'Web検索の動作モード（disabled / cached / indexed / live）。単純値でも詳細テーブル（context_size / allowed_domains 等）でも指定でき、型が一定でないため直接編集で変更します。',
             },
             personality: {
                 label: 'パーソナリティ（personality）',
@@ -508,7 +510,7 @@ export default {
             },
             featuresNetworkProxy: {
                 label: 'サンドボックス通信プロキシ（features.network_proxy）',
-                desc: '権限プロファイルで制御するサンドボックス通信プロキシを有効にします。実験的機能で既定は無効です。',
+                desc: '権限プロファイルで制御するサンドボックス通信プロキシ。単純な有効/無効でも詳細テーブル（proxy_url 等）でも指定でき、型が一定でないため直接編集で変更します。',
             },
             featuresEnableRequestCompression: {
                 label: 'リクエスト圧縮（features.enable_request_compression）',
@@ -525,10 +527,6 @@ export default {
             modelProviders: {
                 label: 'モデルプロバイダー定義（model_providers.<id>）',
                 desc: 'カスタムモデルプロバイダーごとのエンドポイント、認証、ヘッダー、再試行設定を定義するテーブルです。',
-            },
-            approvalPolicyGranular: {
-                label: '詳細な承認ポリシー（approval_policy.granular）',
-                desc: 'サンドボックス昇格、ルール、MCP確認、権限要求、スキル承認を種類別に制御します。',
             },
             sandboxWritableRoots: {
                 label: '追加の書込可能ルート（sandbox_workspace_write.writable_roots）',
@@ -605,6 +603,122 @@ export default {
             toolSuggest: {
                 label: 'ツール候補制御（tool_suggest）',
                 desc: 'Codex が導入を提案できるコネクタやプラグインの許可リストと無効リストを定義します。',
+            },
+            autoReviewPolicy: {
+                label: '自動レビュー方針（auto_review.policy）',
+                desc: '自動レビューの挙動を指示する Markdown テキストです。レビュー時の観点やルールを記述します。',
+            },
+            windowsSandbox: {
+                label: 'Windowsサンドボックス権限（windows.sandbox）',
+                desc: 'Windows のサンドボックス実行を昇格なし（unelevated）または昇格あり（elevated）で行うかを選びます。',
+            },
+            windowsSandboxPrivateDesktop: {
+                label: 'Windowsプライベートデスクトップ（windows.sandbox_private_desktop）',
+                desc: 'Windows サンドボックスを分離したプライベートデスクトップ上で実行します。',
+            },
+            tuiRawOutputMode: {
+                label: 'TUI生出力モード（tui.raw_output_mode）',
+                desc: '整形せずコマンド出力をそのまま表示します。既定は無効です。',
+            },
+            tuiVimModeDefault: {
+                label: 'TUI Vimモード既定（tui.vim_mode_default）',
+                desc: '入力欄の Vim キーバインドを既定で有効にします。既定は無効です。',
+            },
+            noticeHideFullAccessWarning: {
+                label: 'フルアクセス警告を非表示（notice.hide_full_access_warning）',
+                desc: 'danger-full-access 使用時に表示される警告を抑止します。',
+            },
+            noticeHideRateLimitModelNudge: {
+                label: 'レート制限の案内を非表示（notice.hide_rate_limit_model_nudge）',
+                desc: 'レート制限到達時に別モデルへの切り替えを促す案内を抑止します。',
+            },
+            noticeHideWorldWritableWarning: {
+                label: '全書込可警告を非表示（notice.hide_world_writable_warning）',
+                desc: 'ワークスペースが誰でも書き込み可能なときに表示される警告を抑止します。',
+            },
+            otelEnvironment: {
+                label: 'OpenTelemetry環境名（otel.environment）',
+                desc: 'テレメトリに付与する環境名（deployment.environment）です。既定は dev です。',
+            },
+            otelMetricsExporter: {
+                label: 'メトリクスエクスポータ（otel.metrics_exporter）',
+                desc: 'メトリクスの送信先を none、statsig、OTLP/HTTP、OTLP/gRPC から選びます。既定は statsig です。',
+            },
+            otelTraceExporter: {
+                label: 'トレースエクスポータ（otel.trace_exporter）',
+                desc: 'トレースの送信先を none、OTLP/HTTP、OTLP/gRPC から選びます。',
+            },
+            otelExporter: {
+                label: 'ログエクスポータ（otel.exporter）',
+                desc: 'ログイベントの送信先を none、OTLP/HTTP、OTLP/gRPC から選びます。',
+            },
+            otelLogUserPrompt: {
+                label: '生プロンプトを送出（otel.log_user_prompt）',
+                desc: 'ユーザーの生プロンプト本文をテレメトリへ含めます。機密情報の露出に注意してください。',
+            },
+            toolsViewImage: {
+                label: '画像添付ツール（tools.view_image）',
+                desc: 'ローカル画像ファイルをコンテキストへ添付する view_image ツールを有効にします。',
+            },
+            memoriesMaxRawMemoriesForConsolidation: {
+                label: 'メモリ統合の対象上限（memories.max_raw_memories_for_consolidation）',
+                desc: '一度の統合処理で扱う生メモリの最大件数です。既定は256、上限は4096です。',
+            },
+            memoriesMaxRolloutAgeDays: {
+                label: 'メモリ抽出対象の最大日数（memories.max_rollout_age_days）',
+                desc: 'メモリ抽出の対象とするロールアウトの最大経過日数です。既定は30、範囲は0～90です。',
+            },
+            memoriesMaxRolloutsPerStartup: {
+                label: '起動あたりの処理数（memories.max_rollouts_per_startup）',
+                desc: '起動ごとにメモリ抽出へ回すロールアウトの最大件数です。既定は16、上限は128です。',
+            },
+            memoriesMaxUnusedDays: {
+                label: 'メモリ未使用の最大日数（memories.max_unused_days）',
+                desc: '使われないメモリを保持する最大日数です。既定は30、範囲は0～365です。',
+            },
+            memoriesMinRolloutIdleHours: {
+                label: 'メモリ抽出の待機時間（memories.min_rollout_idle_hours）',
+                desc: 'ロールアウトをメモリ抽出の対象にするまでの最小アイドル時間です。既定は6、範囲は1～48時間です。',
+            },
+            featuresCodeModeEnabled: {
+                label: 'コードモード（features.code_mode.enabled）',
+                desc: 'MCP ツールをコード経由で呼び出すコードモードを有効にします。既定は無効です。',
+            },
+            featuresRolloutBudgetEnabled: {
+                label: 'ロールアウト予算（features.rollout_budget.enabled）',
+                desc: 'セッションのトークン予算を管理するロールアウト予算機能を有効にします。既定は無効です。',
+            },
+            featuresRolloutBudgetLimitTokens: {
+                label: 'ロールアウト予算の上限（features.rollout_budget.limit_tokens）',
+                desc: 'ロールアウト予算として許容する合計トークン数の上限です。',
+            },
+            featuresRolloutBudgetPrefillTokenWeight: {
+                label: 'プレフィルトークン係数（features.rollout_budget.prefill_token_weight）',
+                desc: '予算計算でプレフィル（入力）トークンに掛ける重みです。既定は1です。',
+            },
+            featuresRolloutBudgetSamplingTokenWeight: {
+                label: 'サンプリングトークン係数（features.rollout_budget.sampling_token_weight）',
+                desc: '予算計算でサンプリング（生成）トークンに掛ける重みです。既定は1です。',
+            },
+            featuresRolloutBudgetReminderIntervalTokens: {
+                label: '予算リマインダ間隔（features.rollout_budget.reminder_interval_tokens）',
+                desc: '残り予算を通知するトークン消費の間隔です。',
+            },
+            appsDefaultEnabled: {
+                label: 'アプリ既定の有効化（apps._default.enabled）',
+                desc: '個別設定のないアプリに適用する既定の有効状態です。既定は有効です。',
+            },
+            appsDefaultDefaultToolsEnabled: {
+                label: 'アプリ既定のツール有効化（apps._default.default_tools_enabled）',
+                desc: '個別設定のないアプリで、標準ツールを既定で有効にするかを指定します。',
+            },
+            appsDefaultDestructiveEnabled: {
+                label: 'アプリ既定の破壊的操作（apps._default.destructive_enabled）',
+                desc: '個別設定のないアプリで、破壊的な操作を既定で許可するかを指定します。',
+            },
+            appsDefaultOpenWorldEnabled: {
+                label: 'アプリ既定の外部接続（apps._default.open_world_enabled）',
+                desc: '個別設定のないアプリで、外部（open-world）アクセスを既定で許可するかを指定します。',
             },
         },
     },

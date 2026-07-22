@@ -165,7 +165,9 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                     t(
                         result.message === 'invalid-existing-toml'
                             ? 'codex.settings.invalidExisting'
-                            : 'codex.settings.saveError'
+                            : result.message === 'verify-failed'
+                              ? 'codex.settings.verifyFailed'
+                              : 'codex.settings.saveError'
                     ),
                     'error'
                 );
@@ -301,6 +303,12 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                             unknownValueLabel={value =>
                                                                 t('codex.settings.unknownValue', { value })
                                                             }
+                                                            enumOptions={f.enumChoices?.map(choice => ({
+                                                                value: choice.value,
+                                                                label: t(
+                                                                    `codex.settings.field.${f.key}.choice.${choice.labelKey}`
+                                                                ),
+                                                            }))}
                                                             onChange={value => setValue(f.key, value)}
                                                         />
                                                     </TableCell>

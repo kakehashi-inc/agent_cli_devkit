@@ -108,8 +108,21 @@ export default {
         readError: 'Failed to read settings',
         invalidJson: 'The JSON/JSONC syntax is invalid',
         invalidExisting: 'The existing JSON/JSONC is invalid. Fix it with direct edit first.',
+        verifyFailed:
+            'Verification of the edit result failed, so saving was aborted. The file is unchanged. Change this item via direct edit.',
         unavailable: 'These settings cannot be accessed.',
-        group: { model: 'Models & Agents', behavior: 'Behavior', advanced: 'Direct edit' },
+        group: {
+            model: 'Models & Agents',
+            behavior: 'Behavior',
+            server: 'Server',
+            attachment: 'Attachments',
+            toolOutput: 'Tool output',
+            compaction: 'Compaction',
+            permission: 'Permissions',
+            experimental: 'Experimental',
+            enterprise: 'Enterprise',
+            advanced: 'Direct edit',
+        },
         field: {
             model: {
                 label: 'Model (model)',
@@ -137,7 +150,8 @@ export default {
             snapshot: { label: 'Snapshots (snapshot)', desc: 'Tracks file changes so they can be reverted.' },
             autoupdate: {
                 label: 'Automatic updates (autoupdate)',
-                desc: 'Boolean or notify union value; edit the file directly.',
+                desc: 'Startup auto-update behavior. Enabled updates automatically, while Notify only announces available updates.',
+                choice: { enabled: 'Enabled', disabled: 'Disabled', notify: 'Notify only' },
             },
             skills: {
                 label: 'Additional skill sources (skills)',
@@ -186,6 +200,150 @@ export default {
             experimental: {
                 label: 'Experimental (experimental)',
                 desc: 'Unstable option map; edit the file directly.',
+            },
+            serverPort: {
+                label: 'Server port (server.port)',
+                desc: 'TCP port the headless server listens on. Accepts an integer from 1 to 65535.',
+            },
+            serverHostname: {
+                label: 'Server hostname (server.hostname)',
+                desc: 'Hostname the server binds to. Defaults to 0.0.0.0 (all addresses).',
+            },
+            serverMdns: {
+                label: 'mDNS advertising (server.mdns)',
+                desc: 'Whether to advertise the server over mDNS on the local network.',
+            },
+            serverMdnsDomain: {
+                label: 'mDNS domain (server.mdnsDomain)',
+                desc: 'Local domain name used when advertising over mDNS.',
+            },
+            attachmentImageAutoResize: {
+                label: 'Image auto-resize (attachment.image.auto_resize)',
+                desc: 'Automatically downscale attached images to the size limits.',
+            },
+            attachmentImageMaxWidth: {
+                label: 'Image max width (attachment.image.max_width)',
+                desc: 'Maximum width, in pixels, for attached images.',
+            },
+            attachmentImageMaxHeight: {
+                label: 'Image max height (attachment.image.max_height)',
+                desc: 'Maximum height, in pixels, for attached images.',
+            },
+            attachmentImageMaxBase64Bytes: {
+                label: 'Image base64 limit (attachment.image.max_base64_bytes)',
+                desc: 'Maximum size, in bytes, of an attached image after base64 encoding.',
+            },
+            toolOutputMaxLines: {
+                label: 'Tool output max lines (tool_output.max_lines)',
+                desc: 'Maximum number of lines kept from tool output; excess is truncated.',
+            },
+            toolOutputMaxBytes: {
+                label: 'Tool output max bytes (tool_output.max_bytes)',
+                desc: 'Maximum number of bytes kept from tool output; excess is truncated.',
+            },
+            compactionAuto: {
+                label: 'Automatic compaction (compaction.auto)',
+                desc: 'Automatically compact the conversation as it approaches the context limit.',
+            },
+            compactionPrune: {
+                label: 'Prune on compaction (compaction.prune)',
+                desc: 'Remove older messages during compaction to reduce size.',
+            },
+            compactionTailTurns: {
+                label: 'Preserved turns (compaction.tail_turns)',
+                desc: 'Number of most recent turns kept intact during compaction.',
+            },
+            compactionPreserveRecentTokens: {
+                label: 'Preserved recent tokens (compaction.preserve_recent_tokens)',
+                desc: 'Approximate amount of recent tokens preserved during compaction.',
+            },
+            compactionReserved: {
+                label: 'Reserved tokens (compaction.reserved)',
+                desc: 'Token budget reserved in the compaction calculation.',
+            },
+            permissionRead: {
+                label: 'File read permission (permission.read)',
+                desc: 'Permission policy (ask/allow/deny) for the read tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionEdit: {
+                label: 'File edit permission (permission.edit)',
+                desc: 'Permission policy (ask/allow/deny) for the edit tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionGlob: {
+                label: 'File glob permission (permission.glob)',
+                desc: 'Permission policy (ask/allow/deny) for the glob tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionGrep: {
+                label: 'Content search permission (permission.grep)',
+                desc: 'Permission policy (ask/allow/deny) for the grep tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionList: {
+                label: 'Directory list permission (permission.list)',
+                desc: 'Permission policy (ask/allow/deny) for the list tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionBash: {
+                label: 'Shell permission (permission.bash)',
+                desc: 'Permission policy (ask/allow/deny) for the bash tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionTask: {
+                label: 'Task permission (permission.task)',
+                desc: 'Permission policy (ask/allow/deny) for the task tool (subagent launches). If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionExternalDirectory: {
+                label: 'External directory permission (permission.external_directory)',
+                desc: 'Permission policy (ask/allow/deny) for access outside the workspace. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionLsp: {
+                label: 'LSP permission (permission.lsp)',
+                desc: 'Permission policy (ask/allow/deny) for the lsp tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionSkill: {
+                label: 'Skill permission (permission.skill)',
+                desc: 'Permission policy (ask/allow/deny) for the skill tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionTodowrite: {
+                label: 'Todo write permission (permission.todowrite)',
+                desc: 'Permission policy (ask/allow/deny) for the todowrite tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionQuestion: {
+                label: 'Question permission (permission.question)',
+                desc: 'Permission policy (ask/allow/deny) for the question tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionWebfetch: {
+                label: 'Web fetch permission (permission.webfetch)',
+                desc: 'Permission policy (ask/allow/deny) for the webfetch tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionWebsearch: {
+                label: 'Web search permission (permission.websearch)',
+                desc: 'Permission policy (ask/allow/deny) for the websearch tool. If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            permissionDoomLoop: {
+                label: 'Doom loop permission (permission.doom_loop)',
+                desc: 'Permission policy (ask/allow/deny) for doom_loop (repeated-run guarding). If you use pattern-based rules (an object), use direct edit instead.',
+            },
+            experimentalDisablePasteSummary: {
+                label: 'Disable paste summary (experimental.disable_paste_summary)',
+                desc: 'Disables summarizing large pasted input. Experimental option.',
+            },
+            experimentalBatchTool: {
+                label: 'Batch tool (experimental.batch_tool)',
+                desc: 'Enables the experimental batching of multiple tool calls.',
+            },
+            experimentalOpenTelemetry: {
+                label: 'OpenTelemetry (experimental.openTelemetry)',
+                desc: 'Enables OpenTelemetry trace export. Experimental option.',
+            },
+            experimentalContinueLoopOnDeny: {
+                label: 'Continue loop on deny (experimental.continue_loop_on_deny)',
+                desc: 'Keeps the agent loop running after a permission denial. Experimental option.',
+            },
+            experimentalMcpTimeout: {
+                label: 'MCP timeout (experimental.mcp_timeout)',
+                desc: 'Timeout, in milliseconds, for MCP calls. Experimental option.',
+            },
+            enterpriseUrl: {
+                label: 'Enterprise URL (enterprise.url)',
+                desc: 'Base URL of the enterprise endpoint.',
             },
         },
     },

@@ -10,8 +10,13 @@ interface Props {
     disabledLabel: string;
     directEditLabel: string;
     unknownValueLabel: (value: string) => string;
+    // type='enum' のとき: 型付き候補を i18n 解決したラベル付きで渡す。
+    enumOptions?: { value: SettingsFieldValue; label: string }[];
     onChange: (value: SettingsFieldValue) => void;
 }
+
+/** enum 候補の値を Select 用の一意な文字列キーへ変換する（型を含めて識別する）。 */
+const enumKey = (value: SettingsFieldValue): string => (value === undefined ? '' : JSON.stringify(value));
 
 /** Shared value cell for editable scalar settings and direct-edit-only structural settings. */
 export const SettingsValueEditor: React.FC<Props> = ({
@@ -22,6 +27,7 @@ export const SettingsValueEditor: React.FC<Props> = ({
     disabledLabel,
     directEditLabel,
     unknownValueLabel,
+    enumOptions,
     onChange,
 }) => {
     if (field.type === 'directEdit') {
@@ -29,6 +35,41 @@ export const SettingsValueEditor: React.FC<Props> = ({
             <Typography variant='body2' color='text.secondary'>
                 {directEditLabel}
             </Typography>
+        );
+    }
+
+    if (field.type === 'enum') {
+        const options = enumOptions ?? [];
+        const currentKey = enumKey(value);
+        const known = options.some(option => enumKey(option.value) === currentKey);
+        return (
+            <Select
+                size='small'
+                displayEmpty
+                value={value === undefined ? '' : currentKey}
+                onChange={event => {
+                    const key = event.target.value;
+                    if (key === '') {
+                        onChange(undefined);
+                        return;
+                    }
+                    const option = options.find(item => enumKey(item.value) === key);
+                    onChange(option ? option.value : undefined);
+                }}
+                sx={{ minWidth: 240 }}
+            >
+                <MenuItem value=''>
+                    <em>{unsetLabel}</em>
+                </MenuItem>
+                {!known && value !== undefined && (
+                    <MenuItem value={currentKey}>{unknownValueLabel(String(value))}</MenuItem>
+                )}
+                {options.map(option => (
+                    <MenuItem key={enumKey(option.value)} value={enumKey(option.value)}>
+                        {option.label}
+                    </MenuItem>
+                ))}
+            </Select>
         );
     }
 

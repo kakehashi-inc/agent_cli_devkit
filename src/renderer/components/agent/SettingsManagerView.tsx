@@ -166,7 +166,13 @@ const SettingsSection: React.FC<{
             } else {
                 notify(
                     t(
-                        `${agentId}.settings.${result.message === 'invalid-existing-json' ? 'invalidExisting' : 'saveError'}`
+                        `${agentId}.settings.${
+                            result.message === 'invalid-existing-json'
+                                ? 'invalidExisting'
+                                : result.message === 'verify-failed'
+                                  ? 'verifyFailed'
+                                  : 'saveError'
+                        }`
                     ),
                     'error'
                 );
@@ -298,6 +304,12 @@ const SettingsSection: React.FC<{
                                                             unknownValueLabel={value =>
                                                                 t(`${agentId}.settings.unknownValue`, { value })
                                                             }
+                                                            enumOptions={f.enumChoices?.map(choice => ({
+                                                                value: choice.value,
+                                                                label: t(
+                                                                    `${agentId}.settings.field.${f.key}.choice.${choice.labelKey}`
+                                                                ),
+                                                            }))}
                                                             onChange={value => setValue(f.key, value)}
                                                         />
                                                     </TableCell>

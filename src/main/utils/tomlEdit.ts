@@ -318,6 +318,39 @@ function keyAssignRegex(key: string): RegExp {
     return new RegExp(`^\\s*${escapedKey}\\s*=`);
 }
 
+/** 文字列リテラル外の最初の `#` の位置（無ければ -1）。 */
+function findCommentStart(s: string): number {
+    let inBasic = false;
+    let inLiteral = false;
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (inBasic) {
+            if (ch === '\\') i++;
+            else if (ch === '"') inBasic = false;
+            continue;
+        }
+        if (inLiteral) {
+            if (ch === "'") inLiteral = false;
+            continue;
+        }
+        if (ch === '"') inBasic = true;
+        else if (ch === "'") inLiteral = true;
+        else if (ch === '#') return i;
+    }
+    return -1;
+}
+
+/** 既存キー行の値部分だけを差し替える（インデント・キー表記・行末コメントを保持）。 */
+function replaceValueInLine(line: string, tomlVal: string, eol: '\r' | ''): string {
+    const noCr = stripCr(line);
+    const eq = noCr.indexOf('=');
+    const head = noCr.slice(0, eq + 1);
+    const rest = noCr.slice(eq + 1);
+    const commentIdx = findCommentStart(rest);
+    const comment = commentIdx >= 0 ? rest.slice(commentIdx).replace(/\s+$/, '') : '';
+    return `${head} ${tomlVal}${comment ? ` ${comment}` : ''}${eol}`;
+}
+
 /** 最初のセクション見出しの行インデックス（無ければ lines.length）。 */
 function firstSectionIndex(lines: string[]): number {
     for (let i = 0; i < lines.length; i++) {
@@ -381,7 +414,7 @@ export function setScalar(tomlText: string, dottedKey: string, value: string | n
     const keyRe = keyAssignRegex(key);
     for (let i = tableIdx + 1; i < sectionEnd; i++) {
         if (keyRe.test(stripCr(lines[i]))) {
-            lines[i] = `${key} = ${tomlVal}${eol}`;
+            lines[i] = replaceValueInLine(lines[i], tomlVal, eol);
             return joinLines(lines);
         }
     }
@@ -396,7 +429,7 @@ function setRootKey(lines: string[], key: string, tomlVal: string, eol: '\r' | '
     const keyRe = keyAssignRegex(key);
     for (let i = 0; i < rootEnd; i++) {
         if (keyRe.test(stripCr(lines[i]))) {
-            lines[i] = `${key} = ${tomlVal}${eol}`;
+            lines[i] = replaceValueInLine(lines[i], tomlVal, eol);
             return joinLines(lines);
         }
     }

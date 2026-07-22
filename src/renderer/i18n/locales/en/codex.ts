@@ -168,6 +168,8 @@ export default {
         readError: 'Failed to read settings',
         invalidToml: 'The TOML syntax is invalid',
         invalidExisting: 'The existing config.toml is broken and cannot be saved. Fix it via direct edit.',
+        verifyFailed:
+            'Verification of the edit result failed, so saving was aborted. The file is unchanged. Change this item via direct edit.',
         unavailable: 'The settings for this environment cannot be accessed.',
         group: {
             model: 'Model',
@@ -207,7 +209,7 @@ export default {
             },
             approvalPolicy: {
                 label: 'Approval policy (approval_policy)',
-                desc: 'When to prompt for approval before running commands.',
+                desc: 'When to prompt for approval before running commands. It accepts either a simple value (e.g. on-request) or a granular table, so its shape is not fixed and it is changed via direct edit.',
             },
             sandboxMode: {
                 label: 'Sandbox (sandbox_mode)',
@@ -215,7 +217,7 @@ export default {
             },
             webSearch: {
                 label: 'Web search (web_search)',
-                desc: 'Web search mode (disabled / cached / indexed / live). The normal default is cached, but full-access modes such as --yolo use live, so the unset label has no fixed default.',
+                desc: 'Web search mode (disabled / cached / indexed / live). It accepts either a simple value or a detailed table (context_size / allowed_domains, etc.), so its shape is not fixed and it is changed via direct edit.',
             },
             personality: {
                 label: 'Personality (personality)',
@@ -507,7 +509,7 @@ export default {
             },
             featuresNetworkProxy: {
                 label: 'Sandbox network proxy (features.network_proxy)',
-                desc: 'Enables permission-profile-controlled sandbox networking. Experimental and off by default.',
+                desc: 'Permission-profile-controlled sandbox networking. It accepts either a simple on/off value or a detailed table (proxy_url, etc.), so its shape is not fixed and it is changed via direct edit.',
             },
             featuresEnableRequestCompression: {
                 label: 'Request compression (features.enable_request_compression)',
@@ -524,10 +526,6 @@ export default {
             modelProviders: {
                 label: 'Model provider definitions (model_providers.<id>)',
                 desc: 'Defines endpoints, authentication, headers, and retry settings for custom model providers.',
-            },
-            approvalPolicyGranular: {
-                label: 'Granular approval policy (approval_policy.granular)',
-                desc: 'Controls sandbox escalation, rules, MCP elicitations, permission requests, and skill approvals separately.',
             },
             sandboxWritableRoots: {
                 label: 'Additional writable roots (sandbox_workspace_write.writable_roots)',
@@ -604,6 +602,122 @@ export default {
             toolSuggest: {
                 label: 'Tool suggestions (tool_suggest)',
                 desc: 'Defines which connectors or plugins Codex may suggest for installation and which are disabled.',
+            },
+            autoReviewPolicy: {
+                label: 'Auto-review policy (auto_review.policy)',
+                desc: 'Markdown text that guides automatic-review behavior, describing review criteria and rules.',
+            },
+            windowsSandbox: {
+                label: 'Windows sandbox privilege (windows.sandbox)',
+                desc: 'Runs the Windows sandbox unelevated or elevated.',
+            },
+            windowsSandboxPrivateDesktop: {
+                label: 'Windows private desktop (windows.sandbox_private_desktop)',
+                desc: 'Runs the Windows sandbox on an isolated private desktop.',
+            },
+            tuiRawOutputMode: {
+                label: 'TUI raw output mode (tui.raw_output_mode)',
+                desc: 'Shows command output verbatim without formatting. Default: off.',
+            },
+            tuiVimModeDefault: {
+                label: 'TUI Vim mode default (tui.vim_mode_default)',
+                desc: 'Enables Vim key bindings in the input field by default. Default: off.',
+            },
+            noticeHideFullAccessWarning: {
+                label: 'Hide full-access warning (notice.hide_full_access_warning)',
+                desc: 'Suppresses the warning shown when danger-full-access is used.',
+            },
+            noticeHideRateLimitModelNudge: {
+                label: 'Hide rate-limit nudge (notice.hide_rate_limit_model_nudge)',
+                desc: 'Suppresses the prompt suggesting a different model when a rate limit is reached.',
+            },
+            noticeHideWorldWritableWarning: {
+                label: 'Hide world-writable warning (notice.hide_world_writable_warning)',
+                desc: 'Suppresses the warning shown when the workspace is world-writable.',
+            },
+            otelEnvironment: {
+                label: 'OpenTelemetry environment (otel.environment)',
+                desc: 'Environment name (deployment.environment) attached to telemetry. Default: dev.',
+            },
+            otelMetricsExporter: {
+                label: 'Metrics exporter (otel.metrics_exporter)',
+                desc: 'Selects the metrics destination: none, statsig, OTLP/HTTP, or OTLP/gRPC. Default: statsig.',
+            },
+            otelTraceExporter: {
+                label: 'Trace exporter (otel.trace_exporter)',
+                desc: 'Selects the trace destination: none, OTLP/HTTP, or OTLP/gRPC.',
+            },
+            otelExporter: {
+                label: 'Log exporter (otel.exporter)',
+                desc: 'Selects the log-event destination: none, OTLP/HTTP, or OTLP/gRPC.',
+            },
+            otelLogUserPrompt: {
+                label: 'Export raw prompts (otel.log_user_prompt)',
+                desc: 'Includes raw user prompt text in telemetry. Use carefully to avoid exposing sensitive data.',
+            },
+            toolsViewImage: {
+                label: 'Image attach tool (tools.view_image)',
+                desc: 'Enables the view_image tool that attaches local image files to context.',
+            },
+            memoriesMaxRawMemoriesForConsolidation: {
+                label: 'Consolidation input limit (memories.max_raw_memories_for_consolidation)',
+                desc: 'Maximum raw memories handled in one consolidation pass. Default: 256, max: 4096.',
+            },
+            memoriesMaxRolloutAgeDays: {
+                label: 'Max rollout age for extraction (memories.max_rollout_age_days)',
+                desc: 'Maximum age in days of rollouts eligible for memory extraction. Default: 30, range 0-90.',
+            },
+            memoriesMaxRolloutsPerStartup: {
+                label: 'Rollouts per startup (memories.max_rollouts_per_startup)',
+                desc: 'Maximum rollouts sent to memory extraction per startup. Default: 16, max: 128.',
+            },
+            memoriesMaxUnusedDays: {
+                label: 'Max unused days (memories.max_unused_days)',
+                desc: 'Maximum days an unused memory is retained. Default: 30, range 0-365.',
+            },
+            memoriesMinRolloutIdleHours: {
+                label: 'Extraction idle time (memories.min_rollout_idle_hours)',
+                desc: 'Minimum idle hours before a rollout becomes eligible for memory extraction. Default: 6, range 1-48.',
+            },
+            featuresCodeModeEnabled: {
+                label: 'Code mode (features.code_mode.enabled)',
+                desc: 'Enables code mode, which invokes MCP tools through code. Off by default.',
+            },
+            featuresRolloutBudgetEnabled: {
+                label: 'Rollout budget (features.rollout_budget.enabled)',
+                desc: 'Enables the rollout-budget feature that manages a session token budget. Off by default.',
+            },
+            featuresRolloutBudgetLimitTokens: {
+                label: 'Rollout budget limit (features.rollout_budget.limit_tokens)',
+                desc: 'Maximum total tokens allowed as the rollout budget.',
+            },
+            featuresRolloutBudgetPrefillTokenWeight: {
+                label: 'Prefill token weight (features.rollout_budget.prefill_token_weight)',
+                desc: 'Weight applied to prefill (input) tokens in budget accounting. Default: 1.',
+            },
+            featuresRolloutBudgetSamplingTokenWeight: {
+                label: 'Sampling token weight (features.rollout_budget.sampling_token_weight)',
+                desc: 'Weight applied to sampling (output) tokens in budget accounting. Default: 1.',
+            },
+            featuresRolloutBudgetReminderIntervalTokens: {
+                label: 'Budget reminder interval (features.rollout_budget.reminder_interval_tokens)',
+                desc: 'Token-consumption interval at which the remaining budget is reported.',
+            },
+            appsDefaultEnabled: {
+                label: 'Default app enablement (apps._default.enabled)',
+                desc: 'Default enabled state applied to apps without individual configuration. On by default.',
+            },
+            appsDefaultDefaultToolsEnabled: {
+                label: 'Default app tools (apps._default.default_tools_enabled)',
+                desc: 'Whether default tools are enabled by default for apps without individual configuration.',
+            },
+            appsDefaultDestructiveEnabled: {
+                label: 'Default app destructive ops (apps._default.destructive_enabled)',
+                desc: 'Whether destructive operations are allowed by default for apps without individual configuration.',
+            },
+            appsDefaultOpenWorldEnabled: {
+                label: 'Default app open-world access (apps._default.open_world_enabled)',
+                desc: 'Whether open-world access is allowed by default for apps without individual configuration.',
             },
         },
     },

@@ -12,6 +12,7 @@ import {
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { deleteScalar, getScalar, setScalar } from '../../utils/tomlEdit';
+import { deepEqualLoose, deleteNestedValue, setNestedValue, withoutEmptyObjects } from '../../utils/nestedValue';
 
 /**
  * Codex CLI の設定ファイル ~/.codex/config.toml を管理する。
@@ -89,6 +90,10 @@ export class CodexConfigManager {
         if (field.type === 'number') {
             return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
         }
+        if (field.type === 'enum') {
+            // getScalar は scalar のみ返す。型混在候補はそのまま（boolean / number / string）表示する。
+            return value;
+        }
         // string
         return typeof value === 'string' ? value : undefined;
     }
@@ -96,14 +101,19 @@ export class CodexConfigManager {
     /**
      * テーブル編集の保存。既存 TOML に対し、登録項目だけを行スライスで反映する。
      * 値が undefined / 空文字なら削除、それ以外は型に応じて設定する。
+     *
+     * 安全弁: 編集後 TOML の parse 結果が「編集前の parse 結果へ意図した変更を適用した
+     * 期待モデル」と deep 一致することを検証し、一致しない場合はファイルを書かずに失敗を返す。
+     * （dotted key 記法やインラインテーブルで書かれた既存値との衝突はここで検出される。）
      */
     async write(env: CodexEnvironment, values: SettingsValues): Promise<SettingsWriteResult> {
         const fs = this.fsFor(env);
         let text = (await fs.readText(CODEX_CONFIG_REL)) ?? '';
 
+        const expected: Record<string, unknown> = {};
         if (text.trim().length > 0) {
             try {
-                parse(text);
+                Object.assign(expected, parse(text));
             } catch {
                 return { ok: false, message: 'invalid-existing-toml' };
             }
@@ -111,7 +121,18 @@ export class CodexConfigManager {
 
         for (const field of SETTINGS_FIELDS) {
             if (!Object.prototype.hasOwnProperty.call(values, field.key)) continue;
-            text = this.applyField(text, field, values[field.key]);
+            text = this.applyField(text, expected, field, values[field.key]);
+        }
+
+        // 検証: 編集後 TOML が期待モデルと一致しなければ書き込まない（空テーブルは無視して比較）。
+        try {
+            if (!deepEqualLoose(withoutEmptyObjects(parse(text)), withoutEmptyObjects(expected))) {
+                console.error(`Config edit verification mismatch (${JSON.stringify(env)})`);
+                return { ok: false, message: 'verify-failed' };
+            }
+        } catch (error) {
+            console.error(`Config edit verification parse error (${JSON.stringify(env)}):`, error);
+            return { ok: false, message: 'verify-failed' };
         }
 
         try {
@@ -123,18 +144,28 @@ export class CodexConfigManager {
         }
     }
 
-    /** 1 項目を TOML テキストへ反映する（型ごとの上書き/削除ルール）。 */
-    private applyField(text: string, field: SettingsFieldSpec, value: SettingsFieldValue): string {
+    /** 1 項目をテキストと期待モデルの両方へ反映し、更新後テキストを返す。 */
+    private applyField(
+        text: string,
+        model: Record<string, unknown>,
+        field: SettingsFieldSpec,
+        value: SettingsFieldValue
+    ): string {
         if (field.type === 'directEdit') {
             return text;
         }
+        let resolved: string | number | boolean | undefined;
         if (field.type === 'boolean') {
-            if (typeof value === 'boolean') {
-                return setScalar(text, field.path, value);
-            }
-            return deleteScalar(text, field.path);
-        }
-        if (field.type === 'number') {
+            resolved = typeof value === 'boolean' ? value : undefined;
+        } else if (field.type === 'enum') {
+            // 選択された候補の値を型のまま反映する。空文字は未設定として扱う。
+            resolved =
+                typeof value === 'boolean' ||
+                typeof value === 'number' ||
+                (typeof value === 'string' && value.length > 0)
+                    ? value
+                    : undefined;
+        } else if (field.type === 'number') {
             if (typeof value === 'number' && Number.isFinite(value)) {
                 let n = value;
                 if (typeof field.min === 'number' && n < field.min) {
@@ -144,15 +175,23 @@ export class CodexConfigManager {
                     n = field.max;
                 }
                 if (field.integer) n = Math.trunc(n);
-                return setScalar(text, field.path, n);
+                resolved = n;
+            } else {
+                resolved = undefined;
             }
+        } else {
+            // string: 空文字 / undefined はキー削除、それ以外は設定。
+            resolved = typeof value === 'string' && value.length > 0 ? value : undefined;
+        }
+
+        const path = field.path.split('.');
+        if (resolved === undefined) {
+            // TOML の削除は空になったテーブル見出しを残すため、期待モデルも親を残す。
+            deleteNestedValue(model, path, false);
             return deleteScalar(text, field.path);
         }
-        // string: 空文字 / undefined はキー削除、それ以外は設定。
-        if (typeof value === 'string' && value.length > 0) {
-            return setScalar(text, field.path, value);
-        }
-        return deleteScalar(text, field.path);
+        setNestedValue(model, path, resolved);
+        return setScalar(text, field.path, resolved);
     }
 
     /**

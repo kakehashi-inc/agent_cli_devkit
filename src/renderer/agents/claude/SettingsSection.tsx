@@ -175,7 +175,9 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                     t(
                         result.message === 'invalid-existing-json'
                             ? 'claude.settings.invalidExisting'
-                            : 'claude.settings.saveError'
+                            : result.message === 'verify-failed'
+                              ? 'claude.settings.verifyFailed'
+                              : 'claude.settings.saveError'
                     ),
                     'error'
                 );
@@ -326,6 +328,12 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                             unknownValueLabel={value =>
                                                                 t('claude.settings.unknownValue', { value })
                                                             }
+                                                            enumOptions={f.enumChoices?.map(choice => ({
+                                                                value: choice.value,
+                                                                label: t(
+                                                                    `claude.settings.field.${f.key}.choice.${choice.labelKey}`
+                                                                ),
+                                                            }))}
                                                             onChange={value => setValue(f.key, value)}
                                                         />
                                                     </TableCell>

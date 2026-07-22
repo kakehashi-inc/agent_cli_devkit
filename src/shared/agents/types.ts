@@ -322,8 +322,17 @@ export interface PluginCapabilities {
 // - envFlag: env オブジェクト内の特定キー（envKey）を編集するフラグ。
 //            ON で env[envKey] = onValue（既定 "1"）を設定、OFF で削除する。
 //            onValue と異なる保存済み値は string として表示・保持する。
+// - enum: 型が混在する固定候補から 1 つを選ぶ（例: true / false / "notify"）。候補ごとに実際の値と
+//         その型（boolean / string / number）を保持し、選択された値を型のまま読み書きする。
 // - directEdit: 配列・テーブル・オブジェクトなど、設定画面では編集せずファイルの直接編集へ案内する。
-export type SettingsFieldType = 'boolean' | 'string' | 'number' | 'envFlag' | 'directEdit';
+export type SettingsFieldType = 'boolean' | 'string' | 'number' | 'envFlag' | 'enum' | 'directEdit';
+
+// enum 型の候補 1 件。value は実際に読み書きする型付きの値、labelKey は i18n サフィックス
+// （settings.field.<key>.choice.<labelKey> を引く）。
+export interface SettingsEnumChoice {
+    value: string | number | boolean;
+    labelKey: string;
+}
 
 // 表示・編集対象の 1 設定項目の定義（registry）。
 // 編集可能型は読み書きと UI へ反映し、directEdit は UI の案内行だけを生成する。
@@ -335,6 +344,7 @@ export interface SettingsFieldSpec {
     choices?: string[]; // type='string' で表示する候補（allowCustom=false なら選択肢を限定）
     // choices にないモデル ID なども受け付ける候補入力。保存済みの未知値もそのまま表示する。
     allowCustom?: boolean;
+    enumChoices?: SettingsEnumChoice[]; // type='enum' のとき: 型付き候補の一覧
     envKey?: string; // type='envFlag' のとき: env オブジェクト内の対象キー
     onValue?: string; // type='envFlag' のとき: ON 時に設定する値（既定 '1'）
     min?: number; // type='number' のとき: 最小値（クランプに使用）
