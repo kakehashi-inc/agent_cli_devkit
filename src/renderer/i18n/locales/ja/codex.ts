@@ -428,17 +428,21 @@ export default {
                 label: 'エージェント同時数（agents.max_threads）',
                 desc: '同時に開いておけるエージェントスレッド数の上限です。既定は 6 です。',
             },
-            agentsMaxDepth: {
-                label: 'エージェント階層深度（agents.max_depth）',
-                desc: 'サブエージェントがさらに子を生成できる最大深度です。ルートは深度0、既定は1です。',
-            },
-            agentsJobMaxRuntimeSeconds: {
-                label: 'エージェントジョブ時間（agents.job_max_runtime_seconds）',
-                desc: 'spawn_agents_on_csv の各ワーカーに適用する既定の最大実行秒数です。未設定時は1800秒です。',
-            },
             agentsInterruptMessage: {
                 label: '中断メッセージを記録（agents.interrupt_message）',
                 desc: 'エージェントターンを中断したとき、モデルから見えるメッセージを履歴へ記録します。既定は有効です。',
+            },
+            agentsEnabled: {
+                label: 'マルチエージェント有効化（agents.enabled）',
+                desc: 'マルチエージェントツールを有効にします。既定は有効です。',
+            },
+            agentsDefaultSubagentModel: {
+                label: 'サブエージェント既定モデル（agents.default_subagent_model）',
+                desc: '起動するサブエージェントで使う既定モデルを指定します。',
+            },
+            agentsDefaultSubagentReasoningEffort: {
+                label: 'サブエージェント既定 effort（agents.default_subagent_reasoning_effort）',
+                desc: 'サブエージェントの既定 reasoning effort です。任意の値も入力できます。',
             },
             featuresGoals: {
                 label: 'ゴール機能（features.goals）',
@@ -604,6 +608,26 @@ export default {
                 label: 'ツール候補制御（tool_suggest）',
                 desc: 'Codex が導入を提案できるコネクタやプラグインの許可リストと無効リストを定義します。',
             },
+            toolsWebSearch: {
+                label: 'Web検索ツール（tools.web_search）',
+                desc: 'Web 検索ツールの有効化と詳細設定です。真偽値またはオブジェクトなので直接編集します。',
+            },
+            featuresCodeModeDirectOnlyToolNamespaces: {
+                label: 'コードモード直接呼び出し限定（features.code_mode.direct_only_tool_namespaces）',
+                desc: 'code mode が直接呼び出しのみ許可するツール名前空間の一覧です。配列なので直接編集します。',
+            },
+            featuresCodeModeExcludedToolNamespaces: {
+                label: 'コードモード除外名前空間（features.code_mode.excluded_tool_namespaces）',
+                desc: 'code mode から除外するツール名前空間の一覧です。配列なので直接編集します。',
+            },
+            computerUseWindowsAllowedAppIds: {
+                label: 'Computer Use 許可アプリ（computer_use.windows.always_allowed_app_ids）',
+                desc: 'Computer Use が確認なしで開ける Windows アプリ ID の一覧です。配列なので直接編集します。',
+            },
+            desktopCustomFileHandlers: {
+                label: 'デスクトップ独自ハンドラ（desktop.custom_file_handlers）',
+                desc: 'ChatGPT デスクトップの「Open in」独自ハンドラ定義です。テーブルなので直接編集します。',
+            },
             autoReviewPolicy: {
                 label: '自動レビュー方針（auto_review.policy）',
                 desc: '自動レビューの挙動を指示する Markdown テキストです。レビュー時の観点やルールを記述します。',
@@ -708,10 +732,6 @@ export default {
                 label: 'アプリ既定の有効化（apps._default.enabled）',
                 desc: '個別設定のないアプリに適用する既定の有効状態です。既定は有効です。',
             },
-            appsDefaultDefaultToolsEnabled: {
-                label: 'アプリ既定のツール有効化（apps._default.default_tools_enabled）',
-                desc: '個別設定のないアプリで、標準ツールを既定で有効にするかを指定します。',
-            },
             appsDefaultDestructiveEnabled: {
                 label: 'アプリ既定の破壊的操作（apps._default.destructive_enabled）',
                 desc: '個別設定のないアプリで、破壊的な操作を既定で許可するかを指定します。',
@@ -719,6 +739,14 @@ export default {
             appsDefaultOpenWorldEnabled: {
                 label: 'アプリ既定の外部接続（apps._default.open_world_enabled）',
                 desc: '個別設定のないアプリで、外部（open-world）アクセスを既定で許可するかを指定します。',
+            },
+            appsDefaultDefaultToolsApprovalMode: {
+                label: 'アプリ既定の承認モード（apps._default.default_tools_approval_mode）',
+                desc: '個別設定のないアプリで、標準ツールの既定承認モードを指定します。',
+            },
+            appsDefaultApprovalsReviewer: {
+                label: 'アプリ既定のレビュアー（apps._default.approvals_reviewer）',
+                desc: '個別設定のないアプリで、ツール承認の既定レビュアーを指定します。',
             },
         },
     },

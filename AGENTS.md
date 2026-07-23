@@ -64,6 +64,7 @@ CRITICAL: You MUST read [README.md](README.md) BEFORE taking any action.
 - When implementing data models, create one file per table.
 - When creating or modifying a data model, update `Documents/テーブル定義.md`. Table definitions must be expressed as one table per database table, with column names, types, and relations documented within the table.
 - When system behavior changes, update `Documents/システム仕様.md`.
+- When adding or removing an agent's settings entries (`SETTINGS_FIELDS` and its i18n), follow the criteria and steps in `Documents/設定項目メンテナンス方針.md` (official-source verification, managed-only/deprecated exclusion, type assignment, and the add/remove workflow). This is an ongoing task performed whenever each CLI's settings change.
 - **`src/main/` MUST NOT import from `src/renderer/`**. i18n is renderer-only.
 - When adding or changing user-visible text, update all locale files under `src/renderer/i18n/locales/`.
 - When making notable changes, update `CHANGELOG.md` following the [Keep a Changelog](https://keepachangelog.com/) format. Entries must be written in English. `CHANGELOG.md` is for end users: describe each change concisely from the user's perspective (what they can now do or what visibly changes), not the implementation. Do NOT include internal details such as file paths, IPC channel/function names, internal data structures, or code-level mechanics. Record those developer-facing details in `Documents/システム仕様.md` instead.

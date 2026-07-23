@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-23
+
+### Added
+
+- Reconciled every agent's settings registry against its official reference (Claude settings docs, Codex config reference, Grok source/config docs, OpenCode JSON schema, Antigravity CLI docs) and added newly documented, user-facing settings. Added per agent: Claude +5, Codex +10, Grok +42, OpenCode +3, Agy +0. Enterprise/managed-only keys were intentionally excluded.
+
+### Removed
+
+- Removed settings that are managed-policy-only or no longer exist in the official reference. Removed per agent: Claude −1, Codex −3, Grok −4, OpenCode −2, Agy −0.
+
 ## [0.5.9] - 2026-07-22
 
 ### Added

@@ -119,7 +119,6 @@ export default {
             compaction: '会話圧縮',
             permission: '権限',
             experimental: '実験設定',
-            enterprise: 'Enterprise',
             advanced: '直接編集',
         },
         field: {
@@ -174,10 +173,6 @@ export default {
             compaction: { label: '圧縮（compaction）', desc: '会話圧縮オブジェクトなので直接編集します。' },
             watcher: { label: 'ファイル監視（watcher）', desc: 'ファイル監視オブジェクトなので直接編集します。' },
             attachment: { label: '添付（attachment）', desc: '添付処理オブジェクトなので直接編集します。' },
-            enterprise: {
-                label: 'Enterprise（enterprise）',
-                desc: 'Enterprise 接続先オブジェクトなので直接編集します。',
-            },
             toolOutput: { label: 'ツール出力（tool_output）', desc: '出力上限オブジェクトなので直接編集します。' },
             mcp: { label: 'MCP サーバー（mcp）', desc: 'MCP 管理画面または直接編集で変更します。' },
             plugin: { label: 'npm プラグイン（plugin）', desc: 'プラグイン管理画面または直接編集で変更します。' },
@@ -206,6 +201,10 @@ export default {
             serverMdnsDomain: {
                 label: 'mDNS ドメイン（server.mdnsDomain）',
                 desc: 'mDNS 公開時に使うローカルドメイン名です。',
+            },
+            serverCors: {
+                label: 'CORS 許可オリジン（server.cors）',
+                desc: 'ブラウザ系クライアントから HTTP サーバへアクセスする際に CORS を許可する追加オリジンの一覧です。配列なので直接編集します。',
             },
             attachmentImageAutoResize: {
                 label: '画像自動リサイズ（attachment.image.auto_resize）',
@@ -331,9 +330,13 @@ export default {
                 label: 'MCP タイムアウト（experimental.mcp_timeout）',
                 desc: 'MCP 呼び出しのタイムアウト（ミリ秒）です。実験的な設定です。',
             },
-            enterpriseUrl: {
-                label: 'Enterprise URL（enterprise.url）',
-                desc: 'Enterprise 接続先のベース URL です。',
+            experimentalPrimaryTools: {
+                label: 'プライマリ専用ツール（experimental.primary_tools）',
+                desc: 'プライマリエージェントのみが利用できるツールを限定する一覧です。実験的な設定で、配列なので直接編集します。',
+            },
+            experimentalPolicies: {
+                label: 'ポリシー（experimental.policies）',
+                desc: 'リソースに対する許可/拒否ポリシーの一覧です（現状はプロバイダ利用の制御に使用）。オブジェクト配列なので直接編集します。',
             },
         },
     },

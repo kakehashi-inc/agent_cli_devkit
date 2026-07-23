@@ -235,6 +235,38 @@ export default {
                 label: 'クロスセッションメモリ（memory.enabled）',
                 desc: 'セッションをまたぐメモリ機能を有効にします。',
             },
+            memorySessionSaveOnEnd: {
+                label: 'セッション終了時メモリ保存（memory.session.save_on_end）',
+                desc: 'セッション終了時にメタ要約をメモリへ書き込みます。既定は有効です。',
+            },
+            memoryWatcherEnabled: {
+                label: 'メモリ監視（memory.watcher.enabled）',
+                desc: 'メモリファイルの外部編集を監視します。既定は有効です。',
+            },
+            memorySearchMaxResults: {
+                label: 'メモリ検索件数（memory.search.max_results）',
+                desc: 'メモリ検索で返す既定の結果件数です。既定は6です。',
+            },
+            memorySearchMinScore: {
+                label: 'メモリ検索の最小スコア（memory.search.min_score）',
+                desc: 'メモリ検索でヒットとみなす最小の関連スコアです。既定は0.35です。',
+            },
+            memoryInitialInjectionEnabled: {
+                label: 'メモリ初回注入（memory.initial_injection.enabled）',
+                desc: '初回ターンでメモリを自動注入します。既定は有効です。',
+            },
+            memoryInitialInjectionMinScore: {
+                label: '初回注入の最小スコア（memory.initial_injection.min_score）',
+                desc: '初回注入で使うスコア閾値です。既定は0です。',
+            },
+            memoryEmbeddingModel: {
+                label: '埋め込みモデル（memory.embedding.model）',
+                desc: 'メモリの埋め込みに使うモデル名です。',
+            },
+            memoryEmbeddingDimensions: {
+                label: '埋め込み次元数（memory.embedding.dimensions）',
+                desc: 'メモリ埋め込みベクトルの次元数です。既定は1024です。',
+            },
             subagentsEnabled: {
                 label: 'サブエージェント（subagents.enabled）',
                 desc: 'サブエージェント機能のマスタースイッチ。',
@@ -259,6 +291,14 @@ export default {
                 label: '/fork ワークツリー提案（hints.fork_worktree_mode）',
                 desc: '/fork 実行時に git ワークツリーの利用を提案するか。',
             },
+            hintsProjectPickerDisabled: {
+                label: 'プロジェクト選択を省略（hints.project_picker_disabled）',
+                desc: 'プロジェクト選択ピッカーをスキップします。',
+            },
+            hintsMemoryModalFullscreen: {
+                label: 'メモリモーダル全画面（hints.memory_modal_fullscreen）',
+                desc: 'メモリモーダルのフルスクリーン状態を記憶します。',
+            },
             featuresWebFetch: {
                 label: 'web_fetch（features.web_fetch）',
                 desc: 'web_fetch ツールを有効にします。',
@@ -282,6 +322,10 @@ export default {
             modelsMaxRetries: {
                 label: '推論の再試行回数（models.max_retries）',
                 desc: 'モデル推論が失敗した場合に行う全モデル共通の最大再試行回数です。',
+            },
+            modelsInferenceIdleTimeoutSecs: {
+                label: '推論アイドルタイムアウト（models.inference_idle_timeout_secs）',
+                desc: 'モデル推論のアイドルタイムアウト秒数（全体既定）です。既定は600秒です。',
             },
             modelsStreamToolCalls: {
                 label: 'ツール呼出しをストリーム（models.stream_tool_calls）',
@@ -310,6 +354,18 @@ export default {
             toolsetWebFetchProxyEndpoint: {
                 label: 'WebFetchプロキシ（toolset.web_fetch.proxy_endpoint）',
                 desc: 'web_fetch の外向き通信に使用するプロキシ URL を指定します。',
+            },
+            toolsetAskUserQuestionTimeoutEnabled: {
+                label: '質問タイムアウト有効化（toolset.ask_user_question.timeout_enabled）',
+                desc: 'ユーザーへの質問にタイムアウトを設けます。既定は有効です。',
+            },
+            toolsetAskUserQuestionTimeoutSecs: {
+                label: '質問タイムアウト秒数（toolset.ask_user_question.timeout_secs）',
+                desc: '質問の応答を待つ秒数です。既定は1800秒です。',
+            },
+            toolsetWebFetchAllowLocal: {
+                label: 'ローカル取得許可（toolset.web_fetch.allow_local）',
+                desc: 'web_fetch でループバック/ローカルホストへのアクセスを許可します（既定は SSRF 対策で無効）。',
             },
             uiCompactMode: {
                 label: 'コンパクト表示（ui.compact_mode）',
@@ -379,6 +435,82 @@ export default {
                 label: 'テキスト選択の保持（ui.keep_text_selection）',
                 desc: '選択範囲を短く点滅、保持、単語選択向けの動作から選びます。候補外の保存済み値も保持できます。',
             },
+            uiMaxThoughtsWidth: {
+                label: '思考表示の最大幅（ui.max_thoughts_width）',
+                desc: '思考/推論表示の最大列幅です（40〜500）。既定は120です。',
+            },
+            uiForkSecondaryModel: {
+                label: 'フォーク副モデル（ui.fork_secondary_model）',
+                desc: 'フォーク時に副エージェントで使うモデルを指定します。',
+            },
+            uiYolo: {
+                label: 'YOLOモード（ui.yolo）',
+                desc: 'すべての操作を自動承認する YOLO モードです。permission_mode=always-approve と等価です。既定は無効です。',
+            },
+            uiPermissionMode: {
+                label: '権限モード（ui.permission_mode）',
+                desc: 'ツール実行時の権限モードを選びます。既定は ask です。',
+            },
+            uiDefaultSelectedPermission: {
+                label: '承認の初期選択（ui.default_selected_permission）',
+                desc: '最初の承認プロンプトで初期選択される行を指定します。',
+            },
+            uiPageFlipOnSend: {
+                label: '送信時に最上部へ（ui.page_flip_on_send）',
+                desc: '送信時に投稿を画面最上部へスナップします。既定は有効です。',
+            },
+            uiAutoDarkTheme: {
+                label: 'OSダーク時テーマ（ui.auto_dark_theme）',
+                desc: 'theme=auto のとき OS がダークならこのテーマを使います。既定は groknight です。',
+            },
+            uiAutoLightTheme: {
+                label: 'OSライト時テーマ（ui.auto_light_theme）',
+                desc: 'theme=auto のとき OS がライトならこのテーマを使います。既定は grokday です。',
+            },
+            uiVimMode: {
+                label: 'vim操作（ui.vim_mode）',
+                desc: 'スクロールバックで vim 風のキー操作を有効にします。既定は無効です。',
+            },
+            uiHunkTrackerMode: {
+                label: '変更ハンク追跡（ui.hunk_tracker_mode）',
+                desc: '変更ハンクの追跡モードを選びます。既定は agent_only です。',
+            },
+            uiVoiceCaptureMode: {
+                label: '音声キャプチャ方式（ui.voice_capture_mode）',
+                desc: '音声入力の操作方式（トグル/長押し）を選びます。既定は hold です。',
+            },
+            uiVoiceSttLanguage: {
+                label: '音声入力言語（ui.voice_stt_language）',
+                desc: '音声入力（STT）の言語コードです（auto も可）。既定は en です。',
+            },
+            uiMouseReportingToggle: {
+                label: 'マウスレポート切替（ui.mouse_reporting_toggle）',
+                desc: 'Ctrl+R でマウスレポートの切り替えを有効にします。',
+            },
+            uiCancelSubagentsOnTurnCancel: {
+                label: 'ターン中断時のサブエージェント（ui.cancel_subagents_on_turn_cancel）',
+                desc: 'ターン中断時にサブエージェントを停止するか継続するかを指定します。既定は ask です。',
+            },
+            uiCursorBlink: {
+                label: 'カーソル点滅（ui.cursor_blink）',
+                desc: '起動時のカーソル点滅を制御します（設定画面なし・config専用）。',
+            },
+            uiCombineQueuedPrompts: {
+                label: 'キュー投稿を結合（ui.combine_queued_prompts）',
+                desc: '連続してキューした投稿を1ターンに結合します。既定は無効です。',
+            },
+            uiContextualHints: {
+                label: '個別ヒント制御（ui.contextual_hints）',
+                desc: '個別のヒント表示をオプトアウトするテーブルです。直接編集します。',
+            },
+            uiDisplayRefresh: {
+                label: 'ディスプレイ更新（ui.display_refresh）',
+                desc: 'ディスプレイのリフレッシュ探査・自動ケイデンス設定です。直接編集します。',
+            },
+            uiNotifications: {
+                label: 'ターミナル通知（ui.notifications）',
+                desc: 'ターミナル通知の方式・条件・イベント・フック等の設定です。直接編集します。',
+            },
             featuresRemoteFetch: {
                 label: 'リモート設定取得（features.remote_fetch）',
                 desc: 'xAI バックエンドからモデルカタログとリモート設定を取得します。無効時は同梱のモデル情報だけを使います。既定は有効です。',
@@ -387,13 +519,29 @@ export default {
                 label: '画像生成（features.image_gen）',
                 desc: 'Grok Build の画像生成ツールを有効にします。',
             },
-            featuresImageEdit: {
-                label: '画像編集（features.image_edit）',
-                desc: 'Grok Build の画像編集ツールを有効にします。',
-            },
             featuresVideoGen: {
                 label: '動画生成（features.video_gen）',
                 desc: 'Grok Build の動画生成ツールを有効にします。',
+            },
+            featuresTelemetry: {
+                label: 'テレメトリ（features.telemetry）',
+                desc: '製品分析テレメトリのマスタースイッチです。既定は無効です。',
+            },
+            featuresFeedback: {
+                label: 'フィードバック（features.feedback）',
+                desc: 'フィードバック機能を有効にします。既定は有効です。',
+            },
+            featuresCodebaseIndexing: {
+                label: 'コードベース索引（features.codebase_indexing）',
+                desc: 'コードグラフの索引を作成します。既定は有効です。',
+            },
+            featuresTwoPassCompaction: {
+                label: '2パス圧縮（features.two_pass_compaction）',
+                desc: '2パスの会話圧縮を有効にします（オプトイン）。既定は無効です。',
+            },
+            workflowsEnabled: {
+                label: 'ワークフロー（workflows.enabled）',
+                desc: 'バックグラウンドワークフロー（workflow ツール等）を有効にします。既定は有効です。',
             },
             telemetryTraceUpload: {
                 label: 'トレース送信（telemetry.trace_upload）',
@@ -402,18 +550,6 @@ export default {
             cliUseLeader: {
                 label: 'リーダープロセスを使用（cli.use_leader）',
                 desc: '複数の Grok Build セッションを調整するリーダープロセスを利用します。',
-            },
-            cliMinimumVersion: {
-                label: 'CLI最低バージョン（cli.minimum_version）',
-                desc: '管理された設定などが要求する Grok Build CLI の最低バージョンを指定します。',
-            },
-            harnessDisableCodebaseUpload: {
-                label: 'コードベース送信を無効化（harness.disable_codebase_upload）',
-                desc: 'Grok Build のホスト機能によるコードベースのアップロードを禁止します。',
-            },
-            managedMcpsEnabled: {
-                label: '管理MCPを有効化（managed_mcps.enabled）',
-                desc: '組織またはリモート設定から配布される管理対象 MCP サーバーを有効にします。',
             },
             compatCursorSkills: {
                 label: 'Cursorスキルを検出（compat.cursor.skills）',
@@ -502,6 +638,22 @@ export default {
             skillsDisabled: {
                 label: '無効スキル（skills.disabled）',
                 desc: '検出はするものの有効化しないスキル名の配列です。',
+            },
+            skillsIgnore: {
+                label: 'スキャン除外パス（skills.ignore）',
+                desc: 'スキル探索から除外するパスの配列です。直接編集します。',
+            },
+            compatCursorSessions: {
+                label: 'Cursorセッション検出（compat.cursor.sessions）',
+                desc: 'Cursor のセッションをスキャンします。既定は有効です。',
+            },
+            compatClaudeSessions: {
+                label: 'Claudeセッション検出（compat.claude.sessions）',
+                desc: 'Claude Code のセッションをスキャンします。既定は有効です。',
+            },
+            compatCodexSessions: {
+                label: 'Codexセッション検出（compat.codex.sessions）',
+                desc: 'Codex のセッションをスキャンします。既定は有効です。',
             },
             pluginsPaths: {
                 label: '追加プラグインパス（plugins.paths）',

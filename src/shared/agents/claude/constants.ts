@@ -290,6 +290,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultValue: 'auto',
     },
     { key: 'spinnerTipsEnabled', path: 'spinnerTipsEnabled', group: 'display', type: 'boolean', defaultOn: true },
+    { key: 'emojiCompletionEnabled', path: 'emojiCompletionEnabled', group: 'display', type: 'boolean', defaultOn: true },
     { key: 'showTurnDuration', path: 'showTurnDuration', group: 'display', type: 'boolean', defaultOn: true },
     { key: 'autoScrollEnabled', path: 'autoScrollEnabled', group: 'display', type: 'boolean', defaultOn: true },
     { key: 'awaySummaryEnabled', path: 'awaySummaryEnabled', group: 'display', type: 'boolean', defaultOn: true },
@@ -378,7 +379,6 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: true,
     },
-    { key: 'minimumVersion', path: 'minimumVersion', group: 'behavior', type: 'string' },
     { key: 'plansDirectory', path: 'plansDirectory', group: 'behavior', type: 'string' },
     { key: 'respectGitignore', path: 'respectGitignore', group: 'behavior', type: 'boolean', defaultOn: true },
     {
@@ -472,6 +472,10 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'enabledPlugins', path: 'enabledPlugins', group: 'behavior', type: 'directEdit' },
     { key: 'pluginConfigs', path: 'pluginConfigs', group: 'behavior', type: 'directEdit' },
     { key: 'extraKnownMarketplaces', path: 'extraKnownMarketplaces', group: 'behavior', type: 'directEdit' },
+    { key: 'enabledMcpjsonServers', path: 'enabledMcpjsonServers', group: 'behavior', type: 'directEdit' },
+    { key: 'disabledMcpjsonServers', path: 'disabledMcpjsonServers', group: 'behavior', type: 'directEdit' },
+    { key: 'allowedHttpHookUrls', path: 'allowedHttpHookUrls', group: 'behavior', type: 'directEdit' },
+    { key: 'claudeMdExcludes', path: 'claudeMdExcludes', group: 'behavior', type: 'directEdit' },
 
     // === 権限（permissions オブジェクト内の定義済みキー） ===
     // scalar（defaultMode / disableBypassPermissionsMode）はドット区切り path でネスト編集する。

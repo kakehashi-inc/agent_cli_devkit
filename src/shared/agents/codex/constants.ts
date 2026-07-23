@@ -576,21 +576,22 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
 
     // === サブエージェント・機能 ===
     { key: 'agentsMaxThreads', path: 'agents.max_threads', group: 'features', type: 'number', min: 1, integer: true },
-    { key: 'agentsMaxDepth', path: 'agents.max_depth', group: 'features', type: 'number', min: 1, integer: true },
-    {
-        key: 'agentsJobMaxRuntimeSeconds',
-        path: 'agents.job_max_runtime_seconds',
-        group: 'features',
-        type: 'number',
-        min: 1,
-        integer: true,
-    },
     {
         key: 'agentsInterruptMessage',
         path: 'agents.interrupt_message',
         group: 'features',
         type: 'boolean',
         defaultOn: true,
+    },
+    { key: 'agentsEnabled', path: 'agents.enabled', group: 'features', type: 'boolean', defaultOn: true },
+    { key: 'agentsDefaultSubagentModel', path: 'agents.default_subagent_model', group: 'features', type: 'string' },
+    {
+        key: 'agentsDefaultSubagentReasoningEffort',
+        path: 'agents.default_subagent_reasoning_effort',
+        group: 'features',
+        type: 'string',
+        choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+        allowCustom: true,
     },
     { key: 'featuresGoals', path: 'features.goals', group: 'features', type: 'boolean', defaultOn: true },
     { key: 'featuresHooks', path: 'features.hooks', group: 'features', type: 'boolean', defaultOn: true },
@@ -762,12 +763,6 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     },
     { key: 'appsDefaultEnabled', path: 'apps._default.enabled', group: 'features', type: 'boolean', defaultOn: true },
     {
-        key: 'appsDefaultDefaultToolsEnabled',
-        path: 'apps._default.default_tools_enabled',
-        group: 'features',
-        type: 'boolean',
-    },
-    {
         key: 'appsDefaultDestructiveEnabled',
         path: 'apps._default.destructive_enabled',
         group: 'features',
@@ -779,12 +774,47 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'features',
         type: 'boolean',
     },
+    {
+        key: 'appsDefaultDefaultToolsApprovalMode',
+        path: 'apps._default.default_tools_approval_mode',
+        group: 'features',
+        type: 'string',
+        choices: ['auto', 'prompt', 'writes', 'approve'],
+    },
+    {
+        key: 'appsDefaultApprovalsReviewer',
+        path: 'apps._default.approvals_reviewer',
+        group: 'features',
+        type: 'string',
+        choices: ['user', 'auto_review'],
+    },
     { key: 'agentsDefinitions', path: 'agents.<name>', group: 'features', type: 'directEdit' },
     { key: 'skillsConfig', path: 'skills.config', group: 'features', type: 'directEdit' },
     { key: 'hooks', path: 'hooks', group: 'features', type: 'directEdit' },
     { key: 'mcpServers', path: 'mcp_servers.<id>', group: 'features', type: 'directEdit' },
     { key: 'apps', path: 'apps.<id>', group: 'features', type: 'directEdit' },
     { key: 'toolSuggest', path: 'tool_suggest', group: 'features', type: 'directEdit' },
+    // tools.web_search は boolean | object のハイブリッド型。単純値になるとは限らないため直接編集。
+    { key: 'toolsWebSearch', path: 'tools.web_search', group: 'features', type: 'directEdit' },
+    {
+        key: 'featuresCodeModeDirectOnlyToolNamespaces',
+        path: 'features.code_mode.direct_only_tool_namespaces',
+        group: 'features',
+        type: 'directEdit',
+    },
+    {
+        key: 'featuresCodeModeExcludedToolNamespaces',
+        path: 'features.code_mode.excluded_tool_namespaces',
+        group: 'features',
+        type: 'directEdit',
+    },
+    {
+        key: 'computerUseWindowsAllowedAppIds',
+        path: 'computer_use.windows.always_allowed_app_ids',
+        group: 'features',
+        type: 'directEdit',
+    },
+    { key: 'desktopCustomFileHandlers', path: 'desktop.custom_file_handlers', group: 'features', type: 'directEdit' },
 ];
 
 // グループの表示順（UI の見出し順）。

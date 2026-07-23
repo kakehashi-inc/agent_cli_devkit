@@ -250,6 +250,10 @@ export default {
                 label: 'スピナーTips（spinnerTipsEnabled）',
                 desc: '処理中のスピナーに Tips を表示します。',
             },
+            emojiCompletionEnabled: {
+                label: '絵文字補完（emojiCompletionEnabled）',
+                desc: 'プロンプト入力で「:」＋ショートコードを打つと絵文字候補を表示し、:heart: などを絵文字へ置換します。既定は有効です（v2.1.217 以降）。',
+            },
             showTurnDuration: {
                 label: 'ターン時間表示（showTurnDuration）',
                 desc: '応答後に処理時間を表示します。',
@@ -365,10 +369,6 @@ export default {
             includeGitInstructions: {
                 label: 'Git指示を含める（includeGitInstructions）',
                 desc: '組み込みのコミット・PR手順と git status のスナップショットをシステムプロンプトへ含めます。既定は有効です。',
-            },
-            minimumVersion: {
-                label: '更新の最低バージョン（minimumVersion）',
-                desc: '自動更新や claude update がこの値より古いバージョンをインストールしないようにします。起動自体は制限しません。',
             },
             plansDirectory: {
                 label: 'プラン保存先（plansDirectory）',
@@ -677,6 +677,22 @@ export default {
             extraKnownMarketplaces: {
                 label: '追加マーケットプレイス（extraKnownMarketplaces）',
                 desc: 'Claude Code が認識する追加マーケットプレイス名と取得元を定義するオブジェクトです。',
+            },
+            enabledMcpjsonServers: {
+                label: '承認する.mcp.jsonサーバー（enabledMcpjsonServers）',
+                desc: '.mcp.json ファイルから承認する MCP サーバー名の一覧です。配列なので直接編集します。',
+            },
+            disabledMcpjsonServers: {
+                label: '拒否する.mcp.jsonサーバー（disabledMcpjsonServers）',
+                desc: '.mcp.json ファイルから拒否する MCP サーバー名の一覧です。配列なので直接編集します。',
+            },
+            allowedHttpHookUrls: {
+                label: 'HTTPフック許可URL（allowedHttpHookUrls）',
+                desc: 'HTTP フックが対象にできる URL パターンの許可リストです（* をワイルドカードとして使用可）。配列なので直接編集します。',
+            },
+            claudeMdExcludes: {
+                label: 'CLAUDE.md除外（claudeMdExcludes）',
+                desc: 'メモリ読み込み時にスキップする CLAUDE.md のグロブパターンまたは絶対パスです。配列なので直接編集します。',
             },
         },
     },

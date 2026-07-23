@@ -120,7 +120,6 @@ export default {
             compaction: 'Compaction',
             permission: 'Permissions',
             experimental: 'Experimental',
-            enterprise: 'Enterprise',
             advanced: 'Direct edit',
         },
         field: {
@@ -175,10 +174,6 @@ export default {
                 label: 'Attachments (attachment)',
                 desc: 'Attachment processing object; edit the file directly.',
             },
-            enterprise: {
-                label: 'Enterprise (enterprise)',
-                desc: 'Enterprise endpoint object; edit the file directly.',
-            },
             toolOutput: {
                 label: 'Tool output (tool_output)',
                 desc: 'Object containing output line and byte limits; edit the file directly.',
@@ -216,6 +211,10 @@ export default {
             serverMdnsDomain: {
                 label: 'mDNS domain (server.mdnsDomain)',
                 desc: 'Local domain name used when advertising over mDNS.',
+            },
+            serverCors: {
+                label: 'CORS origins (server.cors)',
+                desc: 'Additional origins to allow for CORS when browser-based clients call the HTTP server. Array; edit the file directly.',
             },
             attachmentImageAutoResize: {
                 label: 'Image auto-resize (attachment.image.auto_resize)',
@@ -341,9 +340,13 @@ export default {
                 label: 'MCP timeout (experimental.mcp_timeout)',
                 desc: 'Timeout, in milliseconds, for MCP calls. Experimental option.',
             },
-            enterpriseUrl: {
-                label: 'Enterprise URL (enterprise.url)',
-                desc: 'Base URL of the enterprise endpoint.',
+            experimentalPrimaryTools: {
+                label: 'Primary-only tools (experimental.primary_tools)',
+                desc: 'Tools available only to primary agents. Experimental; array, edit the file directly.',
+            },
+            experimentalPolicies: {
+                label: 'Policies (experimental.policies)',
+                desc: 'Allow/deny policies for resources (currently used to control provider usage). Object array; edit the file directly.',
             },
         },
     },

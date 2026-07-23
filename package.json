@@ -1,6 +1,6 @@
 {
   "name": "agent-cli-devkit",
-  "version": "0.5.9",
+  "version": "0.6.0",
   "description": "GUI for managing Claude, Codex, Agy, Grok, and OpenCode CLI environments.",
   "main": "dist/main/index.js",
   "engines": {

@@ -248,6 +248,10 @@ export default {
                 label: 'Spinner tips (spinnerTipsEnabled)',
                 desc: 'Shows tips in the spinner while working.',
             },
+            emojiCompletionEnabled: {
+                label: 'Emoji completion (emojiCompletionEnabled)',
+                desc: 'Shows emoji suggestions when you type ":" plus a shortcode and replaces shortcodes like :heart: with the emoji. Default: on (v2.1.217+).',
+            },
             showTurnDuration: {
                 label: 'Show turn duration (showTurnDuration)',
                 desc: 'Shows how long each response took.',
@@ -363,10 +367,6 @@ export default {
             includeGitInstructions: {
                 label: 'Include Git instructions (includeGitInstructions)',
                 desc: 'Includes built-in commit and PR instructions plus a git status snapshot in the system prompt. Default: on.',
-            },
-            minimumVersion: {
-                label: 'Minimum update version (minimumVersion)',
-                desc: 'Prevents auto-update and claude update from installing an older version. It does not block startup.',
             },
             plansDirectory: {
                 label: 'Plans directory (plansDirectory)',
@@ -675,6 +675,22 @@ export default {
             extraKnownMarketplaces: {
                 label: 'Additional marketplaces (extraKnownMarketplaces)',
                 desc: 'Defines additional marketplace names and their sources for Claude Code.',
+            },
+            enabledMcpjsonServers: {
+                label: 'Approved .mcp.json servers (enabledMcpjsonServers)',
+                desc: 'List of MCP server names from .mcp.json files to approve. Array; edit the file directly.',
+            },
+            disabledMcpjsonServers: {
+                label: 'Rejected .mcp.json servers (disabledMcpjsonServers)',
+                desc: 'List of MCP server names from .mcp.json files to reject. Array; edit the file directly.',
+            },
+            allowedHttpHookUrls: {
+                label: 'Allowed HTTP hook URLs (allowedHttpHookUrls)',
+                desc: 'Allowlist of URL patterns that HTTP hooks may target (supports * as a wildcard). Array; edit the file directly.',
+            },
+            claudeMdExcludes: {
+                label: 'CLAUDE.md excludes (claudeMdExcludes)',
+                desc: 'Glob patterns or absolute paths of CLAUDE.md files to skip when loading memory. Array; edit the file directly.',
             },
         },
     },

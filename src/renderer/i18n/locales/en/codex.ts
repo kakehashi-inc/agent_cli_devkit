@@ -427,17 +427,21 @@ export default {
                 label: 'Concurrent agents (agents.max_threads)',
                 desc: 'Maximum concurrently open agent threads. Default: 6.',
             },
-            agentsMaxDepth: {
-                label: 'Agent nesting depth (agents.max_depth)',
-                desc: 'Maximum depth at which subagents can spawn children. The root is depth 0; default is 1.',
-            },
-            agentsJobMaxRuntimeSeconds: {
-                label: 'Agent job runtime (agents.job_max_runtime_seconds)',
-                desc: 'Default maximum runtime per spawn_agents_on_csv worker. Unset falls back to 1800 seconds.',
-            },
             agentsInterruptMessage: {
                 label: 'Record interrupt message (agents.interrupt_message)',
                 desc: 'Adds a model-visible history message when an agent turn is interrupted. Default: on.',
+            },
+            agentsEnabled: {
+                label: 'Enable multi-agent (agents.enabled)',
+                desc: 'Enables the multi-agent tools. Default: on.',
+            },
+            agentsDefaultSubagentModel: {
+                label: 'Default subagent model (agents.default_subagent_model)',
+                desc: 'Default model used for spawned subagents.',
+            },
+            agentsDefaultSubagentReasoningEffort: {
+                label: 'Default subagent effort (agents.default_subagent_reasoning_effort)',
+                desc: 'Default reasoning effort for subagents. Custom values allowed.',
             },
             featuresGoals: {
                 label: 'Goals (features.goals)',
@@ -603,6 +607,26 @@ export default {
                 label: 'Tool suggestions (tool_suggest)',
                 desc: 'Defines which connectors or plugins Codex may suggest for installation and which are disabled.',
             },
+            toolsWebSearch: {
+                label: 'Web search tool (tools.web_search)',
+                desc: 'Enables and configures the web search tool. Boolean or object; edit the file directly.',
+            },
+            featuresCodeModeDirectOnlyToolNamespaces: {
+                label: 'Code mode direct-only namespaces (features.code_mode.direct_only_tool_namespaces)',
+                desc: 'Tool namespaces that code mode may only call directly. Array; edit the file directly.',
+            },
+            featuresCodeModeExcludedToolNamespaces: {
+                label: 'Code mode excluded namespaces (features.code_mode.excluded_tool_namespaces)',
+                desc: 'Tool namespaces excluded from code mode. Array; edit the file directly.',
+            },
+            computerUseWindowsAllowedAppIds: {
+                label: 'Computer Use allowed apps (computer_use.windows.always_allowed_app_ids)',
+                desc: 'Windows app IDs that Computer Use may open without confirmation. Array; edit the file directly.',
+            },
+            desktopCustomFileHandlers: {
+                label: 'Desktop custom handlers (desktop.custom_file_handlers)',
+                desc: 'Custom "Open in" handlers for the ChatGPT desktop app. Table; edit the file directly.',
+            },
             autoReviewPolicy: {
                 label: 'Auto-review policy (auto_review.policy)',
                 desc: 'Markdown text that guides automatic-review behavior, describing review criteria and rules.',
@@ -707,10 +731,6 @@ export default {
                 label: 'Default app enablement (apps._default.enabled)',
                 desc: 'Default enabled state applied to apps without individual configuration. On by default.',
             },
-            appsDefaultDefaultToolsEnabled: {
-                label: 'Default app tools (apps._default.default_tools_enabled)',
-                desc: 'Whether default tools are enabled by default for apps without individual configuration.',
-            },
             appsDefaultDestructiveEnabled: {
                 label: 'Default app destructive ops (apps._default.destructive_enabled)',
                 desc: 'Whether destructive operations are allowed by default for apps without individual configuration.',
@@ -718,6 +738,14 @@ export default {
             appsDefaultOpenWorldEnabled: {
                 label: 'Default app open-world access (apps._default.open_world_enabled)',
                 desc: 'Whether open-world access is allowed by default for apps without individual configuration.',
+            },
+            appsDefaultDefaultToolsApprovalMode: {
+                label: 'Default app tools approval mode (apps._default.default_tools_approval_mode)',
+                desc: 'Default approval mode for standard tools of apps without individual configuration.',
+            },
+            appsDefaultApprovalsReviewer: {
+                label: 'Default app approvals reviewer (apps._default.approvals_reviewer)',
+                desc: 'Default reviewer for tool approvals of apps without individual configuration.',
             },
         },
     },

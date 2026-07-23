@@ -233,6 +233,38 @@ export default {
                 label: 'Cross-session memory (memory.enabled)',
                 desc: 'Enables memory across sessions.',
             },
+            memorySessionSaveOnEnd: {
+                label: 'Save memory on session end (memory.session.save_on_end)',
+                desc: 'Writes a meta-summary to memory when a session ends. Default: on.',
+            },
+            memoryWatcherEnabled: {
+                label: 'Memory watcher (memory.watcher.enabled)',
+                desc: 'Watches memory files for external edits. Default: on.',
+            },
+            memorySearchMaxResults: {
+                label: 'Memory search results (memory.search.max_results)',
+                desc: 'Default number of results returned by memory search. Default: 6.',
+            },
+            memorySearchMinScore: {
+                label: 'Memory search min score (memory.search.min_score)',
+                desc: 'Minimum relevance score for a memory search hit. Default: 0.35.',
+            },
+            memoryInitialInjectionEnabled: {
+                label: 'Initial memory injection (memory.initial_injection.enabled)',
+                desc: 'Automatically injects memory on the first turn. Default: on.',
+            },
+            memoryInitialInjectionMinScore: {
+                label: 'Initial injection min score (memory.initial_injection.min_score)',
+                desc: 'Score threshold used for initial injection. Default: 0.',
+            },
+            memoryEmbeddingModel: {
+                label: 'Embedding model (memory.embedding.model)',
+                desc: 'Model name used for memory embeddings.',
+            },
+            memoryEmbeddingDimensions: {
+                label: 'Embedding dimensions (memory.embedding.dimensions)',
+                desc: 'Vector dimensionality for memory embeddings. Default: 1024.',
+            },
             subagentsEnabled: {
                 label: 'Subagents (subagents.enabled)',
                 desc: 'Master switch for the subagents feature.',
@@ -257,6 +289,14 @@ export default {
                 label: '/fork worktree hint (hints.fork_worktree_mode)',
                 desc: 'Whether /fork suggests using a git worktree.',
             },
+            hintsProjectPickerDisabled: {
+                label: 'Skip project picker (hints.project_picker_disabled)',
+                desc: 'Skips the project picker.',
+            },
+            hintsMemoryModalFullscreen: {
+                label: 'Memory modal fullscreen (hints.memory_modal_fullscreen)',
+                desc: 'Remembers the fullscreen state of the memory modal.',
+            },
             featuresWebFetch: {
                 label: 'web_fetch (features.web_fetch)',
                 desc: 'Enables the web_fetch tool.',
@@ -280,6 +320,10 @@ export default {
             modelsMaxRetries: {
                 label: 'Inference retries (models.max_retries)',
                 desc: 'Global maximum retry count when model inference fails.',
+            },
+            modelsInferenceIdleTimeoutSecs: {
+                label: 'Inference idle timeout (models.inference_idle_timeout_secs)',
+                desc: 'Global default idle timeout, in seconds, for model inference. Default: 600.',
             },
             modelsStreamToolCalls: {
                 label: 'Stream tool calls (models.stream_tool_calls)',
@@ -308,6 +352,18 @@ export default {
             toolsetWebFetchProxyEndpoint: {
                 label: 'WebFetch proxy (toolset.web_fetch.proxy_endpoint)',
                 desc: 'Proxy URL used for outbound web_fetch traffic.',
+            },
+            toolsetAskUserQuestionTimeoutEnabled: {
+                label: 'Question timeout (toolset.ask_user_question.timeout_enabled)',
+                desc: 'Applies a timeout to user questions. Default: on.',
+            },
+            toolsetAskUserQuestionTimeoutSecs: {
+                label: 'Question timeout seconds (toolset.ask_user_question.timeout_secs)',
+                desc: 'Seconds to wait for an answer to a question. Default: 1800.',
+            },
+            toolsetWebFetchAllowLocal: {
+                label: 'Allow local fetch (toolset.web_fetch.allow_local)',
+                desc: 'Allows web_fetch to reach loopback/local hosts (off by default as SSRF protection).',
             },
             uiCompactMode: {
                 label: 'Compact display (ui.compact_mode)',
@@ -377,6 +433,82 @@ export default {
                 label: 'Keep text selection (ui.keep_text_selection)',
                 desc: 'Uses flash, hold, or word-selection behavior for selected text. Saved custom values remain supported.',
             },
+            uiMaxThoughtsWidth: {
+                label: 'Max thoughts width (ui.max_thoughts_width)',
+                desc: 'Maximum column width for the thinking/reasoning display (40–500). Default: 120.',
+            },
+            uiForkSecondaryModel: {
+                label: 'Fork secondary model (ui.fork_secondary_model)',
+                desc: 'Model used for the secondary agent when forking.',
+            },
+            uiYolo: {
+                label: 'YOLO mode (ui.yolo)',
+                desc: 'Auto-approves everything (YOLO mode). Equivalent to permission_mode=always-approve. Default: off.',
+            },
+            uiPermissionMode: {
+                label: 'Permission mode (ui.permission_mode)',
+                desc: 'Permission mode used when running tools. Default: ask.',
+            },
+            uiDefaultSelectedPermission: {
+                label: 'Default selected permission (ui.default_selected_permission)',
+                desc: 'The row initially selected in the first approval prompt.',
+            },
+            uiPageFlipOnSend: {
+                label: 'Page flip on send (ui.page_flip_on_send)',
+                desc: 'Snaps your post to the top of the screen on send. Default: on.',
+            },
+            uiAutoDarkTheme: {
+                label: 'OS dark theme (ui.auto_dark_theme)',
+                desc: 'Theme used when theme=auto and the OS is in dark mode. Default: groknight.',
+            },
+            uiAutoLightTheme: {
+                label: 'OS light theme (ui.auto_light_theme)',
+                desc: 'Theme used when theme=auto and the OS is in light mode. Default: grokday.',
+            },
+            uiVimMode: {
+                label: 'Vim mode (ui.vim_mode)',
+                desc: 'Enables vim-style keys in the scrollback. Default: off.',
+            },
+            uiHunkTrackerMode: {
+                label: 'Hunk tracker mode (ui.hunk_tracker_mode)',
+                desc: 'Change-hunk tracking mode. Default: agent_only.',
+            },
+            uiVoiceCaptureMode: {
+                label: 'Voice capture mode (ui.voice_capture_mode)',
+                desc: 'Voice input capture style (toggle or hold). Default: hold.',
+            },
+            uiVoiceSttLanguage: {
+                label: 'Voice input language (ui.voice_stt_language)',
+                desc: 'Speech-to-text language code (auto is allowed). Default: en.',
+            },
+            uiMouseReportingToggle: {
+                label: 'Mouse reporting toggle (ui.mouse_reporting_toggle)',
+                desc: 'Enables toggling mouse reporting with Ctrl+R.',
+            },
+            uiCancelSubagentsOnTurnCancel: {
+                label: 'Subagents on turn cancel (ui.cancel_subagents_on_turn_cancel)',
+                desc: 'Whether subagents stop or continue when a turn is cancelled. Default: ask.',
+            },
+            uiCursorBlink: {
+                label: 'Cursor blink (ui.cursor_blink)',
+                desc: 'Controls cursor blink at startup (no settings-screen entry; config only).',
+            },
+            uiCombineQueuedPrompts: {
+                label: 'Combine queued prompts (ui.combine_queued_prompts)',
+                desc: 'Combines consecutively queued posts into a single turn. Default: off.',
+            },
+            uiContextualHints: {
+                label: 'Contextual hints (ui.contextual_hints)',
+                desc: 'Table to opt out of individual hints. Edit the file directly.',
+            },
+            uiDisplayRefresh: {
+                label: 'Display refresh (ui.display_refresh)',
+                desc: 'Display refresh probing and auto-cadence settings. Edit the file directly.',
+            },
+            uiNotifications: {
+                label: 'Terminal notifications (ui.notifications)',
+                desc: 'Terminal notification method, condition, events, hooks, and more. Edit the file directly.',
+            },
             featuresRemoteFetch: {
                 label: 'Remote settings fetch (features.remote_fetch)',
                 desc: 'Fetches model catalogs and remote settings from xAI backends. When off, only bundled model information is used. Default: on.',
@@ -385,13 +517,29 @@ export default {
                 label: 'Image generation (features.image_gen)',
                 desc: 'Enables the Grok Build image-generation tool.',
             },
-            featuresImageEdit: {
-                label: 'Image editing (features.image_edit)',
-                desc: 'Enables the Grok Build image-editing tool.',
-            },
             featuresVideoGen: {
                 label: 'Video generation (features.video_gen)',
                 desc: 'Enables the Grok Build video-generation tool.',
+            },
+            featuresTelemetry: {
+                label: 'Telemetry (features.telemetry)',
+                desc: 'Master switch for product-analytics telemetry. Default: off.',
+            },
+            featuresFeedback: {
+                label: 'Feedback (features.feedback)',
+                desc: 'Enables the feedback feature. Default: on.',
+            },
+            featuresCodebaseIndexing: {
+                label: 'Codebase indexing (features.codebase_indexing)',
+                desc: 'Builds the code-graph index. Default: on.',
+            },
+            featuresTwoPassCompaction: {
+                label: 'Two-pass compaction (features.two_pass_compaction)',
+                desc: 'Enables two-pass conversation compaction (opt-in). Default: off.',
+            },
+            workflowsEnabled: {
+                label: 'Workflows (workflows.enabled)',
+                desc: 'Enables background workflows (the workflow tool, etc.). Default: on.',
             },
             telemetryTraceUpload: {
                 label: 'Trace upload (telemetry.trace_upload)',
@@ -400,18 +548,6 @@ export default {
             cliUseLeader: {
                 label: 'Use leader process (cli.use_leader)',
                 desc: 'Uses the leader process that coordinates multiple Grok Build sessions.',
-            },
-            cliMinimumVersion: {
-                label: 'Minimum CLI version (cli.minimum_version)',
-                desc: 'Sets the minimum Grok Build CLI version required by managed or remote configuration.',
-            },
-            harnessDisableCodebaseUpload: {
-                label: 'Disable codebase upload (harness.disable_codebase_upload)',
-                desc: 'Blocks codebase upload by Grok Build hosting features.',
-            },
-            managedMcpsEnabled: {
-                label: 'Enable managed MCPs (managed_mcps.enabled)',
-                desc: 'Enables managed MCP servers distributed through organization or remote settings.',
             },
             compatCursorSkills: {
                 label: 'Discover Cursor skills (compat.cursor.skills)',
@@ -500,6 +636,22 @@ export default {
             skillsDisabled: {
                 label: 'Disabled skills (skills.disabled)',
                 desc: 'Skill names that are discovered but not activated.',
+            },
+            skillsIgnore: {
+                label: 'Scan-ignore paths (skills.ignore)',
+                desc: 'Paths excluded from skill discovery. Array; edit the file directly.',
+            },
+            compatCursorSessions: {
+                label: 'Detect Cursor sessions (compat.cursor.sessions)',
+                desc: 'Scans Cursor sessions. Default: on.',
+            },
+            compatClaudeSessions: {
+                label: 'Detect Claude sessions (compat.claude.sessions)',
+                desc: 'Scans Claude Code sessions. Default: on.',
+            },
+            compatCodexSessions: {
+                label: 'Detect Codex sessions (compat.codex.sessions)',
+                desc: 'Scans Codex sessions. Default: on.',
             },
             pluginsPaths: {
                 label: 'Additional plugin paths (plugins.paths)',
