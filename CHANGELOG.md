@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-06
+
+### Added
+
+- Reconciled every agent's settings registry against its official reference (Claude settings docs, Codex config reference, Antigravity CLI docs, Grok settings docs and source, OpenCode JSON schema) and added the newly documented, user-facing settings. Added per agent: Claude +16, Codex +8, Grok +15, OpenCode +1, Agy +0. Enterprise/managed-only keys were intentionally excluded.
+- The Claude Code default permission mode now offers `auto` and `manual` in addition to the existing choices, so a session can be started in auto mode.
+- The Codex web search mode is now a form field with its four official choices instead of being direct-edit only.
+
+### Changed
+
+- Settings descriptions now say only what a setting does. Notes about which configuration file a value is honored in, and reminders to edit the file directly, have been dropped, and descriptions that merely restated the value type have been rewritten to describe the setting.
+- The Codex reasoning-effort choices now match the official reference.
+
+### Removed
+
+- Removed the duplicate Claude Code entry for disabling auto mode, plus settings that are legacy aliases or no longer exist in the official references. Removed per agent: Claude −1, Codex −1, Grok −1.
+
 ## [0.6.0] - 2026-07-23
 
 ### Added

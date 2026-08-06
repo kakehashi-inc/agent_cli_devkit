@@ -199,7 +199,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'model_reasoning_effort',
         group: 'model',
         type: 'string',
-        choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+        choices: ['minimal', 'low', 'medium', 'high', 'xhigh'],
     },
     {
         key: 'modelReasoningSummary',
@@ -271,6 +271,19 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         allowCustom: true,
     },
     { key: 'modelProviders', path: 'model_providers.<id>', group: 'model', type: 'directEdit' },
+    // amazon-bedrock は組み込みプロバイダで ID が固定のため、AWS の 2 項目はフォームで編集できる。
+    {
+        key: 'modelProvidersBedrockAwsProfile',
+        path: 'model_providers.amazon-bedrock.aws.profile',
+        group: 'model',
+        type: 'string',
+    },
+    {
+        key: 'modelProvidersBedrockAwsRegion',
+        path: 'model_providers.amazon-bedrock.aws.region',
+        group: 'model',
+        type: 'string',
+    },
 
     // === セキュリティ・動作 ===
     // approval_policy は enum（"on-request" 等）でもテーブル（granular = {...}）でも書けるハイブリッド型。
@@ -284,9 +297,14 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['read-only', 'workspace-write', 'danger-full-access'],
         defaultValue: 'read-only',
     },
-    // web_search は enum（"cached" 等）でもテーブル（context_size / allowed_domains 等）でも書ける
-    // ハイブリッド型。単純値になるとは限らないため表示のみ（直接編集）とする。
-    { key: 'webSearch', path: 'web_search', group: 'security', type: 'directEdit' },
+    {
+        key: 'webSearch',
+        path: 'web_search',
+        group: 'security',
+        type: 'string',
+        choices: ['disabled', 'cached', 'indexed', 'live'],
+        defaultValue: 'cached',
+    },
     {
         key: 'personality',
         path: 'personality',
@@ -417,11 +435,27 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'display',
         type: 'boolean',
     },
+    {
+        key: 'noticeHideGpt51MigrationPrompt',
+        path: 'notice.hide_gpt5_1_migration_prompt',
+        group: 'display',
+        type: 'boolean',
+    },
+    // notice.hide_gpt-5.1-codex-max_migration_prompt はキー名自体にドットを含み、
+    // ドット区切り path ではネストキーと区別できないため登録しない（直接編集で対応する）。
+    { key: 'noticeModelMigrations', path: 'notice.model_migrations', group: 'display', type: 'directEdit' },
     { key: 'notify', path: 'notify', group: 'display', type: 'directEdit' },
     { key: 'tuiNotifications', path: 'tui.notifications', group: 'display', type: 'directEdit' },
     { key: 'tuiStatusLine', path: 'tui.status_line', group: 'display', type: 'directEdit' },
     { key: 'tuiTerminalTitle', path: 'tui.terminal_title', group: 'display', type: 'directEdit' },
     { key: 'tuiKeymap', path: 'tui.keymap', group: 'display', type: 'directEdit' },
+    {
+        key: 'tuiResumeCwd',
+        path: 'tui.resume_cwd',
+        group: 'display',
+        type: 'string',
+        choices: ['current', 'session'],
+    },
     { key: 'tuiTheme', path: 'tui.theme', group: 'display', type: 'string', allowCustom: true, choices: [] },
 
     // === データ ===
@@ -565,6 +599,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     },
     { key: 'projectRootMarkers', path: 'project_root_markers', group: 'data', type: 'directEdit' },
     { key: 'shellEnvironmentExclude', path: 'shell_environment_policy.exclude', group: 'data', type: 'directEdit' },
+    { key: 'shellEnvironmentFilters', path: 'shell_environment_policy.filters', group: 'data', type: 'directEdit' },
     { key: 'shellEnvironmentSet', path: 'shell_environment_policy.set', group: 'data', type: 'directEdit' },
     {
         key: 'shellEnvironmentIncludeOnly',
@@ -575,7 +610,15 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'projects', path: 'projects', group: 'data', type: 'directEdit' },
 
     // === サブエージェント・機能 ===
-    { key: 'agentsMaxThreads', path: 'agents.max_threads', group: 'features', type: 'number', min: 1, integer: true },
+    // agents.max_threads は agents.max_concurrent_threads_per_session の旧別名のため登録しない。
+    {
+        key: 'agentsMaxConcurrentThreadsPerSession',
+        path: 'agents.max_concurrent_threads_per_session',
+        group: 'features',
+        type: 'number',
+        min: 1,
+        integer: true,
+    },
     {
         key: 'agentsInterruptMessage',
         path: 'agents.interrupt_message',
@@ -792,6 +835,12 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'skillsConfig', path: 'skills.config', group: 'features', type: 'directEdit' },
     { key: 'hooks', path: 'hooks', group: 'features', type: 'directEdit' },
     { key: 'mcpServers', path: 'mcp_servers.<id>', group: 'features', type: 'directEdit' },
+    {
+        key: 'pluginsMcpServers',
+        path: 'plugins.<plugin>.mcp_servers',
+        group: 'features',
+        type: 'directEdit',
+    },
     { key: 'apps', path: 'apps.<id>', group: 'features', type: 'directEdit' },
     { key: 'toolSuggest', path: 'tool_suggest', group: 'features', type: 'directEdit' },
     // tools.web_search は boolean | object のハイブリッド型。単純値になるとは限らないため直接編集。

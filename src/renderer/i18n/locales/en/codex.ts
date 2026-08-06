@@ -209,7 +209,7 @@ export default {
             },
             approvalPolicy: {
                 label: 'Approval policy (approval_policy)',
-                desc: 'When to prompt for approval before running commands. It accepts either a simple value (e.g. on-request) or a granular table, so its shape is not fixed and it is changed via direct edit.',
+                desc: 'When to prompt for approval before running commands. Accepts untrusted, on-request, or never, or a granular table that sets each approval kind separately.',
             },
             sandboxMode: {
                 label: 'Sandbox (sandbox_mode)',
@@ -217,7 +217,7 @@ export default {
             },
             webSearch: {
                 label: 'Web search (web_search)',
-                desc: 'Web search mode (disabled / cached / indexed / live). It accepts either a simple value or a detailed table (context_size / allowed_domains, etc.), so its shape is not fixed and it is changed via direct edit.',
+                desc: 'Web search mode. disabled removes the tool, cached uses the OpenAI-maintained index (default), indexed allows external access gated by the index, live allows unrestricted live retrieval.',
             },
             personality: {
                 label: 'Personality (personality)',
@@ -423,9 +423,9 @@ export default {
                 label: 'Use shell profile (shell_environment_policy.experimental_use_profile)',
                 desc: 'Builds child-process environments through the user shell profile. Experimental.',
             },
-            agentsMaxThreads: {
-                label: 'Concurrent agents (agents.max_threads)',
-                desc: 'Maximum concurrently open agent threads. Default: 6.',
+            agentsMaxConcurrentThreadsPerSession: {
+                label: 'Concurrent agents (agents.max_concurrent_threads_per_session)',
+                desc: 'Maximum spawned-agent threads open at once, excluding the primary thread. Codex picks a default when unset.',
             },
             agentsInterruptMessage: {
                 label: 'Record interrupt message (agents.interrupt_message)',
@@ -513,7 +513,7 @@ export default {
             },
             featuresNetworkProxy: {
                 label: 'Sandbox network proxy (features.network_proxy)',
-                desc: 'Permission-profile-controlled sandbox networking. It accepts either a simple on/off value or a detailed table (proxy_url, etc.), so its shape is not fixed and it is changed via direct edit.',
+                desc: 'Proxy that sandboxed traffic goes through. Turn it on or off, or use a table to set proxy_url and allowed domains.',
             },
             featuresEnableRequestCompression: {
                 label: 'Request compression (features.enable_request_compression)',
@@ -530,6 +530,14 @@ export default {
             modelProviders: {
                 label: 'Model provider definitions (model_providers.<id>)',
                 desc: 'Defines endpoints, authentication, headers, and retry settings for custom model providers.',
+            },
+            modelProvidersBedrockAwsProfile: {
+                label: 'Bedrock AWS profile (model_providers.amazon-bedrock.aws.profile)',
+                desc: 'AWS profile name used by the built-in amazon-bedrock provider.',
+            },
+            modelProvidersBedrockAwsRegion: {
+                label: 'Bedrock AWS region (model_providers.amazon-bedrock.aws.region)',
+                desc: 'AWS region used by the built-in amazon-bedrock provider.',
             },
             sandboxWritableRoots: {
                 label: 'Additional writable roots (sandbox_workspace_write.writable_roots)',
@@ -559,6 +567,10 @@ export default {
                 label: 'TUI key bindings (tui.keymap)',
                 desc: 'Overrides TUI action bindings for contexts such as global, composer, and chat.',
             },
+            tuiResumeCwd: {
+                label: 'Resume working directory (tui.resume_cwd)',
+                desc: 'Working directory used when resuming or forking a session: current uses your current directory, session uses the one saved with the session. Codex asks when unset and the two differ.',
+            },
             projectDocFallbackFilenames: {
                 label: 'Instruction fallback filenames (project_doc_fallback_filenames)',
                 desc: 'Ordered fallback filenames checked when AGENTS.md is absent at a directory level.',
@@ -570,6 +582,10 @@ export default {
             shellEnvironmentExclude: {
                 label: 'Environment exclusion patterns (shell_environment_policy.exclude)',
                 desc: 'Case-insensitive glob patterns removed from the environment inherited by child processes.',
+            },
+            shellEnvironmentFilters: {
+                label: 'Environment filters (shell_environment_policy.filters)',
+                desc: 'Map of environment-variable name patterns to include (allowlist) or exclude.',
             },
             shellEnvironmentSet: {
                 label: 'Environment overrides (shell_environment_policy.set)',
@@ -599,6 +615,10 @@ export default {
                 label: 'MCP server definitions (mcp_servers.<id>)',
                 desc: 'Defines stdio or HTTP connections, authentication, timeouts, and tool controls for MCP servers.',
             },
+            pluginsMcpServers: {
+                label: 'Plugin-bundled MCP (plugins.<plugin>.mcp_servers)',
+                desc: 'Enables or disables MCP servers bundled with a plugin and controls which of their tools are exposed.',
+            },
             apps: {
                 label: 'Per-app configuration (apps.<id>)',
                 desc: 'Controls app enablement, destructive operations, approvals, and individual tools.',
@@ -609,23 +629,23 @@ export default {
             },
             toolsWebSearch: {
                 label: 'Web search tool (tools.web_search)',
-                desc: 'Enables and configures the web search tool. Boolean or object; edit the file directly.',
+                desc: 'Enables the web search tool and sets its search context size, allowed domains, and approximate user location.',
             },
             featuresCodeModeDirectOnlyToolNamespaces: {
                 label: 'Code mode direct-only namespaces (features.code_mode.direct_only_tool_namespaces)',
-                desc: 'Tool namespaces that code mode may only call directly. Array; edit the file directly.',
+                desc: 'Tool namespaces that code mode may only call directly.',
             },
             featuresCodeModeExcludedToolNamespaces: {
                 label: 'Code mode excluded namespaces (features.code_mode.excluded_tool_namespaces)',
-                desc: 'Tool namespaces excluded from code mode. Array; edit the file directly.',
+                desc: 'Tool namespaces excluded from code mode.',
             },
             computerUseWindowsAllowedAppIds: {
                 label: 'Computer Use allowed apps (computer_use.windows.always_allowed_app_ids)',
-                desc: 'Windows app IDs that Computer Use may open without confirmation. Array; edit the file directly.',
+                desc: 'Windows app IDs that Computer Use may open without confirmation.',
             },
             desktopCustomFileHandlers: {
                 label: 'Desktop custom handlers (desktop.custom_file_handlers)',
-                desc: 'Custom "Open in" handlers for the ChatGPT desktop app. Table; edit the file directly.',
+                desc: 'Custom "Open in" handlers for the ChatGPT desktop app.',
             },
             autoReviewPolicy: {
                 label: 'Auto-review policy (auto_review.policy)',
@@ -658,6 +678,14 @@ export default {
             noticeHideWorldWritableWarning: {
                 label: 'Hide world-writable warning (notice.hide_world_writable_warning)',
                 desc: 'Suppresses the warning shown when the workspace is world-writable.',
+            },
+            noticeHideGpt51MigrationPrompt: {
+                label: 'Hide GPT-5.1 migration prompt (notice.hide_gpt5_1_migration_prompt)',
+                desc: 'Marks the GPT-5.1 migration prompt as acknowledged so it stops appearing.',
+            },
+            noticeModelMigrations: {
+                label: 'Model migration state (notice.model_migrations)',
+                desc: 'Map recording acknowledged model migrations as old-to-new pairs.',
             },
             otelEnvironment: {
                 label: 'OpenTelemetry environment (otel.environment)',

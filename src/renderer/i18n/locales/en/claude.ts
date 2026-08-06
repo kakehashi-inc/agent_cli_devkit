@@ -276,6 +276,10 @@ export default {
                 label: 'Auto compact (autoCompactEnabled)',
                 desc: 'Automatically compacts the conversation as the context limit approaches.',
             },
+            autoCompactWindow: {
+                label: 'Auto compact window (autoCompactWindow)',
+                desc: 'Context size in tokens (100000-1000000) at which auto compaction runs. Uses a model-tuned window when unset.',
+            },
             fileCheckpointingEnabled: {
                 label: 'File checkpointing (fileCheckpointingEnabled)',
                 desc: 'Saves snapshots of file changes so /rewind can restore them.',
@@ -299,6 +303,10 @@ export default {
             fastModePerSessionOptIn: {
                 label: 'Fast mode per session (fastModePerSessionOptIn)',
                 desc: 'Stops fast mode from carrying across sessions, so each session requires explicit activation with /fast.',
+            },
+            switchModelsOnFlag: {
+                label: 'Switch models when flagged (switchModelsOnFlag)',
+                desc: 'Switches to the fallback model automatically and continues when a safety classifier flags a request. Turn off to pause and choose instead. Default: on.',
             },
             inputNeededNotifEnabled: {
                 label: 'Input-needed notifications (inputNeededNotifEnabled)',
@@ -396,6 +404,10 @@ export default {
                 label: 'Ultracode keyword (workflowKeywordTriggerEnabled)',
                 desc: 'Treats ultracode in a prompt as the dynamic-workflow trigger. Default: on.',
             },
+            workflowSizeGuideline: {
+                label: 'Workflow size guideline (workflowSizeGuideline)',
+                desc: 'Agent count Claude aims for in dynamic workflows: unrestricted, small, medium (default), or large.',
+            },
             disableWorkflows: {
                 label: 'Disable workflows (disableWorkflows)',
                 desc: 'Disables dynamic workflows and bundled workflow commands. Default: off.',
@@ -456,9 +468,29 @@ export default {
                 label: 'OTel header helper (otelHeadersHelper)',
                 desc: 'Generates dynamic OpenTelemetry headers at startup and during periodic refreshes.',
             },
+            processWrapper: {
+                label: 'Process wrapper (processWrapper)',
+                desc: 'Corporate launcher command placed in front of the background processes Claude Code starts.',
+            },
             prUrlTemplate: {
                 label: 'PR URL template (prUrlTemplate)',
                 desc: 'Formats PR badge links with {host}, {owner}, {repo}, {number}, and {url} substitutions.',
+            },
+            forceLoginMethod: {
+                label: 'Restrict login method (forceLoginMethod)',
+                desc: 'Limits which account type can sign in: claudeai = Claude.ai, console = Claude Console, gateway = cloud gateway.',
+            },
+            remoteDefaultEnvironmentId: {
+                label: 'Default cloud environment (remote.defaultEnvironmentId)',
+                desc: 'Default cloud environment for sessions created with claude --cloud. Picking one with /remote-env writes this key.',
+            },
+            worktreeBaseRef: {
+                label: 'Worktree base ref (worktree.baseRef)',
+                desc: 'Ref new worktrees branch from: fresh = origin default branch (default), head = your current local HEAD.',
+            },
+            worktreeBgIsolation: {
+                label: 'Background isolation (worktree.bgIsolation)',
+                desc: 'Isolation mode for background sessions: worktree = block edits in the main checkout until EnterWorktree (default), none = edit the working copy directly.',
             },
             enableAllProjectMcpServers: {
                 label: 'Approve all project MCP servers (enableAllProjectMcpServers)',
@@ -466,7 +498,7 @@ export default {
             },
             enableArtifact: {
                 label: 'Enable Artifact (enableArtifact)',
-                desc: 'Explicitly enables or disables the Artifact tool for this user. Managed disableArtifact takes precedence.',
+                desc: 'Explicitly enables or disables the Artifact tool. When disableArtifact is set, it takes precedence.',
             },
             disableAutoMode: {
                 label: 'Block auto mode (disableAutoMode)',
@@ -520,6 +552,10 @@ export default {
                 label: 'PR attribution (attribution.pr)',
                 desc: 'Attribution text added to pull request descriptions. Set an empty string to hide it.',
             },
+            attributionSessionUrl: {
+                label: 'Session link attribution (attribution.sessionUrl)',
+                desc: 'Appends the claude.ai session link to commits and pull requests when running from a cloud or Remote Control session. Default: on.',
+            },
             autoModeClassifyAllShell: {
                 label: 'Classify all shell commands (autoMode.classifyAllShell)',
                 desc: 'Routes every Bash / PowerShell command through the auto-mode classifier.',
@@ -550,11 +586,15 @@ export default {
             },
             permissionsDefaultMode: {
                 label: 'Default permission mode (permissions.defaultMode)',
-                desc: 'Permission mode at session start. default = prompt on first tool use, acceptEdits = auto-accept file edits, plan = start in plan mode, dontAsk = skip confirmations (explicit deny rules still apply), bypassPermissions = skip all permission prompts.',
+                desc: 'Permission mode at session start. default = prompt on first tool use, acceptEdits = auto-accept file edits, plan = start in plan mode, auto = start in auto mode, dontAsk = skip confirmations (explicit deny rules still apply), bypassPermissions = skip all permission prompts, manual = alias for default.',
             },
             permissionsDisableBypassPermissionsMode: {
                 label: 'Disable bypassPermissions (permissions.disableBypassPermissionsMode)',
-                desc: 'Set "disable" to prevent the bypassPermissions mode from being used. Intended for managed policies.',
+                desc: 'Set "disable" to prevent the bypassPermissions mode from being used.',
+            },
+            permissionsSkipDangerousModePermissionPrompt: {
+                label: 'Skip bypassPermissions prompt (permissions.skipDangerousModePermissionPrompt)',
+                desc: 'Skips the confirmation shown before entering bypass permissions mode via --dangerously-skip-permissions or defaultMode: bypassPermissions.',
             },
             permissionsAllow: {
                 label: 'Allow rules (permissions.allow)',
@@ -571,10 +611,6 @@ export default {
             permissionsAdditionalDirectories: {
                 label: 'Additional directories (permissions.additionalDirectories)',
                 desc: 'Array of directories outside the working directory that Claude may access.',
-            },
-            permissionsDisableAutoMode: {
-                label: 'Disable auto mode (permissions.disableAutoMode)',
-                desc: 'Set "disable" to prevent auto mode from being used.',
             },
             sandboxEnabled: {
                 label: 'Enable sandbox (sandbox.enabled)',
@@ -594,7 +630,7 @@ export default {
             },
             sandboxAllowAppleEvents: {
                 label: 'Allow Apple Events (sandbox.allowAppleEvents)',
-                desc: 'Permits sending Apple Events on macOS (user / managed / CLI settings only).',
+                desc: 'Permits sending Apple Events on macOS, letting sandboxed commands launch other applications.',
             },
             sandboxEnableWeakerNetworkIsolation: {
                 label: 'Weaker network isolation (sandbox.enableWeakerNetworkIsolation)',
@@ -606,7 +642,7 @@ export default {
             },
             sandboxFilesystemDisabled: {
                 label: 'Disable filesystem isolation (sandbox.filesystem.disabled)',
-                desc: 'Disables sandbox filesystem isolation (v2.1.216+, user / managed / CLI only).',
+                desc: 'Disables sandbox filesystem isolation so reads and writes are unrestricted. Network isolation stays in effect (v2.1.216+).',
             },
             sandboxNetworkHttpProxyPort: {
                 label: 'HTTP proxy port (sandbox.network.httpProxyPort)',
@@ -615,6 +651,22 @@ export default {
             sandboxNetworkSocksProxyPort: {
                 label: 'SOCKS proxy port (sandbox.network.socksProxyPort)',
                 desc: 'Port number of the SOCKS proxy used by sandbox network isolation.',
+            },
+            sandboxNetworkStrictAllowlist: {
+                label: 'Strict domain allowlist (sandbox.network.strictAllowlist)',
+                desc: 'Denies sandboxed access to hosts outside the allowlist instead of prompting for approval. Default: off.',
+            },
+            sandboxNetworkAllowAllUnixSockets: {
+                label: 'Allow all Unix sockets (sandbox.network.allowAllUnixSockets)',
+                desc: 'Allows every Unix socket connection inside the sandbox; the only way to permit them on Linux and WSL2. Default: off.',
+            },
+            sandboxNetworkAllowLocalBinding: {
+                label: 'Allow localhost binding (sandbox.network.allowLocalBinding)',
+                desc: 'Lets sandboxed commands bind to localhost ports (macOS only). Default: off.',
+            },
+            sandboxCredentialsAllowPlaintextInject: {
+                label: 'Allow plaintext injection (sandbox.credentials.allowPlaintextInject)',
+                desc: 'Substitutes masked credential values on plain HTTP requests as well as HTTPS. Leave off outside trusted test networks. Default: off.',
             },
             sandbox: {
                 label: 'Sandbox details (sandbox)',
@@ -678,19 +730,27 @@ export default {
             },
             enabledMcpjsonServers: {
                 label: 'Approved .mcp.json servers (enabledMcpjsonServers)',
-                desc: 'List of MCP server names from .mcp.json files to approve. Array; edit the file directly.',
+                desc: 'MCP server names from .mcp.json files to approve.',
             },
             disabledMcpjsonServers: {
                 label: 'Rejected .mcp.json servers (disabledMcpjsonServers)',
-                desc: 'List of MCP server names from .mcp.json files to reject. Array; edit the file directly.',
+                desc: 'MCP server names from .mcp.json files to reject.',
             },
             allowedHttpHookUrls: {
                 label: 'Allowed HTTP hook URLs (allowedHttpHookUrls)',
-                desc: 'Allowlist of URL patterns that HTTP hooks may target (supports * as a wildcard). Array; edit the file directly.',
+                desc: 'Allowlist of URL patterns that HTTP hooks may target. * works as a wildcard.',
+            },
+            httpHookAllowedEnvVars: {
+                label: 'HTTP hook env vars (httpHookAllowedEnvVars)',
+                desc: 'Allowlist of environment variable names HTTP hooks may interpolate into headers.',
             },
             claudeMdExcludes: {
                 label: 'CLAUDE.md excludes (claudeMdExcludes)',
-                desc: 'Glob patterns or absolute paths of CLAUDE.md files to skip when loading memory. Array; edit the file directly.',
+                desc: 'Glob patterns or absolute paths of CLAUDE.md files to skip when loading memory.',
+            },
+            forceLoginOrgUUID: {
+                label: 'Allowed login org (forceLoginOrgUUID)',
+                desc: 'UUIDs of Anthropic organizations allowed to sign in. Accepts a single string or an array.',
             },
         },
     },

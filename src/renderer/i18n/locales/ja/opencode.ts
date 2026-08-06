@@ -143,6 +143,10 @@ export default {
                 label: 'シェル（shell）',
                 desc: '対話ターミナルとエージェントのシェルツールで使う実行ファイルです。',
             },
+            layout: {
+                label: 'レイアウト（layout）',
+                desc: '画面幅の使い方。auto は読みやすい幅に抑え、stretch は端末の幅いっぱいに広げます。',
+            },
             logLevel: { label: 'ログレベル（logLevel）', desc: 'OpenCode が記録するランタイムログの詳細度です。' },
             share: { label: '共有（share）', desc: 'セッション共有を手動、自動、無効から選びます。' },
             snapshot: {
@@ -156,36 +160,69 @@ export default {
             },
             skills: {
                 label: '追加スキルソース（skills）',
-                desc: '追加フォルダー・URL のオブジェクトなので直接編集します。',
+                desc: 'スキルを追加で読み込むフォルダーと URL を指定します。',
             },
             references: {
                 label: '参照定義（references）',
-                desc: '名前付き Git・ローカル参照のマップなので直接編集します。',
+                desc: '会話から名前で参照できる Git リポジトリやローカルディレクトリを登録します。',
             },
-            provider: { label: 'プロバイダー（provider）', desc: 'プロバイダーマップなので直接編集します。' },
-            agent: { label: 'エージェント（agent）', desc: 'インラインエージェントマップなので直接編集します。' },
-            permission: { label: '権限（permission）', desc: '権限マップなので直接編集します。' },
-            tools: { label: 'ツール（tools）', desc: 'ツールごとの有効/無効フラグのマップなので直接編集します。' },
-            server: { label: 'サーバー（server）', desc: 'サーバー設定オブジェクトなので直接編集します。' },
-            command: { label: 'コマンド（command）', desc: 'カスタムコマンドマップなので直接編集します。' },
-            formatter: { label: 'フォーマッター（formatter）', desc: '真偽値またはマップなので直接編集します。' },
-            lsp: { label: 'LSP サーバー（lsp）', desc: '真偽値またはマップなので直接編集します。' },
-            compaction: { label: '圧縮（compaction）', desc: '会話圧縮オブジェクトなので直接編集します。' },
-            watcher: { label: 'ファイル監視（watcher）', desc: 'ファイル監視オブジェクトなので直接編集します。' },
-            attachment: { label: '添付（attachment）', desc: '添付処理オブジェクトなので直接編集します。' },
-            toolOutput: { label: 'ツール出力（tool_output）', desc: '出力上限オブジェクトなので直接編集します。' },
+            provider: {
+                label: 'プロバイダー（provider）',
+                desc: '独自プロバイダーの定義と、既存プロバイダーのモデル上書きを設定します。',
+            },
+            agent: {
+                label: 'エージェント（agent）',
+                desc: 'エージェントごとのモデル、プロンプト、使えるツールを設定します。',
+            },
+            permission: {
+                label: '権限（permission）',
+                desc: 'ツールごとの許可ポリシーをまとめて設定します。パターン別ルールもここで指定します。',
+            },
+            tools: { label: 'ツール（tools）', desc: 'ツールごとに利用可否を切り替えます。' },
+            server: {
+                label: 'サーバー（server）',
+                desc: 'HTTP サーバーのホスト、ポート、CORS、mDNS をまとめて設定します。',
+            },
+            command: { label: 'コマンド（command）', desc: '独自のスラッシュコマンドを定義します。' },
+            formatter: {
+                label: 'フォーマッター（formatter）',
+                desc: 'フォーマッターの有効化と個別設定。false で無効、true で組み込みを有効、オブジェクトで組み込みを有効にしたうえで上書きします。',
+            },
+            lsp: {
+                label: 'LSP サーバー（lsp）',
+                desc: 'LSP サーバーの有効化と個別設定。false で無効、true で組み込みを有効、オブジェクトで組み込みを有効にしたうえで上書きします。',
+            },
+            compaction: {
+                label: '圧縮（compaction）',
+                desc: '会話が長くなったときの自動圧縮の動作をまとめて設定します。',
+            },
+            watcher: {
+                label: 'ファイル監視（watcher）',
+                desc: 'ファイル変更監視の動作と、監視対象から除外するパスを設定します。',
+            },
+            attachment: { label: '添付（attachment）', desc: '添付画像の自動リサイズや上限サイズを設定します。' },
+            toolOutput: {
+                label: 'ツール出力（tool_output）',
+                desc: 'ツール出力を切り詰める行数・バイト数のしきい値です。超えた分は別ファイルへ書き出し、プレビューだけを返します。',
+            },
             mcp: { label: 'MCP サーバー（mcp）', desc: 'MCP 管理画面または直接編集で変更します。' },
             plugin: { label: 'npm プラグイン（plugin）', desc: 'プラグイン管理画面または直接編集で変更します。' },
-            instructions: { label: '指示ファイル（instructions）', desc: 'パス配列なので直接編集します。' },
+            instructions: {
+                label: '指示ファイル（instructions）',
+                desc: '追加で読み込む指示ファイルのパスやパターンです。',
+            },
             disabledProviders: {
                 label: '無効プロバイダー（disabled_providers）',
-                desc: 'プロバイダー ID の配列なので直接編集します。',
+                desc: '自動で読み込まれるプロバイダーのうち、無効にするものを指定します。',
             },
             enabledProviders: {
                 label: '有効プロバイダー（enabled_providers）',
-                desc: 'プロバイダー許可リストなので直接編集します。',
+                desc: '指定したプロバイダーだけを有効にします。ここに無いプロバイダーは読み込まれません。',
             },
-            experimental: { label: '実験設定（experimental）', desc: '不安定な設定マップなので直接編集します。' },
+            experimental: {
+                label: '実験設定（experimental）',
+                desc: '仕様が変わりうる実験的な設定をまとめたものです。',
+            },
             serverPort: {
                 label: 'サーバーポート（server.port）',
                 desc: 'ヘッドレスサーバーが待ち受ける TCP ポートです。1〜65535 の整数を指定します。',
@@ -204,7 +241,7 @@ export default {
             },
             serverCors: {
                 label: 'CORS 許可オリジン（server.cors）',
-                desc: 'ブラウザ系クライアントから HTTP サーバへアクセスする際に CORS を許可する追加オリジンの一覧です。配列なので直接編集します。',
+                desc: 'ブラウザ系クライアントから HTTP サーバーへアクセスする際に CORS を許可する追加オリジンの一覧です。',
             },
             attachmentImageAutoResize: {
                 label: '画像自動リサイズ（attachment.image.auto_resize）',
@@ -332,11 +369,11 @@ export default {
             },
             experimentalPrimaryTools: {
                 label: 'プライマリ専用ツール（experimental.primary_tools）',
-                desc: 'プライマリエージェントのみが利用できるツールを限定する一覧です。実験的な設定で、配列なので直接編集します。',
+                desc: 'プライマリエージェントだけが使えるツールを限定する一覧です。実験的な設定です。',
             },
             experimentalPolicies: {
                 label: 'ポリシー（experimental.policies）',
-                desc: 'リソースに対する許可/拒否ポリシーの一覧です（現状はプロバイダ利用の制御に使用）。オブジェクト配列なので直接編集します。',
+                desc: 'リソースに対する許可・拒否ポリシーの一覧です。現状はプロバイダー利用の制御に使います。',
             },
         },
     },

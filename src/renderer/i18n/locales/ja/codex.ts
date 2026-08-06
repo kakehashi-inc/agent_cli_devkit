@@ -210,7 +210,7 @@ export default {
             },
             approvalPolicy: {
                 label: '承認ポリシー（approval_policy）',
-                desc: 'コマンド実行時に確認を求めるタイミング。単純値（on-request 等）でも詳細テーブル（granular）でも指定でき、型が一定でないため直接編集で変更します。',
+                desc: 'コマンド実行時に確認を求めるタイミング。untrusted / on-request / never の単純値のほか、granular テーブルで承認の種類ごとに指定できます。',
             },
             sandboxMode: {
                 label: 'サンドボックス（sandbox_mode）',
@@ -218,7 +218,7 @@ export default {
             },
             webSearch: {
                 label: 'Web検索（web_search）',
-                desc: 'Web検索の動作モード（disabled / cached / indexed / live）。単純値でも詳細テーブル（context_size / allowed_domains 等）でも指定でき、型が一定でないため直接編集で変更します。',
+                desc: 'Web 検索の動作モード。disabled=ツールを外す、cached=OpenAI 提供の索引のみ（既定）、indexed=索引で許可された範囲のみ外部取得、live=制限なしのライブ取得。',
             },
             personality: {
                 label: 'パーソナリティ（personality）',
@@ -424,9 +424,9 @@ export default {
                 label: 'シェルプロファイルを使用（shell_environment_policy.experimental_use_profile）',
                 desc: '子プロセスの環境構築にユーザーのシェルプロファイルを使います。実験的な設定です。',
             },
-            agentsMaxThreads: {
-                label: 'エージェント同時数（agents.max_threads）',
-                desc: '同時に開いておけるエージェントスレッド数の上限です。既定は 6 です。',
+            agentsMaxConcurrentThreadsPerSession: {
+                label: 'エージェント同時数（agents.max_concurrent_threads_per_session）',
+                desc: '主スレッドを除き、同時に開いておけるエージェントスレッド数の上限です。未設定なら Codex が既定値を選びます。',
             },
             agentsInterruptMessage: {
                 label: '中断メッセージを記録（agents.interrupt_message）',
@@ -514,7 +514,7 @@ export default {
             },
             featuresNetworkProxy: {
                 label: 'サンドボックス通信プロキシ（features.network_proxy）',
-                desc: '権限プロファイルで制御するサンドボックス通信プロキシ。単純な有効/無効でも詳細テーブル（proxy_url 等）でも指定でき、型が一定でないため直接編集で変更します。',
+                desc: 'サンドボックス内の通信を通すプロキシ。有効・無効の切り替えのほか、proxy_url や許可ドメインをテーブルで指定できます。',
             },
             featuresEnableRequestCompression: {
                 label: 'リクエスト圧縮（features.enable_request_compression）',
@@ -531,6 +531,14 @@ export default {
             modelProviders: {
                 label: 'モデルプロバイダー定義（model_providers.<id>）',
                 desc: 'カスタムモデルプロバイダーごとのエンドポイント、認証、ヘッダー、再試行設定を定義するテーブルです。',
+            },
+            modelProvidersBedrockAwsProfile: {
+                label: 'Bedrock の AWS プロファイル（model_providers.amazon-bedrock.aws.profile）',
+                desc: '組み込みの amazon-bedrock プロバイダーが使う AWS プロファイル名。',
+            },
+            modelProvidersBedrockAwsRegion: {
+                label: 'Bedrock の AWS リージョン（model_providers.amazon-bedrock.aws.region）',
+                desc: '組み込みの amazon-bedrock プロバイダーが使う AWS リージョン。',
             },
             sandboxWritableRoots: {
                 label: '追加の書込可能ルート（sandbox_workspace_write.writable_roots）',
@@ -560,6 +568,10 @@ export default {
                 label: 'TUIキー割り当て（tui.keymap）',
                 desc: 'global、composer、chat などの文脈ごとに TUI 操作のキー割り当てを上書きします。',
             },
+            tuiResumeCwd: {
+                label: '再開時の作業ディレクトリ（tui.resume_cwd）',
+                desc: 'セッションの再開・フォーク時に使う作業ディレクトリ。current=現在のディレクトリ、session=セッションに保存されたディレクトリ。未設定なら食い違ったときに確認します。',
+            },
             projectDocFallbackFilenames: {
                 label: '指示ファイル代替名（project_doc_fallback_filenames）',
                 desc: '各ディレクトリで AGENTS.md がない場合に検索する代替ファイル名を優先順で指定します。',
@@ -571,6 +583,10 @@ export default {
             shellEnvironmentExclude: {
                 label: '環境変数除外パターン（shell_environment_policy.exclude）',
                 desc: '子プロセスへ継承する環境変数から除外する、大文字小文字を区別しない glob パターンの配列です。',
+            },
+            shellEnvironmentFilters: {
+                label: '環境変数フィルター（shell_environment_policy.filters）',
+                desc: '環境変数名のパターンごとに include（許可リスト化）と exclude を指定するマップです。',
             },
             shellEnvironmentSet: {
                 label: '環境変数上書き（shell_environment_policy.set）',
@@ -600,6 +616,10 @@ export default {
                 label: 'MCPサーバー定義（mcp_servers.<id>）',
                 desc: 'MCP サーバーごとの stdio または HTTP 接続、認証、タイムアウト、ツール制御を定義します。',
             },
+            pluginsMcpServers: {
+                label: 'プラグイン同梱MCP（plugins.<plugin>.mcp_servers）',
+                desc: 'プラグインが同梱する MCP サーバーの有効・無効や、公開するツールの許可・拒否を指定します。',
+            },
             apps: {
                 label: 'アプリ個別設定（apps.<id>）',
                 desc: 'アプリごとの有効状態、破壊的操作、承認方式、ツール単位の制御を定義します。',
@@ -610,23 +630,23 @@ export default {
             },
             toolsWebSearch: {
                 label: 'Web検索ツール（tools.web_search）',
-                desc: 'Web 検索ツールの有効化と詳細設定です。真偽値またはオブジェクトなので直接編集します。',
+                desc: 'Web 検索ツールの有効化と、検索コンテキストサイズ・許可ドメイン・おおよその位置情報の設定です。',
             },
             featuresCodeModeDirectOnlyToolNamespaces: {
                 label: 'コードモード直接呼び出し限定（features.code_mode.direct_only_tool_namespaces）',
-                desc: 'code mode が直接呼び出しのみ許可するツール名前空間の一覧です。配列なので直接編集します。',
+                desc: 'code mode が直接呼び出しのみ許可するツール名前空間の一覧です。',
             },
             featuresCodeModeExcludedToolNamespaces: {
                 label: 'コードモード除外名前空間（features.code_mode.excluded_tool_namespaces）',
-                desc: 'code mode から除外するツール名前空間の一覧です。配列なので直接編集します。',
+                desc: 'code mode から除外するツール名前空間の一覧です。',
             },
             computerUseWindowsAllowedAppIds: {
                 label: 'Computer Use 許可アプリ（computer_use.windows.always_allowed_app_ids）',
-                desc: 'Computer Use が確認なしで開ける Windows アプリ ID の一覧です。配列なので直接編集します。',
+                desc: 'Computer Use が確認なしで開ける Windows アプリ ID の一覧です。',
             },
             desktopCustomFileHandlers: {
                 label: 'デスクトップ独自ハンドラ（desktop.custom_file_handlers）',
-                desc: 'ChatGPT デスクトップの「Open in」独自ハンドラ定義です。テーブルなので直接編集します。',
+                desc: 'ChatGPT デスクトップの「Open in」で使う独自ハンドラの定義です。',
             },
             autoReviewPolicy: {
                 label: '自動レビュー方針（auto_review.policy）',
@@ -659,6 +679,14 @@ export default {
             noticeHideWorldWritableWarning: {
                 label: '全書込可警告を非表示（notice.hide_world_writable_warning）',
                 desc: 'ワークスペースが誰でも書き込み可能なときに表示される警告を抑止します。',
+            },
+            noticeHideGpt51MigrationPrompt: {
+                label: 'GPT-5.1 移行案内を非表示（notice.hide_gpt5_1_migration_prompt）',
+                desc: 'GPT-5.1 への移行を促す案内を確認済みとして抑止します。',
+            },
+            noticeModelMigrations: {
+                label: 'モデル移行の確認状態（notice.model_migrations）',
+                desc: '確認済みのモデル移行を「旧モデル→新モデル」の対応として保持するマップです。',
             },
             otelEnvironment: {
                 label: 'OpenTelemetry環境名（otel.environment）',

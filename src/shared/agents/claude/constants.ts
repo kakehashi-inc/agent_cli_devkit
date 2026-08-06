@@ -239,6 +239,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'outputStyle', path: 'outputStyle', group: 'model', type: 'string' },
     { key: 'fastMode', path: 'fastMode', group: 'model', type: 'boolean' },
     { key: 'fastModePerSessionOptIn', path: 'fastModePerSessionOptIn', group: 'model', type: 'boolean' },
+    { key: 'switchModelsOnFlag', path: 'switchModelsOnFlag', group: 'model', type: 'boolean', defaultOn: true },
     { key: 'availableModels', path: 'availableModels', group: 'model', type: 'directEdit' },
     { key: 'fallbackModel', path: 'fallbackModel', group: 'model', type: 'directEdit' },
     { key: 'modelOverrides', path: 'modelOverrides', group: 'model', type: 'directEdit' },
@@ -290,7 +291,13 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultValue: 'auto',
     },
     { key: 'spinnerTipsEnabled', path: 'spinnerTipsEnabled', group: 'display', type: 'boolean', defaultOn: true },
-    { key: 'emojiCompletionEnabled', path: 'emojiCompletionEnabled', group: 'display', type: 'boolean', defaultOn: true },
+    {
+        key: 'emojiCompletionEnabled',
+        path: 'emojiCompletionEnabled',
+        group: 'display',
+        type: 'boolean',
+        defaultOn: true,
+    },
     { key: 'showTurnDuration', path: 'showTurnDuration', group: 'display', type: 'boolean', defaultOn: true },
     { key: 'autoScrollEnabled', path: 'autoScrollEnabled', group: 'display', type: 'boolean', defaultOn: true },
     { key: 'awaySummaryEnabled', path: 'awaySummaryEnabled', group: 'display', type: 'boolean', defaultOn: true },
@@ -349,6 +356,15 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     },
     { key: 'cleanupPeriodDays', path: 'cleanupPeriodDays', group: 'behavior', type: 'number', min: 1, integer: true },
     { key: 'autoCompactEnabled', path: 'autoCompactEnabled', group: 'behavior', type: 'boolean', defaultOn: true },
+    {
+        key: 'autoCompactWindow',
+        path: 'autoCompactWindow',
+        group: 'behavior',
+        type: 'number',
+        min: 100000,
+        max: 1000000,
+        integer: true,
+    },
     {
         key: 'fileCheckpointingEnabled',
         path: 'fileCheckpointingEnabled',
@@ -410,6 +426,14 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: true,
     },
+    {
+        key: 'workflowSizeGuideline',
+        path: 'workflowSizeGuideline',
+        group: 'behavior',
+        type: 'string',
+        choices: ['unrestricted', 'small', 'medium', 'large'],
+        defaultValue: 'medium',
+    },
     { key: 'disableWorkflows', path: 'disableWorkflows', group: 'behavior', type: 'boolean', defaultOn: false },
     { key: 'disableBundledSkills', path: 'disableBundledSkills', group: 'behavior', type: 'boolean' },
     { key: 'disableAllHooks', path: 'disableAllHooks', group: 'behavior', type: 'boolean' },
@@ -423,7 +447,32 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'awsCredentialExport', path: 'awsCredentialExport', group: 'behavior', type: 'string' },
     { key: 'gcpAuthRefresh', path: 'gcpAuthRefresh', group: 'behavior', type: 'string' },
     { key: 'otelHeadersHelper', path: 'otelHeadersHelper', group: 'behavior', type: 'string' },
+    { key: 'processWrapper', path: 'processWrapper', group: 'behavior', type: 'string' },
     { key: 'prUrlTemplate', path: 'prUrlTemplate', group: 'behavior', type: 'string' },
+    {
+        key: 'forceLoginMethod',
+        path: 'forceLoginMethod',
+        group: 'behavior',
+        type: 'string',
+        choices: ['claudeai', 'console', 'gateway'],
+    },
+    { key: 'remoteDefaultEnvironmentId', path: 'remote.defaultEnvironmentId', group: 'behavior', type: 'string' },
+    {
+        key: 'worktreeBaseRef',
+        path: 'worktree.baseRef',
+        group: 'behavior',
+        type: 'string',
+        choices: ['fresh', 'head'],
+        defaultValue: 'fresh',
+    },
+    {
+        key: 'worktreeBgIsolation',
+        path: 'worktree.bgIsolation',
+        group: 'behavior',
+        type: 'string',
+        choices: ['worktree', 'none'],
+        defaultValue: 'worktree',
+    },
     {
         key: 'enableAllProjectMcpServers',
         path: 'enableAllProjectMcpServers',
@@ -458,6 +507,13 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     },
     { key: 'attributionCommit', path: 'attribution.commit', group: 'behavior', type: 'string' },
     { key: 'attributionPr', path: 'attribution.pr', group: 'behavior', type: 'string' },
+    {
+        key: 'attributionSessionUrl',
+        path: 'attribution.sessionUrl',
+        group: 'behavior',
+        type: 'boolean',
+        defaultOn: true,
+    },
     { key: 'autoModeClassifyAllShell', path: 'autoMode.classifyAllShell', group: 'behavior', type: 'boolean' },
     { key: 'autoMode', path: 'autoMode', group: 'behavior', type: 'directEdit' },
     { key: 'companyAnnouncements', path: 'companyAnnouncements', group: 'behavior', type: 'directEdit' },
@@ -475,17 +531,21 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'enabledMcpjsonServers', path: 'enabledMcpjsonServers', group: 'behavior', type: 'directEdit' },
     { key: 'disabledMcpjsonServers', path: 'disabledMcpjsonServers', group: 'behavior', type: 'directEdit' },
     { key: 'allowedHttpHookUrls', path: 'allowedHttpHookUrls', group: 'behavior', type: 'directEdit' },
+    { key: 'httpHookAllowedEnvVars', path: 'httpHookAllowedEnvVars', group: 'behavior', type: 'directEdit' },
     { key: 'claudeMdExcludes', path: 'claudeMdExcludes', group: 'behavior', type: 'directEdit' },
+    // forceLoginOrgUUID は文字列と配列のどちらも取りうるハイブリッド型のため directEdit とする。
+    { key: 'forceLoginOrgUUID', path: 'forceLoginOrgUUID', group: 'behavior', type: 'directEdit' },
 
     // === 権限（permissions オブジェクト内の定義済みキー） ===
-    // scalar（defaultMode / disableBypassPermissionsMode）はドット区切り path でネスト編集する。
+    // scalar（defaultMode / disableBypassPermissionsMode 等）はドット区切り path でネスト編集する。
     // 配列（allow / ask / deny / additionalDirectories）は directEdit として一覧表示のみ。
+    // permissions.disableAutoMode はトップレベル disableAutoMode の別名のため登録しない。
     {
         key: 'permissionsDefaultMode',
         path: 'permissions.defaultMode',
         group: 'permissions',
         type: 'string',
-        choices: ['default', 'acceptEdits', 'plan', 'dontAsk', 'bypassPermissions'],
+        choices: ['default', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions', 'manual'],
         defaultValue: 'default',
     },
     {
@@ -495,6 +555,12 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'string',
         choices: ['disable'],
     },
+    {
+        key: 'permissionsSkipDangerousModePermissionPrompt',
+        path: 'permissions.skipDangerousModePermissionPrompt',
+        group: 'permissions',
+        type: 'boolean',
+    },
     { key: 'permissionsAllow', path: 'permissions.allow', group: 'permissions', type: 'directEdit' },
     { key: 'permissionsAsk', path: 'permissions.ask', group: 'permissions', type: 'directEdit' },
     { key: 'permissionsDeny', path: 'permissions.deny', group: 'permissions', type: 'directEdit' },
@@ -503,13 +569,6 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'permissions.additionalDirectories',
         group: 'permissions',
         type: 'directEdit',
-    },
-    {
-        key: 'permissionsDisableAutoMode',
-        path: 'permissions.disableAutoMode',
-        group: 'permissions',
-        type: 'string',
-        choices: ['disable'],
     },
 
     // === サンドボックス（sandbox オブジェクト内の定義済みキー） ===
@@ -582,6 +641,34 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         min: 1,
         max: 65535,
         integer: true,
+    },
+    {
+        key: 'sandboxNetworkStrictAllowlist',
+        path: 'sandbox.network.strictAllowlist',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'sandboxNetworkAllowAllUnixSockets',
+        path: 'sandbox.network.allowAllUnixSockets',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'sandboxNetworkAllowLocalBinding',
+        path: 'sandbox.network.allowLocalBinding',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'sandboxCredentialsAllowPlaintextInject',
+        path: 'sandbox.credentials.allowPlaintextInject',
+        group: 'sandbox',
+        type: 'boolean',
+        defaultOn: false,
     },
     { key: 'sandbox', path: 'sandbox', group: 'sandbox', type: 'directEdit' },
 

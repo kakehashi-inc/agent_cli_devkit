@@ -283,6 +283,22 @@ export default {
                 label: '起動時 Tips（cli.show_tips）',
                 desc: '起動時のヒント表示を有効にします。',
             },
+            cliMinimumVersion: {
+                label: '更新の下限バージョン（cli.minimum_version）',
+                desc: 'アップデーターがこのバージョンより古い版へ下げないようにします。起動自体は妨げません。',
+            },
+            cliMaximumVersion: {
+                label: '更新の上限バージョン（cli.maximum_version）',
+                desc: 'アップデーターがこのバージョンより新しい版を入れないようにします。',
+            },
+            cliRequiredMinimumVersion: {
+                label: '起動可能な下限バージョン（cli.required_minimum_version）',
+                desc: 'これより古いバージョンでは起動を拒否します。grok update と grok --version は使えます。',
+            },
+            cliRequiredMaximumVersion: {
+                label: '起動可能な上限バージョン（cli.required_maximum_version）',
+                desc: 'これより新しいバージョンでは起動を拒否します。grok update と grok --version は使えます。',
+            },
             hintsNewSessionWorktreeMode: {
                 label: '/new ワークツリー提案（hints.new_session_worktree_mode）',
                 desc: '/new 実行時に git ワークツリーの利用を提案するか。',
@@ -290,10 +306,6 @@ export default {
             hintsForkWorktreeMode: {
                 label: '/fork ワークツリー提案（hints.fork_worktree_mode）',
                 desc: '/fork 実行時に git ワークツリーの利用を提案するか。',
-            },
-            hintsProjectPickerDisabled: {
-                label: 'プロジェクト選択を省略（hints.project_picker_disabled）',
-                desc: 'プロジェクト選択ピッカーをスキップします。',
             },
             hintsMemoryModalFullscreen: {
                 label: 'メモリモーダル全画面（hints.memory_modal_fullscreen）',
@@ -479,6 +491,10 @@ export default {
                 label: '音声キャプチャ方式（ui.voice_capture_mode）',
                 desc: '音声入力の操作方式（トグル/長押し）を選びます。既定は hold です。',
             },
+            uiVoiceKeybindEnabled: {
+                label: '音声入力ショートカット（ui.voice_keybind_enabled）',
+                desc: 'Ctrl+Space / F8 での音声入力ショートカットを有効にします。無効にしても /voice からは使えます。既定は有効です。',
+            },
             uiVoiceSttLanguage: {
                 label: '音声入力言語（ui.voice_stt_language）',
                 desc: '音声入力（STT）の言語コードです（auto も可）。既定は en です。',
@@ -501,15 +517,15 @@ export default {
             },
             uiContextualHints: {
                 label: '個別ヒント制御（ui.contextual_hints）',
-                desc: '個別のヒント表示をオプトアウトするテーブルです。直接編集します。',
+                desc: 'ヒントの種類ごとに表示するかどうかを指定します。',
             },
             uiDisplayRefresh: {
                 label: 'ディスプレイ更新（ui.display_refresh）',
-                desc: 'ディスプレイのリフレッシュ探査・自動ケイデンス設定です。直接編集します。',
+                desc: '画面のリフレッシュレートを検出し、描画・スクロールの更新間隔を合わせる設定です。',
             },
             uiNotifications: {
                 label: 'ターミナル通知（ui.notifications）',
-                desc: 'ターミナル通知の方式・条件・イベント・フック等の設定です。直接編集します。',
+                desc: 'ターミナル通知の方式、発火条件、対象イベント、フックを設定します。',
             },
             featuresRemoteFetch: {
                 label: 'リモート設定取得（features.remote_fetch）',
@@ -546,6 +562,46 @@ export default {
             telemetryTraceUpload: {
                 label: 'トレース送信（telemetry.trace_upload）',
                 desc: '診断用のセッショントレースを xAI へアップロードできるようにします。',
+            },
+            telemetryMixpanelEnabled: {
+                label: 'Mixpanel 送信（telemetry.mixpanel_enabled）',
+                desc: 'Mixpanel へのプロダクト分析データ送信を有効にします。',
+            },
+            telemetryEventsUrl: {
+                label: 'イベント送信先（telemetry.events_url）',
+                desc: 'イベントを自社コレクターへ送る場合の送信先 URL。未設定なら既定の送信先を使います。',
+            },
+            telemetryEventsApiKey: {
+                label: 'イベント送信の認証キー（telemetry.events_api_key）',
+                desc: '自社コレクターが認証を要求する場合のトークン。',
+            },
+            telemetryOtelEnabled: {
+                label: '外部 OTEL 送信（telemetry.otel_enabled）',
+                desc: '自社の OTLP コレクターへ使用状況を送る外部 OpenTelemetry 連携を有効にします。',
+            },
+            telemetryOtelEndpoint: {
+                label: 'OTLP エンドポイント（telemetry.otel_endpoint）',
+                desc: '外部 OpenTelemetry の送信先ベース URL。',
+            },
+            telemetryOtelProtocol: {
+                label: 'OTLP プロトコル（telemetry.otel_protocol）',
+                desc: '外部 OpenTelemetry の送信プロトコル。',
+            },
+            telemetryOtelMetricsExporter: {
+                label: 'OTEL メトリクス出力（telemetry.otel_metrics_exporter）',
+                desc: 'メトリクスの出力先。otlp=コレクターへ送信、console=標準出力、none=送信しない。',
+            },
+            telemetryOtelLogsExporter: {
+                label: 'OTEL ログ出力（telemetry.otel_logs_exporter）',
+                desc: 'ログの出力先。otlp=コレクターへ送信、console=標準出力、none=送信しない。',
+            },
+            telemetryOtelLogUserPrompts: {
+                label: 'プロンプト本文を送信（telemetry.otel_log_user_prompts）',
+                desc: '外部 OpenTelemetry の送信内容に入力プロンプトの本文を含めます。',
+            },
+            telemetryOtelLogToolDetails: {
+                label: 'ツール詳細を送信（telemetry.otel_log_tool_details）',
+                desc: '外部 OpenTelemetry の送信内容にツール呼び出しの詳細を含めます。',
             },
             cliUseLeader: {
                 label: 'リーダープロセスを使用（cli.use_leader）',
@@ -641,7 +697,7 @@ export default {
             },
             skillsIgnore: {
                 label: 'スキャン除外パス（skills.ignore）',
-                desc: 'スキル探索から除外するパスの配列です。直接編集します。',
+                desc: 'スキル探索から除外するパスの一覧です。',
             },
             compatCursorSessions: {
                 label: 'Cursorセッション検出（compat.cursor.sessions）',

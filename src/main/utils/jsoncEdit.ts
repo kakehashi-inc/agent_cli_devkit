@@ -266,8 +266,7 @@ function resolveParent(text: string, path: string[]): { scan: ObjectScan; prop?:
 /** scan 対象オブジェクトへ新しいプロパティを追加する（複数行なら改行整形、1 行 JSON ならインライン）。 */
 function insertProperty(text: string, scan: ObjectScan, key: string, value: unknown): string {
     const parentIndent = lineLeadingWhitespace(text, scan.open);
-    const indent =
-        scan.properties.length > 0 ? lineIndentAt(text, scan.properties[0].keyStart) : `${parentIndent}  `;
+    const indent = scan.properties.length > 0 ? lineIndentAt(text, scan.properties[0].keyStart) : `${parentIndent}  `;
     const entry = `${indent}${JSON.stringify(key)}: ${formattedValue(value, indent)}`;
 
     if (scan.properties.length === 0) {

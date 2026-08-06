@@ -278,6 +278,10 @@ export default {
                 label: '自動コンパクト（autoCompactEnabled）',
                 desc: 'コンテキスト上限が近づいたとき会話を自動で要約圧縮します。',
             },
+            autoCompactWindow: {
+                label: '自動コンパクト閾値（autoCompactWindow）',
+                desc: '自動コンパクトを開始するコンテキスト量（トークン、100000〜1000000）。未設定ならモデルに応じた既定値を使います。',
+            },
             fileCheckpointingEnabled: {
                 label: 'ファイルチェックポイント（fileCheckpointingEnabled）',
                 desc: '/rewind で戻せるようファイル変更のスナップショットを保存します。',
@@ -301,6 +305,10 @@ export default {
             fastModePerSessionOptIn: {
                 label: '高速モードを毎回選択（fastModePerSessionOptIn）',
                 desc: '高速モードをセッション間で引き継がず、各セッションで /fast による明示的な有効化を求めます。',
+            },
+            switchModelsOnFlag: {
+                label: '警告時に自動でモデル切替（switchModelsOnFlag）',
+                desc: '安全性分類でリクエストが検出されたとき、代替モデルへ自動で切り替えて継続します。無効にすると一時停止して選択を求めます。既定は有効です。',
             },
             inputNeededNotifEnabled: {
                 label: '入力待ち通知（inputNeededNotifEnabled）',
@@ -398,6 +406,10 @@ export default {
                 label: 'Ultracodeキーワード（workflowKeywordTriggerEnabled）',
                 desc: 'プロンプト内の ultracode を動的ワークフローの起動語として扱います。既定は有効です。',
             },
+            workflowSizeGuideline: {
+                label: 'ワークフロー規模の目安（workflowSizeGuideline）',
+                desc: '動的ワークフローで目標とするエージェント数の目安。unrestricted=無制限、small / medium（既定）/ large の順に大きくなります。',
+            },
             disableWorkflows: {
                 label: 'ワークフローを無効化（disableWorkflows）',
                 desc: '動的ワークフローと同梱のワークフローコマンドを無効にします。既定は無効です。',
@@ -458,9 +470,29 @@ export default {
                 label: 'OTelヘッダー生成コマンド（otelHeadersHelper）',
                 desc: 'OpenTelemetry の動的ヘッダーを起動時と定期更新時に生成するスクリプトです。',
             },
+            processWrapper: {
+                label: 'プロセス起動ラッパー（processWrapper）',
+                desc: 'Claude Code が起動するバックグラウンドプロセスの前に差し込む企業向けランチャーコマンドです。',
+            },
             prUrlTemplate: {
                 label: 'PRリンク書式（prUrlTemplate）',
                 desc: 'PRバッジのURLテンプレートです。{host}、{owner}、{repo}、{number}、{url} を置換できます。',
+            },
+            forceLoginMethod: {
+                label: 'ログイン方法の限定（forceLoginMethod）',
+                desc: 'ログインできるアカウント種別を限定します。claudeai=Claude.ai、console=Claude Console、gateway=クラウドゲートウェイ。',
+            },
+            remoteDefaultEnvironmentId: {
+                label: '既定クラウド環境（remote.defaultEnvironmentId）',
+                desc: 'claude --cloud などで作成するクラウドセッションの既定環境 ID です。/remote-env で選ぶとここへ保存されます。',
+            },
+            worktreeBaseRef: {
+                label: 'Worktree分岐元（worktree.baseRef）',
+                desc: '新しい worktree の分岐元。fresh=origin の既定ブランチ（既定）、head=現在のローカル HEAD。',
+            },
+            worktreeBgIsolation: {
+                label: 'バックグラウンド分離（worktree.bgIsolation）',
+                desc: 'バックグラウンドセッションの分離方法。worktree=EnterWorktree まで本体の編集を禁止（既定）、none=作業コピーを直接編集。',
             },
             enableAllProjectMcpServers: {
                 label: '全プロジェクトMCPを承認（enableAllProjectMcpServers）',
@@ -468,7 +500,7 @@ export default {
             },
             enableArtifact: {
                 label: 'Artifactを有効化（enableArtifact）',
-                desc: 'ユーザー設定で Artifact ツールを明示的に有効または無効にします。管理側の disableArtifact が優先します。',
+                desc: 'Artifact ツールを明示的に有効または無効にします。disableArtifact を設定した場合はそちらが優先します。',
             },
             disableAutoMode: {
                 label: '自動モードを禁止（disableAutoMode）',
@@ -522,6 +554,10 @@ export default {
                 label: 'PR 帰属表記（attribution.pr）',
                 desc: 'プルリクエスト説明に付与する帰属表記。空文字を設定すると非表示になります。',
             },
+            attributionSessionUrl: {
+                label: 'セッションリンク付与（attribution.sessionUrl）',
+                desc: 'クラウドや Remote Control のセッションから実行したとき、claude.ai のセッションリンクをコミットと PR に付与します。既定は有効です。',
+            },
             autoModeClassifyAllShell: {
                 label: '全シェルを自動分類（autoMode.classifyAllShell）',
                 desc: 'すべての Bash / PowerShell コマンドを自動モード分類器に通します。',
@@ -552,11 +588,15 @@ export default {
             },
             permissionsDefaultMode: {
                 label: '既定の権限モード（permissions.defaultMode）',
-                desc: 'セッション開始時の権限モード。default=初回使用時に確認、acceptEdits=ファイル編集を自動承認、plan=プランモードで開始、dontAsk=確認を省略（明示的な拒否ルールは適用）、bypassPermissions=すべての権限確認をスキップ。',
+                desc: 'セッション開始時の権限モード。default=初回使用時に確認、acceptEdits=ファイル編集を自動承認、plan=プランモードで開始、auto=自動モードで開始、dontAsk=確認を省略（明示的な拒否ルールは適用）、bypassPermissions=すべての権限確認をスキップ、manual=default の別名。',
             },
             permissionsDisableBypassPermissionsMode: {
                 label: 'bypassPermissions の禁止（permissions.disableBypassPermissionsMode）',
-                desc: '"disable" を設定すると bypassPermissions モードを使用できなくします。管理ポリシーでの制限に使います。',
+                desc: '"disable" を設定すると bypassPermissions モードを使用できなくします。',
+            },
+            permissionsSkipDangerousModePermissionPrompt: {
+                label: 'bypassPermissions の確認を省略（permissions.skipDangerousModePermissionPrompt）',
+                desc: '--dangerously-skip-permissions や defaultMode: bypassPermissions で危険モードに入る際の確認画面を省略します。',
             },
             permissionsAllow: {
                 label: '許可ルール（permissions.allow）',
@@ -573,10 +613,6 @@ export default {
             permissionsAdditionalDirectories: {
                 label: '追加作業ディレクトリ（permissions.additionalDirectories）',
                 desc: '作業ディレクトリ以外にアクセスを許可するディレクトリの配列です。',
-            },
-            permissionsDisableAutoMode: {
-                label: '自動モードの禁止（permissions.disableAutoMode）',
-                desc: '"disable" を設定すると自動モードを使用できなくします。',
             },
             sandboxEnabled: {
                 label: 'サンドボックス有効化（sandbox.enabled）',
@@ -596,7 +632,7 @@ export default {
             },
             sandboxAllowAppleEvents: {
                 label: 'Apple Events 許可（sandbox.allowAppleEvents）',
-                desc: 'macOS の Apple Events 送信を許可します（user / managed / CLI 設定のみ有効）。',
+                desc: 'macOS の Apple Events 送信を許可します。サンドボックス内のコマンドが他アプリを起動できるようになります。',
             },
             sandboxEnableWeakerNetworkIsolation: {
                 label: '弱いネットワーク分離（sandbox.enableWeakerNetworkIsolation）',
@@ -608,7 +644,7 @@ export default {
             },
             sandboxFilesystemDisabled: {
                 label: 'ファイルシステム分離無効（sandbox.filesystem.disabled）',
-                desc: 'サンドボックスのファイルシステム分離を無効にします（v2.1.216 以降、user / managed / CLI のみ）。',
+                desc: 'サンドボックスのファイルシステム分離を無効にし、読み書きを制限しなくなります。ネットワーク分離は維持されます（v2.1.216 以降）。',
             },
             sandboxNetworkHttpProxyPort: {
                 label: 'HTTP プロキシポート（sandbox.network.httpProxyPort）',
@@ -617,6 +653,22 @@ export default {
             sandboxNetworkSocksProxyPort: {
                 label: 'SOCKS プロキシポート（sandbox.network.socksProxyPort）',
                 desc: 'サンドボックスのネットワーク分離が使う SOCKS プロキシのポート番号。',
+            },
+            sandboxNetworkStrictAllowlist: {
+                label: '許可ドメイン外を拒否（sandbox.network.strictAllowlist）',
+                desc: '許可リスト外のホストへの接続を確認せずに拒否します。既定は無効（確認を表示）です。',
+            },
+            sandboxNetworkAllowAllUnixSockets: {
+                label: 'Unix ソケットを全許可（sandbox.network.allowAllUnixSockets）',
+                desc: 'サンドボックス内からすべての Unix ソケット接続を許可します。Linux / WSL2 で Unix ソケットを使う唯一の方法です。既定は無効です。',
+            },
+            sandboxNetworkAllowLocalBinding: {
+                label: 'localhost バインド許可（sandbox.network.allowLocalBinding）',
+                desc: 'サンドボックス内から localhost のポートを待ち受けできるようにします（macOS のみ）。既定は無効です。',
+            },
+            sandboxCredentialsAllowPlaintextInject: {
+                label: '平文 HTTP への値差し込み許可（sandbox.credentials.allowPlaintextInject）',
+                desc: 'マスクした資格情報の実値を平文 HTTP リクエストにも差し込みます。信頼できる試験環境以外では無効のままにしてください。既定は無効です。',
             },
             sandbox: {
                 label: 'サンドボックス詳細（sandbox）',
@@ -680,19 +732,27 @@ export default {
             },
             enabledMcpjsonServers: {
                 label: '承認する.mcp.jsonサーバー（enabledMcpjsonServers）',
-                desc: '.mcp.json ファイルから承認する MCP サーバー名の一覧です。配列なので直接編集します。',
+                desc: '.mcp.json ファイルから承認する MCP サーバー名の一覧です。',
             },
             disabledMcpjsonServers: {
                 label: '拒否する.mcp.jsonサーバー（disabledMcpjsonServers）',
-                desc: '.mcp.json ファイルから拒否する MCP サーバー名の一覧です。配列なので直接編集します。',
+                desc: '.mcp.json ファイルから拒否する MCP サーバー名の一覧です。',
             },
             allowedHttpHookUrls: {
                 label: 'HTTPフック許可URL（allowedHttpHookUrls）',
-                desc: 'HTTP フックが対象にできる URL パターンの許可リストです（* をワイルドカードとして使用可）。配列なので直接編集します。',
+                desc: 'HTTP フックが対象にできる URL パターンの許可リストです。* をワイルドカードとして使えます。',
+            },
+            httpHookAllowedEnvVars: {
+                label: 'HTTPフック許可環境変数（httpHookAllowedEnvVars）',
+                desc: 'HTTP フックがヘッダーへ展開できる環境変数名の許可リストです。',
             },
             claudeMdExcludes: {
                 label: 'CLAUDE.md除外（claudeMdExcludes）',
-                desc: 'メモリ読み込み時にスキップする CLAUDE.md のグロブパターンまたは絶対パスです。配列なので直接編集します。',
+                desc: 'メモリ読み込み時にスキップする CLAUDE.md のグロブパターンまたは絶対パスです。',
+            },
+            forceLoginOrgUUID: {
+                label: 'ログイン許可組織（forceLoginOrgUUID）',
+                desc: 'ログインを許可する Anthropic 組織の UUID です。単一の文字列でも配列でも指定できます。',
             },
         },
     },

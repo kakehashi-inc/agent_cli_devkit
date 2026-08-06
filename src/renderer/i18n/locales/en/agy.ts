@@ -162,17 +162,17 @@ export default {
             },
             permissions: {
                 label: 'Permissions (permissions)',
-                desc: 'Array or object setting; edit the JSON directly.',
+                desc: 'Defines which tool actions are allowed without a prompt and which are denied.',
             },
             statusLine: {
                 label: 'Status line (statusLine)',
-                desc: 'Structured status-line setting; edit the JSON directly.',
+                desc: 'How the status line is produced and the command that prints its contents.',
             },
             title: {
                 label: 'Terminal title (title)',
-                desc: 'Structured terminal-title setting; edit the JSON directly.',
+                desc: 'How the window title is produced and the command that prints its contents.',
             },
-            hooks: { label: 'Hooks (hooks)', desc: 'Hook map; edit the JSON directly.' },
+            hooks: { label: 'Hooks (hooks)', desc: 'Scripts run automatically before and after operations.' },
         },
     },
     cleanup: {

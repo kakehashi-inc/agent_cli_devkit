@@ -144,6 +144,10 @@ export default {
                 label: 'Shell (shell)',
                 desc: 'Shell executable used for interactive terminals and agent shell tools.',
             },
+            layout: {
+                label: 'Layout (layout)',
+                desc: 'How the screen width is used: auto keeps a readable column, stretch fills the terminal width.',
+            },
             logLevel: { label: 'Log level (logLevel)', desc: 'Controls the detail level of OpenCode runtime logs.' },
             share: { label: 'Sharing (share)', desc: 'Manual, automatic, or disabled session sharing.' },
             snapshot: { label: 'Snapshots (snapshot)', desc: 'Tracks file changes so they can be reverted.' },
@@ -154,47 +158,62 @@ export default {
             },
             skills: {
                 label: 'Additional skill sources (skills)',
-                desc: 'Object containing extra folders or URLs; edit the file directly.',
+                desc: 'Extra folders and URLs to load skills from.',
             },
             references: {
                 label: 'References (references)',
-                desc: 'Map of named Git or local references; edit the file directly.',
+                desc: 'Git repositories or local directories you can refer to by name in a conversation.',
             },
-            provider: { label: 'Providers (provider)', desc: 'Provider map; edit the file directly.' },
-            agent: { label: 'Agents (agent)', desc: 'Inline agent map; edit the file directly.' },
-            permission: { label: 'Permissions (permission)', desc: 'Permission map; edit the file directly.' },
-            tools: { label: 'Tools (tools)', desc: 'Map of per-tool enable/disable flags; edit the file directly.' },
-            server: { label: 'Server (server)', desc: 'Server configuration object; edit the file directly.' },
-            command: { label: 'Commands (command)', desc: 'Custom command map; edit the file directly.' },
-            formatter: { label: 'Formatters (formatter)', desc: 'Boolean or formatter map; edit the file directly.' },
-            lsp: { label: 'LSP servers (lsp)', desc: 'Boolean or LSP map; edit the file directly.' },
-            compaction: { label: 'Compaction (compaction)', desc: 'Compaction object; edit the file directly.' },
-            watcher: { label: 'Watcher (watcher)', desc: 'File watcher object; edit the file directly.' },
+            provider: {
+                label: 'Providers (provider)',
+                desc: 'Custom provider definitions and model overrides for existing providers.',
+            },
+            agent: { label: 'Agents (agent)', desc: 'Per-agent model, prompt, and available tools.' },
+            permission: {
+                label: 'Permissions (permission)',
+                desc: 'Permission policy for every tool in one place, including pattern-based rules.',
+            },
+            tools: { label: 'Tools (tools)', desc: 'Turns individual tools on or off.' },
+            server: { label: 'Server (server)', desc: 'HTTP server host, port, CORS, and mDNS settings.' },
+            command: { label: 'Commands (command)', desc: 'Defines your own slash commands.' },
+            formatter: {
+                label: 'Formatters (formatter)',
+                desc: 'Enables and configures formatters. false disables them, true enables the built-ins, an object enables the built-ins with overrides.',
+            },
+            lsp: {
+                label: 'LSP servers (lsp)',
+                desc: 'Enables and configures LSP servers. false disables them, true enables the built-ins, an object enables the built-ins with overrides.',
+            },
+            compaction: {
+                label: 'Compaction (compaction)',
+                desc: 'How a long conversation is compacted automatically.',
+            },
+            watcher: { label: 'Watcher (watcher)', desc: 'File-watching behavior and the paths excluded from it.' },
             attachment: {
                 label: 'Attachments (attachment)',
-                desc: 'Attachment processing object; edit the file directly.',
+                desc: 'Automatic resizing and size limits for attached images.',
             },
             toolOutput: {
                 label: 'Tool output (tool_output)',
-                desc: 'Object containing output line and byte limits; edit the file directly.',
+                desc: 'Line and byte thresholds for truncating tool output. Anything beyond them is written to a file and only a preview is returned.',
             },
             mcp: { label: 'MCP servers (mcp)', desc: 'MCP server map; use MCP Management or direct edit.' },
             plugin: { label: 'npm plugins (plugin)', desc: 'Plugin array; use Plugin Manager or direct edit.' },
             instructions: {
                 label: 'Instructions (instructions)',
-                desc: 'Instruction-path array; edit the file directly.',
+                desc: 'Additional instruction files or patterns to load.',
             },
             disabledProviders: {
                 label: 'Disabled providers (disabled_providers)',
-                desc: 'Provider ID array; edit the file directly.',
+                desc: 'Providers to disable among those loaded automatically.',
             },
             enabledProviders: {
                 label: 'Enabled providers (enabled_providers)',
-                desc: 'Provider allowlist array; edit the file directly.',
+                desc: 'Enables only the listed providers. Any provider not listed is ignored.',
             },
             experimental: {
                 label: 'Experimental (experimental)',
-                desc: 'Unstable option map; edit the file directly.',
+                desc: 'Experimental options whose shape may still change.',
             },
             serverPort: {
                 label: 'Server port (server.port)',
@@ -214,7 +233,7 @@ export default {
             },
             serverCors: {
                 label: 'CORS origins (server.cors)',
-                desc: 'Additional origins to allow for CORS when browser-based clients call the HTTP server. Array; edit the file directly.',
+                desc: 'Additional origins allowed for CORS when browser-based clients call the HTTP server.',
             },
             attachmentImageAutoResize: {
                 label: 'Image auto-resize (attachment.image.auto_resize)',
@@ -342,11 +361,11 @@ export default {
             },
             experimentalPrimaryTools: {
                 label: 'Primary-only tools (experimental.primary_tools)',
-                desc: 'Tools available only to primary agents. Experimental; array, edit the file directly.',
+                desc: 'Restricts which tools only primary agents can use. Experimental.',
             },
             experimentalPolicies: {
                 label: 'Policies (experimental.policies)',
-                desc: 'Allow/deny policies for resources (currently used to control provider usage). Object array; edit the file directly.',
+                desc: 'Allow and deny policies for resources, currently used to control provider usage.',
             },
         },
     },

@@ -79,8 +79,7 @@ export function withoutEmptyObjects(value: unknown): unknown {
             normalized &&
             typeof normalized === 'object' &&
             !Array.isArray(normalized) &&
-            (Object.getPrototypeOf(normalized) === Object.prototype ||
-                Object.getPrototypeOf(normalized) === null) &&
+            (Object.getPrototypeOf(normalized) === Object.prototype || Object.getPrototypeOf(normalized) === null) &&
             Object.keys(normalized).length === 0
         ) {
             continue;

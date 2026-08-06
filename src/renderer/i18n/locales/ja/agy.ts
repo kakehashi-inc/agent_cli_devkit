@@ -155,13 +155,19 @@ export default {
                 label: 'G1 クレジット（useG1Credits）',
                 desc: '対応アカウントで G1 クレジットを使用します。',
             },
-            permissions: { label: '権限定義（permissions）', desc: '配列・オブジェクトのため JSON を直接編集します。' },
+            permissions: {
+                label: '権限定義（permissions）',
+                desc: 'ツールごとに確認なしで許可する操作と拒否する操作を定義します。',
+            },
             statusLine: {
                 label: 'ステータスライン（statusLine）',
-                desc: '構造化設定のため JSON を直接編集します。',
+                desc: 'ステータスラインの生成方式と、表示内容を出力するコマンドを指定します。',
             },
-            title: { label: 'ターミナルタイトル（title）', desc: '構造化設定のため JSON を直接編集します。' },
-            hooks: { label: 'Hooks（hooks）', desc: 'マップ設定のため JSON を直接編集します。' },
+            title: {
+                label: 'ターミナルタイトル（title）',
+                desc: 'ウィンドウタイトルの生成方式と、表示内容を出力するコマンドを指定します。',
+            },
+            hooks: { label: 'Hooks（hooks）', desc: '処理の前後に自動実行するスクリプトを定義します。' },
         },
     },
     cleanup: {

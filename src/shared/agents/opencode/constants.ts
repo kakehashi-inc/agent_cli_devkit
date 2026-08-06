@@ -104,6 +104,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultValue: 1,
     },
     { key: 'username', path: 'username', group: 'behavior', type: 'string' },
+    { key: 'layout', path: 'layout', group: 'behavior', type: 'string', choices: ['auto', 'stretch'] },
     { key: 'shell', path: 'shell', group: 'behavior', type: 'string', allowCustom: true },
     {
         key: 'logLevel',

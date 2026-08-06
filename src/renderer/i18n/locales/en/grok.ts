@@ -281,6 +281,22 @@ export default {
                 label: 'Startup tips (cli.show_tips)',
                 desc: 'Shows tips at startup.',
             },
+            cliMinimumVersion: {
+                label: 'Update floor version (cli.minimum_version)',
+                desc: 'Keeps the updater from downgrading below this version. It never blocks startup.',
+            },
+            cliMaximumVersion: {
+                label: 'Update ceiling version (cli.maximum_version)',
+                desc: 'Keeps the updater from installing above this version.',
+            },
+            cliRequiredMinimumVersion: {
+                label: 'Required floor version (cli.required_minimum_version)',
+                desc: 'Refuses to start below this version. grok update and grok --version keep working.',
+            },
+            cliRequiredMaximumVersion: {
+                label: 'Required ceiling version (cli.required_maximum_version)',
+                desc: 'Refuses to start above this version. grok update and grok --version keep working.',
+            },
             hintsNewSessionWorktreeMode: {
                 label: '/new worktree hint (hints.new_session_worktree_mode)',
                 desc: 'Whether /new suggests using a git worktree.',
@@ -288,10 +304,6 @@ export default {
             hintsForkWorktreeMode: {
                 label: '/fork worktree hint (hints.fork_worktree_mode)',
                 desc: 'Whether /fork suggests using a git worktree.',
-            },
-            hintsProjectPickerDisabled: {
-                label: 'Skip project picker (hints.project_picker_disabled)',
-                desc: 'Skips the project picker.',
             },
             hintsMemoryModalFullscreen: {
                 label: 'Memory modal fullscreen (hints.memory_modal_fullscreen)',
@@ -477,6 +489,10 @@ export default {
                 label: 'Voice capture mode (ui.voice_capture_mode)',
                 desc: 'Voice input capture style (toggle or hold). Default: hold.',
             },
+            uiVoiceKeybindEnabled: {
+                label: 'Voice shortcut (ui.voice_keybind_enabled)',
+                desc: 'Enables the Ctrl+Space / F8 voice dictation shortcut. /voice still works when off. Default: on.',
+            },
             uiVoiceSttLanguage: {
                 label: 'Voice input language (ui.voice_stt_language)',
                 desc: 'Speech-to-text language code (auto is allowed). Default: en.',
@@ -544,6 +560,46 @@ export default {
             telemetryTraceUpload: {
                 label: 'Trace upload (telemetry.trace_upload)',
                 desc: 'Allows diagnostic session traces to be uploaded to xAI.',
+            },
+            telemetryMixpanelEnabled: {
+                label: 'Mixpanel analytics (telemetry.mixpanel_enabled)',
+                desc: 'Enables product analytics sent to Mixpanel.',
+            },
+            telemetryEventsUrl: {
+                label: 'Event collector URL (telemetry.events_url)',
+                desc: 'Destination for telemetry events when sending them to your own collector. Uses the built-in endpoint when unset.',
+            },
+            telemetryEventsApiKey: {
+                label: 'Event collector token (telemetry.events_api_key)',
+                desc: 'Token used when your own collector requires authentication.',
+            },
+            telemetryOtelEnabled: {
+                label: 'External OTEL stream (telemetry.otel_enabled)',
+                desc: 'Enables the external OpenTelemetry stream that ships usage data to your own OTLP collector.',
+            },
+            telemetryOtelEndpoint: {
+                label: 'OTLP endpoint (telemetry.otel_endpoint)',
+                desc: 'Base endpoint URL for the external OpenTelemetry stream.',
+            },
+            telemetryOtelProtocol: {
+                label: 'OTLP protocol (telemetry.otel_protocol)',
+                desc: 'Transport protocol for the external OpenTelemetry stream.',
+            },
+            telemetryOtelMetricsExporter: {
+                label: 'OTEL metrics exporter (telemetry.otel_metrics_exporter)',
+                desc: 'Where metrics go: otlp sends to the collector, console prints them, none disables them.',
+            },
+            telemetryOtelLogsExporter: {
+                label: 'OTEL logs exporter (telemetry.otel_logs_exporter)',
+                desc: 'Where logs go: otlp sends to the collector, console prints them, none disables them.',
+            },
+            telemetryOtelLogUserPrompts: {
+                label: 'Include prompt text (telemetry.otel_log_user_prompts)',
+                desc: 'Includes the text of user prompts in the external OpenTelemetry stream.',
+            },
+            telemetryOtelLogToolDetails: {
+                label: 'Include tool details (telemetry.otel_log_tool_details)',
+                desc: 'Includes tool-call details in the external OpenTelemetry stream.',
             },
             cliUseLeader: {
                 label: 'Use leader process (cli.use_leader)',
@@ -639,7 +695,7 @@ export default {
             },
             skillsIgnore: {
                 label: 'Scan-ignore paths (skills.ignore)',
-                desc: 'Paths excluded from skill discovery. Array; edit the file directly.',
+                desc: 'Paths excluded from skill discovery.',
             },
             compatCursorSessions: {
                 label: 'Detect Cursor sessions (compat.cursor.sessions)',
