@@ -3,6 +3,7 @@ import { homedir } from 'os';
 import { join, dirname } from 'path';
 import { AgentEnvironment } from '../../../../shared/agents/types';
 import { recursiveDirStats, type DirStats } from '../../../utils/fsSize';
+import { applyMtime } from '../../../utils/fileTime';
 import { WslDetector } from './WslDetector';
 
 /**
@@ -215,6 +216,32 @@ export class HomeFs {
             this.distro,
             `mkdir -p ${this.shellQuote(this.dirnamePosix(lp))} && printf %s ${this.shellQuote(b64)} | base64 -d > ${this.shellQuote(lp)}`
         );
+    }
+
+    /**
+     * ファイルの更新日時（mtime）を設定する。取り込み元の日時を引き継ぐために使う。
+     * 日時の引き継ぎは付加的な処理のため、失敗しても例外は投げない。
+     */
+    async setMtime(relPath: string, mtimeMs: number): Promise<void> {
+        if (!Number.isFinite(mtimeMs) || mtimeMs <= 0) {
+            return;
+        }
+        const abs = await this.resolveAbs(relPath);
+        if (abs !== null) {
+            applyMtime(abs, mtimeMs);
+            return;
+        }
+        // コマンドモード: touch -d @<エポック秒> で設定する（GNU coreutils）。
+        const lp = await this.linuxPath(relPath);
+        const epoch = (mtimeMs / 1000).toFixed(3);
+        try {
+            await this.detector.runInDistro(
+                this.distro,
+                `touch -m -d @${this.shellQuote(epoch)} ${this.shellQuote(lp)}`
+            );
+        } catch (error) {
+            console.warn(`Failed to set mtime of ${lp}:`, error);
+        }
     }
 
     async deleteFile(relPath: string): Promise<void> {

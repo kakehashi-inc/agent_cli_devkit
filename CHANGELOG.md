@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-08-13
+
+### Changed
+
+- Downloaded agent and skill archives are now named with the kind first — skills_claude.zip instead of claude_skills.zip — so they group together by kind in a file listing. When you download exactly one agent or skill, its name is appended (for example skills_claude_my-skill.zip), making single downloads easier to tell apart.
+
+### Fixed
+
+- Uploading an agent or skill no longer resets its last-modified date to the day of the upload. A ZIP is now expanded with the dates recorded inside it, and a single Markdown upload keeps the date of the file you picked, so the list shows when the agent or skill was actually last edited. ZIP archives downloaded from this app record local file times, so downloading and uploading again keeps the original dates (within the 2-second precision of the ZIP format).
+
 ## [0.6.1] - 2026-08-06
 
 ### Added

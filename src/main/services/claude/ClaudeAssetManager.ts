@@ -24,7 +24,9 @@ import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { GitRunner } from '../common/git/GitRunner';
 import { revealAssetPath } from '../common/assets/revealAssetPath';
+import { assetArchiveFileName } from '../common/assets/archiveFileName';
 import { parseFrontmatter } from '../../utils/frontmatter';
+import { applyMtime, fileMtimeMs, zipEntryMtimeMs, zipArchiveOptions } from '../../utils/fileTime';
 import { recursiveDirStats } from '../../utils/fsSize';
 
 // agents/ サブディレクトリを再帰探索する深さの上限（暴走防止）。
@@ -250,8 +252,12 @@ export class ClaudeAssetManager {
             return { ok: false, message: 'no-selection' };
         }
 
-        const distroSuffix = env.kind === 'wsl' && env.distro ? `-${env.distro}` : '';
-        const defaultName = `claude_${kind}${distroSuffix}.zip`;
+        const defaultName = assetArchiveFileName({
+            kind,
+            agentId: 'claude',
+            distro: env.kind === 'wsl' ? env.distro : undefined,
+            relPaths: safe,
+        });
 
         const saveResult = window
             ? await dialog.showSaveDialog(window, {
@@ -284,7 +290,7 @@ export class ClaudeAssetManager {
     private zipEntries(parentReal: string, relPaths: string[], kind: AssetKind, destZip: string): Promise<void> {
         return new Promise((resolve, reject) => {
             const output = createWriteStream(destZip);
-            const archive = archiver('zip', { zlib: { level: 9 } });
+            const archive = archiver('zip', zipArchiveOptions());
             output.on('close', () => resolve());
             output.on('error', reject);
             archive.on('error', reject);
@@ -458,6 +464,9 @@ export class ClaudeAssetManager {
             return { ok: false, message: 'invalid-md' };
         }
 
+        // 取り込み元 md の更新日時。配置後のファイルへ引き継ぐ（アップロード日にしない）。
+        const srcMtimeMs = fileMtimeMs(mdPath);
+
         try {
             if (kind === 'skills') {
                 const dirRel = `${parentRel}/${target.name}`;
@@ -465,12 +474,18 @@ export class ClaudeAssetManager {
                     await fs.removeDir(dirRel);
                 }
                 await fs.writeText(`${parentRel}/${target.relPath}`, content);
+                if (srcMtimeMs !== null) {
+                    await fs.setMtime(`${parentRel}/${target.relPath}`, srcMtimeMs);
+                }
             } else {
                 const fileRel = `${parentRel}/${target.relPath}`;
                 if (overwrite && (await fs.exists(fileRel))) {
                     await fs.deleteFile(fileRel);
                 }
                 await fs.writeText(fileRel, content);
+                if (srcMtimeMs !== null) {
+                    await fs.setMtime(fileRel, srcMtimeMs);
+                }
             }
             return { ok: true, importedCount: 1 };
         } catch (error) {
@@ -748,7 +763,7 @@ export class ClaudeAssetManager {
     private zipDirectories(dirs: { abs: string; name: string }[], destZip: string): Promise<void> {
         return new Promise((resolve, reject) => {
             const output = createWriteStream(destZip);
-            const archive = archiver('zip', { zlib: { level: 9 } });
+            const archive = archiver('zip', zipArchiveOptions());
             output.on('close', () => resolve());
             output.on('error', reject);
             archive.on('error', reject);
@@ -812,16 +827,24 @@ export class ClaudeAssetManager {
      * destDir は実 OS パス（native 絶対パス / WSL UNC パス）。
      */
     private extractZipTo(zip: AdmZip, destDir: string): void {
+        // ディレクトリの日時はファイル書き込みで変わるため、全ファイル展開後にまとめて適用する。
+        const dirs: { path: string; mtimeMs: number | null }[] = [];
         for (const entry of zip.getEntries()) {
             const rel = entry.entryName.replace(/\\/g, '/');
             // join はプラットフォーム区切りに正規化する（Windows=\ なので UNC パスにも正しく連結される）。
             const outPath = join(destDir, rel);
             if (entry.isDirectory) {
                 mkdirSync(outPath, { recursive: true });
+                dirs.push({ path: outPath, mtimeMs: zipEntryMtimeMs(entry) });
                 continue;
             }
             mkdirSync(dirname(outPath), { recursive: true });
             writeFileSync(outPath, entry.getData());
+            // ZIP に記録された更新日時を引き継ぐ（展開日ではなく元の日時を維持する）。
+            applyMtime(outPath, zipEntryMtimeMs(entry));
+        }
+        for (const dir of dirs) {
+            applyMtime(dir.path, dir.mtimeMs);
         }
     }
 

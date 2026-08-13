@@ -12,7 +12,9 @@ import type {
     OSType,
 } from '../../../../shared/agents/types';
 import { parseFrontmatter } from '../../../utils/frontmatter';
+import { applyMtime, fileMtimeMs, zipEntryMtimeMs, zipArchiveOptions } from '../../../utils/fileTime';
 import { revealAssetPath } from './revealAssetPath';
+import { assetArchiveFileName } from './archiveFileName';
 import { HomeFs } from '../wsl/HomeFs';
 import { WslDetector } from '../wsl/WslDetector';
 
@@ -179,9 +181,13 @@ export class MarkdownAssetManager {
         if (parent === null) return { ok: false, message: 'unavailable' };
         const safe = relPaths.filter(path => !this.unsafeRelPath(path));
         if (safe.length === 0) return { ok: false, message: 'no-selection' };
-        const suffix = env.kind === 'wsl' && env.distro ? `-${env.distro}` : '';
         const options = {
-            defaultPath: `${this.options.id}_${kind}${suffix}.zip`,
+            defaultPath: assetArchiveFileName({
+                kind,
+                agentId: this.options.id,
+                distro: env.kind === 'wsl' ? env.distro : undefined,
+                relPaths: safe,
+            }),
             filters: [{ name: 'ZIP Archives', extensions: ['zip'] }],
         };
         const result = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
@@ -189,7 +195,7 @@ export class MarkdownAssetManager {
         try {
             await new Promise<void>((resolve, reject) => {
                 const output = createWriteStream(result.filePath as string);
-                const archive = archiver('zip', { zlib: { level: 9 } });
+                const archive = archiver('zip', zipArchiveOptions());
                 output.on('close', resolve);
                 output.on('error', reject);
                 archive.on('error', reject);
@@ -284,9 +290,12 @@ export class MarkdownAssetManager {
         const fs = this.fsFor(env);
         const rel = `${this.parent(kind)}/${target.relPath}`;
         if ((await fs.exists(rel)) && !overwrite) return { ok: false, message: 'conflict' };
+        // 取り込み元ファイルの更新日時。配置後のファイルへ引き継ぐ（アップロード日にしない）。
+        const srcMtimeMs = fileMtimeMs(source);
         try {
             if (overwrite && this.isDirectoryAsset(kind)) await fs.removeDir(`${this.parent(kind)}/${target.name}`);
             await fs.writeText(rel, readFileSync(source, 'utf8'));
+            if (srcMtimeMs !== null) await fs.setMtime(rel, srcMtimeMs);
             return { ok: true, importedCount: 1 };
         } catch (error) {
             console.error(`Failed to upload markdown asset (${JSON.stringify(env)}, ${kind}):`, error);
@@ -317,17 +326,24 @@ export class MarkdownAssetManager {
             }
             mkdirSync(parent, { recursive: true });
             const allowed = new Set(this.zipTargets(zip, kind));
+            // ディレクトリの日時はファイル書き込みで変わるため、全ファイル展開後にまとめて適用する。
+            const dirs: { path: string; mtimeMs: number | null }[] = [];
             for (const entry of zip.getEntries()) {
                 const rel = entry.entryName.replace(/\\/g, '/');
                 const top = this.isDirectoryAsset(kind) ? rel.split('/')[0] : rel;
                 if (!allowed.has(top)) continue;
                 const output = join(parent, rel);
-                if (entry.isDirectory) mkdirSync(output, { recursive: true });
-                else {
+                if (entry.isDirectory) {
+                    mkdirSync(output, { recursive: true });
+                    dirs.push({ path: output, mtimeMs: zipEntryMtimeMs(entry) });
+                } else {
                     mkdirSync(dirname(output), { recursive: true });
                     writeFileSync(output, entry.getData());
+                    // ZIP に記録された更新日時を引き継ぐ（展開日ではなく元の日時を維持する）。
+                    applyMtime(output, zipEntryMtimeMs(entry));
                 }
             }
+            for (const dir of dirs) applyMtime(dir.path, dir.mtimeMs);
             return { ok: true, importedCount: targets.length };
         } catch (error) {
             console.error(`Failed to upload asset archive (${JSON.stringify(env)}, ${kind}):`, error);
