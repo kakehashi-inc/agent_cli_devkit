@@ -6,17 +6,22 @@ export default {
         settings: 'OpenCode 設定',
         cleanup: 'OpenCode クリーンアップ',
     },
+    noEnvironment:
+        'OpenCode 2 が見つかりません。Windows または WSL で opencode2 コマンドを使えるように OpenCode 2 を導入してから、「再取得」を押してください。導入した直後に見つからない場合は、アプリの再起動が必要なことがあります。',
     dashboard: {
-        mcpDesc: 'OpenCode のグローバル MCP サーバーを有効化/無効化/並べ替えします。',
+        mcpDesc: 'OpenCode のグローバル設定にある MCP サーバー（mcp.servers）を有効化/無効化/並べ替えします。',
         assetsDesc: 'OpenCode 自身のグローバル設定ディレクトリ配下だけでエージェントとスキルを管理します。',
-        pluginsDesc: 'グローバル npm プラグインとローカル JavaScript・TypeScript プラグインを管理します。',
-        settingsDesc: 'JSONC コメントを保持して OpenCode のサーバー・ランタイム設定を編集します。',
-        cleanupDesc: 'OpenCode のキャッシュ、ログ、リポジトリ、ロック、セッション DB を選択して削除します。',
+        pluginsDesc:
+            'npm・Git のパッケージプラグインと、ローカルの TypeScript・JavaScript プラグイン（ファイル・フォルダー）を管理します。',
+        settingsDesc: 'JSONC コメントを保持して OpenCode のグローバル設定を編集します。',
+        cleanupDesc:
+            'OpenCode のキャッシュ、ログ、ツール出力、シェル出力、スナップショット、参照リポジトリ、入力履歴、セッション履歴を選択して削除します。',
     },
     mcp: {
         title: 'OpenCode MCP 管理',
         wslSection: 'WSL: {{distro}}',
-        notFound: '~/.config/opencode/opencode.json がありません。設定変更時に作成されます。',
+        notFound:
+            '~/.config/opencode/opencode.json と opencode.jsonc のどちらもありません。設定変更時に opencode.json を作成します。',
         configPath: '設定',
         disabledConfigPath: '無効',
         enabledServers: '有効なMCPサーバー',
@@ -33,13 +38,14 @@ export default {
     assets: {
         title: 'OpenCode Agent・Skill 管理',
         descriptionText:
-            'OpenCode のカスタムエージェント・スキルを一覧表示し、選択したものを ZIP でまとめてダウンロード、または ZIP／md をアップロードして取り込みます。OpenCode 自身の ~/.config/opencode/agents/*.md と ~/.config/opencode/skills/<name>/SKILL.md だけを管理し、互換用ディレクトリは対象外です。',
+            'OpenCode のカスタムエージェント・スキルを一覧表示し、選択したものを ZIP でまとめてダウンロード、または ZIP／md をアップロードして取り込みます。OpenCode 自身の ~/.config/opencode/agents/*.md と ~/.config/opencode/skills/<name>/SKILL.md だけを管理し、互換用ディレクトリ（~/.claude・~/.agents）は対象外です。',
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'エージェント',
         tabSkills: 'スキル',
         col: {
             name: '名前',
             description: '説明',
+            model: 'モデル',
         },
         columnFiles: 'ファイル数',
         columnLastModified: '最終更新日時',
@@ -82,17 +88,22 @@ export default {
     plugins: {
         title: 'OpenCode プラグイン管理',
         description:
-            'opencode.json の npm パッケージと ~/.config/opencode/plugins の .js・.ts ファイルを管理します。npm 依存関係は OpenCode が Bun で自動導入します。',
+            'opencode.json・opencode.jsonc の plugins 配列にあるパッケージ（npm・Git）とローカルパスの指定と、~/.config/opencode/plugins 直下の .ts・.js ファイルとプラグインフォルダーを管理します。有効化・無効化の指示（-ID・*・組み込み ID）は一覧に表示せず、そのまま保持します。ターミナル UI 専用のプラグイン（cli.json の plugins）は表示だけを行います。',
+        sourceHelp:
+            'npm パッケージ（@ でバージョン・タグ・範囲を指定可）または Git のパッケージ指定（github:owner/repo#ブランチ など）を opencode2 plugin add で導入し、plugins 設定へ追加します（ターミナル UI 専用のパッケージは cli.json へ追加されます）。ローカルの .ts / .js ファイルやプラグインフォルダー（package.json または index・server・tui の .ts / .js を含むもの）を絶対パスで指定すると plugins フォルダーへコピーします。',
+        tuiNote: 'ターミナル UI 専用（cli.json）。この画面では有効化・無効化・削除できません。',
+        disabledFileInvalid:
+            '無効化したプラグインの退避ファイル（~/.config/opencode/opencode-disabled-plugins.json）の形式が正しくないため、無効化中のプラグインを表示できません。このファイルを修正するか削除するまで、plugins 設定のプラグインの有効化・無効化・削除とパッケージの導入は行えません。',
     },
     settings: {
         title: 'OpenCode 設定',
         description:
-            '~/.config/opencode/opencode.json のスカラー値を編集します。配列・マップ・オブジェクト・複合型は直接編集のみで、変更値の外側にある JSONC コメントは保持します。',
+            '~/.config/opencode/opencode.json または opencode.jsonc（両方ある場合は OpenCode が値を優先する opencode.jsonc）のスカラー値を編集します。配列・マップ・オブジェクトと、モデル以外の複合型は直接編集のみで、変更値の外側にある JSONC コメントは保持します。ターミナル UI の設定（cli.json）とバックグラウンドサービスの設定（service.json）は対象外です。',
         wslSection: 'WSL: {{distro}}',
         item: '項目',
         value: '値',
         directEdit: '直接編集',
-        directTitle: 'opencode.json を直接編集',
+        directTitle: 'OpenCode の設定ファイルを直接編集',
         directDesc: '保存するとファイル全体を書き換えます。JSONC コメントと末尾カンマを使用できます。',
         directEditValue: 'ファイルを直接編集',
         unknownValue: '{{value}}（保存済みの値・現在の候補外）',
@@ -110,280 +121,161 @@ export default {
         verifyFailed:
             '編集結果の検証に失敗したため保存を中止しました。ファイルは変更されていません。この項目は「直接編集」で変更してください。',
         unavailable: 'この環境の設定へアクセスできません。',
+        notice: {
+            modelObjectForm:
+                'オブジェクト形式で設定されています。上の値は同じ内容を文字列表記（providerID/model#variant）で示したものです。値を変更して保存したときだけ文字列形式で上書きします。',
+            modelUnsupported:
+                'providerID・model・variant 以外のキーや想定外の値を含むため、表では編集できません（編集すると内容が失われます）。',
+            jsonAlsoExists:
+                'opencode.json と opencode.jsonc の両方があります。OpenCode は両方を読み込み、同じ設定は opencode.jsonc の値を優先するため、この画面と直接編集は opencode.jsonc を表示・変更します。opencode.json だけにある設定も OpenCode では有効ですが、この表には表示されません。',
+        },
         group: {
             model: 'モデル・エージェント',
             behavior: '動作',
-            server: 'サーバー',
-            attachment: '添付',
+            permissions: '権限・ポリシー',
+            mcp: 'MCP',
+            media: 'メディア',
             toolOutput: 'ツール出力',
             compaction: '会話圧縮',
-            permission: '権限',
+            extensions: '拡張',
             experimental: '実験設定',
-            advanced: '直接編集',
         },
         field: {
             model: {
                 label: 'モデル（model）',
-                desc: 'provider/model 形式の既定モデル ID です。任意の値も入力できます。',
-            },
-            smallModel: {
-                label: '軽量モデル（small_model）',
-                desc: 'タイトル生成などの軽量処理に使うモデルです。',
+                desc: 'セッションやエージェントでモデルを選んでいないときの既定モデルです。provider/model 形式で入力し、バリアントを指定するときは末尾に #variant を付けます（例: anthropic/claude-sonnet-4-5#high）。ファイルでは providerID・model・variant を持つオブジェクトでも指定できます。',
             },
             defaultAgent: {
                 label: '既定エージェント（default_agent）',
-                desc: 'エージェントが指定されていない場合に使うプライマリエージェントです。',
+                desc: 'セッションでエージェントを選んでいないときに使うプライマリエージェントです。存在しない・非表示・プライマリで使えない場合は build を使います。',
             },
-            subagentDepth: {
-                label: 'サブエージェント深度（subagent_depth）',
-                desc: 'サブエージェントの最大ネスト深度です。0 は起動を禁止します。',
+            agents: {
+                label: 'エージェント（agents）',
+                desc: '組み込みエージェントの上書きと、独自エージェント（モデル・システムプロンプト・モード・権限など）を定義します。',
             },
-            username: { label: 'ユーザー名（username）', desc: '対応画面で OpenCode が表示するユーザー名です。' },
+            providers: {
+                label: 'プロバイダー（providers）',
+                desc: 'プロバイダーの設定と、モデルの追加・上書き（リクエスト設定・ヘッダー・バリアント）を指定します。',
+            },
             shell: {
                 label: 'シェル（shell）',
-                desc: '対話ターミナルとエージェントのシェルツールで使う実行ファイルです。',
+                desc: 'ターミナルとシェルツールで使う既定のシェルです。',
             },
-            layout: {
-                label: 'レイアウト（layout）',
-                desc: '画面幅の使い方。auto は読みやすい幅に抑え、stretch は端末の幅いっぱいに広げます。',
+            update: {
+                label: '更新（update）',
+                desc: '更新の扱いです。disable は確認しない、notify はインストール前に通知、auto は自動でインストールします（実行中のサーバーは再起動しません）。グローバル設定でのみ有効です。',
             },
-            logLevel: { label: 'ログレベル（logLevel）', desc: 'OpenCode が記録するランタイムログの詳細度です。' },
-            share: { label: '共有（share）', desc: 'セッション共有を手動、自動、無効から選びます。' },
-            snapshot: {
-                label: 'スナップショット（snapshot）',
-                desc: 'ファイル変更を追跡し、元に戻せるようにします。',
+            snapshots: {
+                label: 'スナップショット（snapshots）',
+                desc: '元に戻す・巻き戻しに使うファイルのスナップショットを記録します。',
             },
-            autoupdate: {
-                label: '自動更新（autoupdate）',
-                desc: '起動時の自動更新の挙動。有効にすると自動更新し、「通知のみ」では更新を知らせるだけにします。',
-                choice: { enabled: '有効', disabled: '無効', notify: '通知のみ' },
+            worktreeDirectory: {
+                label: 'ワークツリーの作成先（worktree.directory）',
+                desc: '新しいワークツリーを作る親フォルダーです。相対パスはプロジェクトの元のチェックアウトから解決します。未設定時は OpenCode のデータフォルダー配下に作ります。',
             },
-            skills: {
-                label: '追加スキルソース（skills）',
-                desc: 'スキルを追加で読み込むフォルダーと URL を指定します。',
+            websearch: {
+                label: 'Web 検索（websearch）',
+                desc: 'Web 検索のプロバイダー（provider。random で自動選択）を指定します。false で Web 検索ツールを外します。',
             },
-            references: {
-                label: '参照定義（references）',
-                desc: '会話から名前で参照できる Git リポジトリやローカルディレクトリを登録します。',
+            warming: {
+                label: 'ウォーミング（warming）',
+                desc: '直近に使ったセッションを定期的な一時リクエストで温めておきます。true で既定の間隔、オブジェクトで prompt・interval・duration を指定します。既定は無効です。',
             },
-            provider: {
-                label: 'プロバイダー（provider）',
-                desc: '独自プロバイダーの定義と、既存プロバイダーのモデル上書きを設定します。',
-            },
-            agent: {
-                label: 'エージェント（agent）',
-                desc: 'エージェントごとのモデル、プロンプト、使えるツールを設定します。',
-            },
-            permission: {
-                label: '権限（permission）',
-                desc: 'ツールごとの許可ポリシーをまとめて設定します。パターン別ルールもここで指定します。',
-            },
-            tools: { label: 'ツール（tools）', desc: 'ツールごとに利用可否を切り替えます。' },
-            server: {
-                label: 'サーバー（server）',
-                desc: 'HTTP サーバーのホスト、ポート、CORS、mDNS をまとめて設定します。',
-            },
-            command: { label: 'コマンド（command）', desc: '独自のスラッシュコマンドを定義します。' },
             formatter: {
                 label: 'フォーマッター（formatter）',
-                desc: 'フォーマッターの有効化と個別設定。false で無効、true で組み込みを有効、オブジェクトで組み込みを有効にしたうえで上書きします。',
+                desc: 'write・edit・patch ツールで変更したファイルを整形します。true で使える組み込みフォーマッターを有効にし、オブジェクトでフォーマッターごとに設定します。',
             },
-            lsp: {
-                label: 'LSP サーバー（lsp）',
-                desc: 'LSP サーバーの有効化と個別設定。false で無効、true で組み込みを有効、オブジェクトで組み込みを有効にしたうえで上書きします。',
+            watcherIgnore: {
+                label: '監視の除外（watcher.ignore）',
+                desc: 'ファイル変更の監視から除外するファイル・フォルダーのパターンです。',
             },
-            compaction: {
-                label: '圧縮（compaction）',
-                desc: '会話が長くなったときの自動圧縮の動作をまとめて設定します。',
+            permissions: {
+                label: '権限ルール（permissions）',
+                desc: 'エージェントがツールを使う前に許可・拒否・確認するルール（action・resource・effect）を順に並べます。最後に一致したルールが適用されます。',
             },
-            watcher: {
-                label: 'ファイル監視（watcher）',
-                desc: 'ファイル変更監視の動作と、監視対象から除外するパスを設定します。',
+            policies: {
+                label: 'ポリシー（policies）',
+                desc: 'プロバイダー・ツール・連携の利用を許可・拒否するポリシーを順に並べます。',
             },
-            attachment: { label: '添付（attachment）', desc: '添付画像の自動リサイズや上限サイズを設定します。' },
-            toolOutput: {
-                label: 'ツール出力（tool_output）',
-                desc: 'ツール出力を切り詰める行数・バイト数のしきい値です。超えた分は別ファイルへ書き出し、プレビューだけを返します。',
+            mcpTimeoutStartup: {
+                label: '起動タイムアウト（mcp.timeout.startup）',
+                desc: 'MCP サーバーの接続と初期化を待つ時間（ミリ秒）です。サーバーごとの timeout で上書きできます。',
             },
-            mcp: { label: 'MCP サーバー（mcp）', desc: 'MCP 管理画面または直接編集で変更します。' },
-            plugin: { label: 'npm プラグイン（plugin）', desc: 'プラグイン管理画面または直接編集で変更します。' },
-            instructions: {
-                label: '指示ファイル（instructions）',
-                desc: '追加で読み込む指示ファイルのパスやパターンです。',
+            mcpTimeoutCatalog: {
+                label: '一覧取得タイムアウト（mcp.timeout.catalog）',
+                desc: 'ツール・プロンプト・リソースの一覧取得を待つ時間（ミリ秒）です。サーバーごとの timeout で上書きできます。',
             },
-            disabledProviders: {
-                label: '無効プロバイダー（disabled_providers）',
-                desc: '自動で読み込まれるプロバイダーのうち、無効にするものを指定します。',
+            mcpTimeoutExecution: {
+                label: '実行タイムアウト（mcp.timeout.execution）',
+                desc: 'ツール呼び出し・プロンプト取得・リソース読み取りを待つ時間（ミリ秒）です。サーバーごとの timeout で上書きできます。',
             },
-            enabledProviders: {
-                label: '有効プロバイダー（enabled_providers）',
-                desc: '指定したプロバイダーだけを有効にします。ここに無いプロバイダーは読み込まれません。',
+            mcpServers: { label: 'MCP サーバー（mcp.servers）', desc: 'MCP 管理画面または直接編集で変更します。' },
+            mediaImageAutoResize: {
+                label: '画像自動リサイズ（media.image.auto_resize）',
+                desc: '上限を超える画像を縮小します。無効にすると上限を超える画像を拒否します。',
             },
-            experimental: {
-                label: '実験設定（experimental）',
-                desc: '仕様が変わりうる実験的な設定をまとめたものです。',
+            mediaImageMaxWidth: {
+                label: '画像最大幅（media.image.max_width）',
+                desc: 'モデルへ送る画像の最大幅（ピクセル）です。',
             },
-            serverPort: {
-                label: 'サーバーポート（server.port）',
-                desc: 'ヘッドレスサーバーが待ち受ける TCP ポートです。1〜65535 の整数を指定します。',
+            mediaImageMaxHeight: {
+                label: '画像最大高さ（media.image.max_height）',
+                desc: 'モデルへ送る画像の最大高さ（ピクセル）です。',
             },
-            serverHostname: {
-                label: 'サーバーホスト名（server.hostname）',
-                desc: 'サーバーがバインドするホスト名です。既定は 0.0.0.0（全アドレス）です。',
-            },
-            serverMdns: {
-                label: 'mDNS 公開（server.mdns）',
-                desc: 'ローカルネットワークへ mDNS でサーバーを公開するかどうかです。',
-            },
-            serverMdnsDomain: {
-                label: 'mDNS ドメイン（server.mdnsDomain）',
-                desc: 'mDNS 公開時に使うローカルドメイン名です。',
-            },
-            serverCors: {
-                label: 'CORS 許可オリジン（server.cors）',
-                desc: 'ブラウザ系クライアントから HTTP サーバーへアクセスする際に CORS を許可する追加オリジンの一覧です。',
-            },
-            attachmentImageAutoResize: {
-                label: '画像自動リサイズ（attachment.image.auto_resize）',
-                desc: '添付画像を上限サイズに合わせて自動的に縮小します。',
-            },
-            attachmentImageMaxWidth: {
-                label: '画像最大幅（attachment.image.max_width）',
-                desc: '添付画像の最大幅（ピクセル）です。',
-            },
-            attachmentImageMaxHeight: {
-                label: '画像最大高さ（attachment.image.max_height）',
-                desc: '添付画像の最大高さ（ピクセル）です。',
-            },
-            attachmentImageMaxBase64Bytes: {
-                label: '画像 Base64 上限（attachment.image.max_base64_bytes）',
-                desc: 'Base64 エンコード後の添付画像の最大バイト数です。',
+            mediaImageMaxBase64Bytes: {
+                label: '画像 Base64 上限（media.image.max_base64_bytes）',
+                desc: 'Base64 エンコード後の画像の最大バイト数です。',
             },
             toolOutputMaxLines: {
                 label: 'ツール出力最大行数（tool_output.max_lines）',
-                desc: 'ツール出力として保持する最大行数です。超過分は切り詰めます。',
+                desc: 'ツール結果として残す最大行数です。超えた分は切り詰め、全文をファイルに保存します。',
             },
             toolOutputMaxBytes: {
                 label: 'ツール出力最大バイト数（tool_output.max_bytes）',
-                desc: 'ツール出力として保持する最大バイト数です。超過分は切り詰めます。',
+                desc: 'ツール結果として残す最大バイト数です。超えた分は切り詰め、全文をファイルに保存します。',
             },
             compactionAuto: {
                 label: '自動圧縮（compaction.auto）',
-                desc: 'コンテキストが上限に近づいたとき会話を自動的に圧縮します。',
+                desc: 'コンテキストが上限に近づいたとき会話を自動的に圧縮します。手動の圧縮は常に使えます。',
             },
-            compactionPrune: {
-                label: '圧縮時の刈り込み（compaction.prune）',
-                desc: '圧縮時に古いメッセージを削除して整理します。',
+            compactionKeepTokens: {
+                label: '保持トークン数（compaction.keep.tokens）',
+                desc: '圧縮時に要約と並べて残す直近の会話のおおよそのトークン数です。',
             },
-            compactionTailTurns: {
-                label: '保持ターン数（compaction.tail_turns）',
-                desc: '圧縮時にそのまま残す直近のやり取り数です。',
+            compactionBuffer: {
+                label: '空きトークン数（compaction.buffer）',
+                desc: 'モデルの上限より手前に空けておくトークン数です。大きいほど早く自動圧縮が始まります。未設定時は上限の 10% です。',
             },
-            compactionPreserveRecentTokens: {
-                label: '直近保持トークン数（compaction.preserve_recent_tokens）',
-                desc: '圧縮時に保持する直近トークンのおおよその量です。',
+            skills: {
+                label: '追加スキルソース（skills）',
+                desc: 'スキルを追加で探すフォルダーと HTTP カタログの URL です。',
             },
-            compactionReserved: {
-                label: '予約トークン数（compaction.reserved）',
-                desc: '圧縮の計算で確保しておくトークン量です。',
+            commands: {
+                label: 'コマンド（commands）',
+                desc: '名前付きのスラッシュコマンド（プロンプトのテンプレート）を定義します。',
             },
-            permissionRead: {
-                label: 'ファイル読み取り権限（permission.read）',
-                desc: 'read ツール（ファイル読み取り）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            references: {
+                label: '参照（references）',
+                desc: '会話から名前で参照できるローカルフォルダーや Git リポジトリを登録します。',
             },
-            permissionEdit: {
-                label: 'ファイル編集権限（permission.edit）',
-                desc: 'edit ツール（ファイル編集）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
+            plugins: { label: 'プラグイン（plugins）', desc: 'プラグイン管理画面または直接編集で変更します。' },
+            experimentalPortableShellScanner: {
+                label: 'ポータブルシェル解析（experimental.portable_shell_scanner）',
+                desc: 'シェルコマンドの権限判定に、実験的なポータブル版の解析器を使います。',
             },
-            permissionGlob: {
-                label: 'ファイル検索権限（permission.glob）',
-                desc: 'glob ツール（ファイル名検索）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionGrep: {
-                label: '本文検索権限（permission.grep）',
-                desc: 'grep ツール（本文検索）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionList: {
-                label: '一覧表示権限（permission.list）',
-                desc: 'list ツール（ディレクトリ一覧）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionBash: {
-                label: 'シェル実行権限（permission.bash）',
-                desc: 'bash ツール（シェルコマンド実行）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionTask: {
-                label: 'タスク起動権限（permission.task）',
-                desc: 'task ツール（サブエージェント起動）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionExternalDirectory: {
-                label: 'ワークスペース外アクセス権限（permission.external_directory）',
-                desc: 'ワークスペース外ディレクトリへのアクセスの許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionLsp: {
-                label: 'LSP 権限（permission.lsp）',
-                desc: 'lsp ツール（言語サーバー）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionSkill: {
-                label: 'スキル実行権限（permission.skill）',
-                desc: 'skill ツール（スキル実行）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionTodowrite: {
-                label: 'TODO 更新権限（permission.todowrite）',
-                desc: 'todowrite ツール（TODO 更新）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionQuestion: {
-                label: '質問権限（permission.question）',
-                desc: 'question ツール（ユーザーへの質問）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionWebfetch: {
-                label: 'Web 取得権限（permission.webfetch）',
-                desc: 'webfetch ツール（URL 取得）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionWebsearch: {
-                label: 'Web 検索権限（permission.websearch）',
-                desc: 'websearch ツール（Web 検索）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            permissionDoomLoop: {
-                label: '連続実行抑止権限（permission.doom_loop）',
-                desc: 'doom_loop（同一処理の連続実行の抑止）の許可ポリシー（ask/allow/deny）です。パターン別ルール（オブジェクト）を設定している場合は直接編集を使用してください。',
-            },
-            experimentalDisablePasteSummary: {
-                label: '貼り付け要約の無効化（experimental.disable_paste_summary）',
-                desc: '大きな貼り付けを要約表示する機能を無効にします。実験的な設定です。',
-            },
-            experimentalBatchTool: {
-                label: 'バッチツール（experimental.batch_tool）',
-                desc: '複数のツール呼び出しをまとめて実行する実験的機能を有効にします。',
-            },
-            experimentalOpenTelemetry: {
-                label: 'OpenTelemetry（experimental.openTelemetry）',
-                desc: 'OpenTelemetry によるトレース出力を有効にする実験的な設定です。',
-            },
-            experimentalContinueLoopOnDeny: {
-                label: '拒否時のループ継続（experimental.continue_loop_on_deny）',
-                desc: '権限拒否後もエージェントのループを継続する実験的な設定です。',
-            },
-            experimentalMcpTimeout: {
-                label: 'MCP タイムアウト（experimental.mcp_timeout）',
-                desc: 'MCP 呼び出しのタイムアウト（ミリ秒）です。実験的な設定です。',
-            },
-            experimentalPrimaryTools: {
-                label: 'プライマリ専用ツール（experimental.primary_tools）',
-                desc: 'プライマリエージェントだけが使えるツールを限定する一覧です。実験的な設定です。',
-            },
-            experimentalPolicies: {
-                label: 'ポリシー（experimental.policies）',
-                desc: 'リソースに対する許可・拒否ポリシーの一覧です。現状はプロバイダー利用の制御に使います。',
+            experimentalSubagentDepth: {
+                label: 'サブエージェント深度（experimental.subagent_depth）',
+                desc: 'サブエージェントの最大ネスト深度です。既定の 1 ではサブエージェントからさらにサブエージェントを起動できません。',
             },
         },
     },
     cleanup: {
         title: 'OpenCode クリーンアップ',
         description:
-            'OpenCode 公式の XDG ディレクトリだけから選択データを削除します。設定、エージェント、スキル、プラグイン、認証情報、モデル選択は対象外です。',
+            'OpenCode 公式の XDG ディレクトリから選択したデータを削除します。データベースファイルそのもの（資格情報・保存済みの権限・アカウントを含む）、設定、エージェント、スキル、プラグイン、ワークツリー、サービスの設定・登録は対象外です。',
         wslSection: 'WSL: {{distro}}',
-        inUseWarning:
-            'OpenCode を終了してから削除してください。使用中の DB やロックファイルはスキップされる場合があります。',
+        inUseNotice:
+            'OpenCode とバックグラウンドサービス（opencode2 service stop で停止）を終了してから削除してください。使用中のファイルはスキップされる場合があります。',
         noCandidates: '削除候補はありません',
         name: '項目',
         descriptionColumn: '説明',
@@ -399,14 +291,34 @@ export default {
         item: {
             cache: {
                 label: '~/.cache/opencode',
-                desc: 'ダウンロード済みの実行ファイル、パッケージ、モデルのキャッシュ。',
+                desc: 'ripgrep などのツール、パッケージプラグインの導入先、リモートスキルのキャッシュ、更新に備えて保持される実行ファイルのリンク。必要時に再取得され、パッケージプラグインは次回起動時に自動で再導入されます。',
             },
-            logs: { label: 'log', desc: 'OpenCode のランタイムログ。' },
-            repos: { label: 'repos', desc: 'OpenCode のリポジトリ作業データ。リポジトリ単位で選択できます。' },
-            database: { label: 'opencode.db', desc: 'セッションとメッセージのデータベース。' },
-            'database-wal': { label: 'opencode.db-wal', desc: 'データベースの WAL ファイル。' },
-            'database-shm': { label: 'opencode.db-shm', desc: 'データベースの共有メモリファイル。' },
-            locks: { label: 'locks', desc: 'OpenCode の状態ロックファイル。' },
+            logs: { label: 'log', desc: 'OpenCode のログと、CPU プロファイル・ヒープスナップショット。' },
+            'tool-output': {
+                label: 'tool-output',
+                desc: '切り詰められたツール結果の全文。7 日を過ぎたものは OpenCode も削除します。',
+            },
+            'shell-output': {
+                label: 'shell',
+                desc: 'シェルツールで実行したコマンドの出力（プロジェクト単位）。7 日を過ぎたものは OpenCode も削除します。',
+            },
+            snapshot: {
+                label: 'snapshot',
+                desc: '変更の取り消し・巻き戻しに使うファイルのスナップショット。プロジェクト単位で選択できます。削除すると過去の変更を巻き戻せなくなります。',
+            },
+            repos: {
+                label: 'repos',
+                desc: '参照（references）に登録した Git リポジトリのクローン。ホスト単位で選択できます。次に参照するときに再取得されます。',
+            },
+            'prompt-history': { label: 'prompt-history.jsonl', desc: 'ターミナル UI のプロンプト入力履歴。' },
+            frecency: {
+                label: 'frecency.jsonl',
+                desc: 'ターミナル UI でファイルの候補を並べる順序に使う利用履歴。',
+            },
+            sessions: {
+                label: 'sessions',
+                desc: 'OpenCode のセッション履歴（会話）。セッション履歴のデータベースがある環境で、画面を開いたときに OpenCode の CLI で一覧を取得し、削除できるセッションがある場合だけ表示します。セッション単位またはすべてを選択できます。OpenCode の CLI（opencode2 session delete）で削除し、サブセッションも一緒に消えます。データベース内のサインイン情報・保存済みの権限・アカウント情報は消えません。本人かサブセッションが直近 5 分以内に更新されたセッションは使用中の可能性があるため対象外です。',
+            },
         },
     },
 };

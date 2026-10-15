@@ -30,7 +30,6 @@ export const ASSET_PARENT_REL: Record<AssetKind, string> = {
 };
 
 // WSL distro に Codex CLI が導入されているかの判定コマンド（bash -lc で実行）。
-// 共通 WslDetector.getDistrosWithTest() に渡す。
 export const CODEX_WSL_CLI_TEST = `test -d ~/${CODEX_DIR}`;
 
 // ============================================================
@@ -100,8 +99,19 @@ export const CODEX_PLUGIN_CHANNELS = {
 // ヘッドレス実行する CLI コマンド名
 export const CODEX_CLI_COMMAND = 'codex';
 
-// OpenAI 組み込みマーケットプレイス（自動登録される。削除ボタンを無効化する）
-export const CODEX_BUILTIN_MARKETPLACES = ['openai-bundled', 'openai-primary-runtime', 'openai-curated'];
+// OpenAI 組み込みマーケットプレイス（自動登録される。削除ボタンを無効化する）。
+// openai-curated-remote は ChatGPT アカウントに紐づくリモートカタログで、
+// `plugin marketplace list` には現れずプラグイン一覧の marketplaceName にだけ現れる。
+export const CODEX_BUILTIN_MARKETPLACES = [
+    'openai-bundled',
+    'openai-primary-runtime',
+    'openai-curated',
+    'openai-curated-remote',
+];
+
+// リモートプラグインカタログのキャッシュ（~/.codex/cache/remote_plugin_catalog/*.json）。
+// カタログの説明・ホームページの補完に best-effort で使う。
+export const CODEX_REMOTE_PLUGIN_CATALOG_REL = `${CODEX_DIR}/cache/remote_plugin_catalog`;
 
 // GUI の機能出し分け。
 // - directInstall=false: `codex plugin add` は設定済みマーケットプレイスからのみ。
@@ -120,19 +130,78 @@ export const CODEX_PLUGIN_CAPABILITIES: PluginCapabilities = {
 // クリーンアップ候補
 // ============================================================
 
-// クリーンアップ候補（~/.codex 配下）。対象は履歴／キャッシュ／一時／ログ／セッションのみ。
-// config.toml / auth.json / agents / skills / prompts / AGENTS.md（設定・資産）や
-// *.sqlite（state/logs DB。稼働中ロック・破損リスク）は対象外。
+// スタンドアロン版 Codex のパッケージ領域（~/.codex/packages/standalone）。
+// releases/<version>-<target>/ に各バージョンの実体を置き、current（シンボリックリンク）が
+// 使用中のバージョンを指す。auto-update-version は自動更新で切り替え予定のバージョン名を持つ。
+const CODEX_STANDALONE_REL = `${CODEX_DIR}/packages/standalone`;
+export const CODEX_STANDALONE_CURRENT_REL = `${CODEX_STANDALONE_REL}/current`;
+export const CODEX_STANDALONE_AUTO_UPDATE_REL = `${CODEX_STANDALONE_REL}/auto-update-version`;
+
+// 起動中の Codex が補助コマンド（apply_patch など）を置く一時フォルダ（tmp/arg0/codex-arg0XXXXXX）。
+// 各フォルダ内の .lock を、そのフォルダを使うセッションが排他ロックで保持する。
+export const CODEX_ARG0_TEMP_REL = `${CODEX_DIR}/tmp/arg0`;
+// プラグイン同期の作業領域（.tmp/plugins-backup-XXXXXX・plugins-clone-XXXXXX）と、同期中に保持されるロック。
+export const CODEX_PLUGINS_SYNC_TEMP_REL = `${CODEX_DIR}/.tmp`;
+export const CODEX_PLUGINS_SYNC_LOCK_REL = `${CODEX_PLUGINS_SYNC_TEMP_REL}/plugins.sync.lock`;
+// Windows サンドボックス用にコピーされた実行ファイル（codex-command-runner-<version>.exe / codex.exe）。
+export const CODEX_SANDBOX_BIN_REL = `${CODEX_DIR}/.sandbox-bin`;
+// Windows サンドボックスの日別ログ（sandbox.YYYY-MM-DD.log）は .sandbox と ~/.codex 直下に出力される。
+export const CODEX_SANDBOX_DIR_REL = `${CODEX_DIR}/.sandbox`;
+
+// クリーンアップ候補（~/.codex 配下）。対象は履歴／キャッシュ／一時ファイル／ログ／セッションと、
+// スタンドアロン版・サンドボックス用の旧バージョン実体のみ。
+// config.toml / auth.json / hooks.json / agents / skills（.system を含む）/ plugins / rules /
+// memories / AGENTS.md（設定・資産）、*.sqlite（state/logs DB。稼働中ロック・破損リスク）は対象外。
+// tmp / .tmp / .sandbox / .sandbox-bin はディレクトリごとには扱わず、使用中でないと判定できる
+// 子要素だけを特別候補（CODEX_RESOLVED_CLEANUP_KEYS）として扱う。.tmp の同梱マーケットプレイス展開先、
+// .sandbox のセットアップ状態（setup_marker.json / deny_read_acl_state.json）、.sandbox-secrets は対象外。
 // デフォルトはすべてチェック OFF（ユーザーが明示的に選択する）。
 export const CLEANUP_CANDIDATES: CleanupCandidateSpec[] = [
     { key: 'sessions', defaultChecked: false, expandable: true, childKind: 'dir' },
+    {
+        key: 'archived-sessions',
+        defaultChecked: false,
+        expandable: true,
+        childKind: 'file',
+        path: 'archived_sessions',
+    },
+    { key: 'history', defaultChecked: false, kind: 'file', path: 'history.jsonl' },
+    { key: 'shell-snapshots', defaultChecked: false, path: 'shell_snapshots' },
     { key: 'cache', defaultChecked: false },
     { key: 'generated-images', defaultChecked: false, path: 'generated_images' },
-    { key: 'tmp', defaultChecked: false },
+    { key: 'tmp-arg0', defaultChecked: false, expandable: true, childKind: 'dir' },
+    { key: 'plugins-sync-temp', defaultChecked: false, expandable: true, childKind: 'dir' },
     { key: 'log', defaultChecked: false },
+    { key: 'sandbox-logs', defaultChecked: false, expandable: true, childKind: 'file' },
     { key: 'models-cache', defaultChecked: false, kind: 'file', path: 'models_cache.json' },
     { key: 'session-index', defaultChecked: false, kind: 'file', path: 'session_index.jsonl' },
+    { key: 'sandbox-bin-old', defaultChecked: false, expandable: true, childKind: 'file' },
+    {
+        key: 'standalone-old-releases',
+        defaultChecked: false,
+        expandable: true,
+        childKind: 'dir',
+        path: 'packages/standalone/releases',
+    },
 ];
+
+// スタンドアロン版の旧バージョン候補のキー。子要素は保護対象（使用中のバージョンなど）を除いたリリース
+// ディレクトリで、候補全体を選んでも releases ディレクトリ自体は残す。
+export const CLEANUP_OLD_RELEASES_KEY = 'standalone-old-releases';
+
+// 使用中でないと判定できる子要素だけを扱う特別候補のキー（子要素は候補ごとのリゾルバで特定する）。
+// - tmp-arg0: tmp/arg0 の codex-arg0XXXXXX のうち、中の .lock が保持されていないもの。
+// - plugins-sync-temp: .tmp の plugins-backup-XXXXXX / plugins-clone-XXXXXX のうち、同期ロックが
+//   保持されておらず 10 分以上更新されていないもの。
+// - sandbox-logs（Windows のみ）: ファイル名の日付（UTC）が 30 日以上前の sandbox.YYYY-MM-DD.log。
+// - sandbox-bin-old（Windows のみ）: 最新以外の codex-command-runner と、10 分以上更新されていない
+//   codex.exe のうち、書き込みで開ける（実行中でない）もの。
+export const CODEX_RESOLVED_CLEANUP_KEYS = {
+    ARG0_TEMP: 'tmp-arg0',
+    PLUGINS_SYNC_TEMP: 'plugins-sync-temp',
+    SANDBOX_LOGS: 'sandbox-logs',
+    SANDBOX_BIN_OLD: 'sandbox-bin-old',
+} as const;
 
 // 「その他のツール」クリーンアップ項目の registry（~/.codex 配下ではないもの）。
 // targetPath / requiresPath はすべて HOME 相対。
@@ -162,26 +231,32 @@ export const OTHER_CLEANUP_ITEMS: OtherCleanupItem[] = [
 // Codex 設定（config.toml）編集レジストリ
 // ============================================================
 
+// モデル ID の候補（model / review_model）。カスタムプロバイダのモデル ID も入力できる。
+const CODEX_MODEL_CHOICES = [
+    'gpt-6.1-sol',
+    'gpt-6-astra',
+    'gpt-6-sol',
+    'gpt-6-luna',
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna',
+];
+
+// 推論レベルの候補（公式リファレンスの例示値）。使えるレベルはモデルに依存する。
+const CODEX_REASONING_EFFORT_CHOICES = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+
 // config.toml の設定項目 registry。公式 config リファレンス準拠。
 // path はドット区切りキー（ネストは該当 [table] に書き込む）。配列・テーブルは directEdit として
 // 一覧へ表示するだけでテーブル保存から除外する。
 export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     // === モデル ===
+    // モデル候補は Codex のモデルカタログで一覧表示（visibility=list）されるモデル。
     {
         key: 'model',
         path: 'model',
         group: 'model',
         type: 'string',
-        choices: [
-            'gpt-5.6',
-            'gpt-5.6-sol',
-            'gpt-5.6-terra',
-            'gpt-5.6-luna',
-            'gpt-5.5',
-            'gpt-5.4',
-            'gpt-5.4-mini',
-            'gpt-5.3-codex-spark',
-        ],
+        choices: CODEX_MODEL_CHOICES,
         allowCustom: true,
     },
     {
@@ -189,17 +264,19 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'review_model',
         group: 'model',
         type: 'string',
-        choices: ['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
+        choices: CODEX_MODEL_CHOICES,
         allowCustom: true,
     },
     // model_provider は [model_providers.<id>] で定義した任意 ID を取るため choices で限定しない。既定は openai。
     { key: 'modelProvider', path: 'model_provider', group: 'model', type: 'string' },
+    // 推論レベルは選択中のモデルが提示する値を取るため、候補外の値も入力できるようにする。
     {
         key: 'modelReasoningEffort',
         path: 'model_reasoning_effort',
         group: 'model',
         type: 'string',
-        choices: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+        choices: CODEX_REASONING_EFFORT_CHOICES,
+        allowCustom: true,
     },
     {
         key: 'modelReasoningSummary',
@@ -227,7 +304,8 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'plan_mode_reasoning_effort',
         group: 'model',
         type: 'string',
-        choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+        choices: CODEX_REASONING_EFFORT_CHOICES,
+        allowCustom: true,
     },
     {
         key: 'modelAutoCompactTokenLimit',
@@ -305,13 +383,6 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['disabled', 'cached', 'indexed', 'live'],
         defaultValue: 'cached',
     },
-    {
-        key: 'personality',
-        path: 'personality',
-        group: 'security',
-        type: 'string',
-        choices: ['none', 'friendly', 'pragmatic'],
-    },
     { key: 'allowLoginShell', path: 'allow_login_shell', group: 'security', type: 'boolean', defaultOn: true },
     {
         key: 'approvalsReviewer',
@@ -350,19 +421,15 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['save-all', 'none'],
         defaultValue: 'save-all',
     },
-    { key: 'autoReviewPolicy', path: 'auto_review.policy', group: 'security', type: 'string' },
+    // auto_review の方針文は複数行の文字列（"""…"""）で書くことが多く、表では編集できないため直接編集とする。
+    { key: 'autoReviewPolicy', path: 'auto_review.policy', group: 'security', type: 'directEdit' },
+    { key: 'autoReviewExtraPolicy', path: 'auto_review.extra_policy', group: 'security', type: 'directEdit' },
     {
         key: 'windowsSandbox',
         path: 'windows.sandbox',
         group: 'security',
         type: 'string',
-        choices: ['unelevated', 'elevated'],
-    },
-    {
-        key: 'windowsSandboxPrivateDesktop',
-        path: 'windows.sandbox_private_desktop',
-        group: 'security',
-        type: 'boolean',
+        choices: ['mxc', 'elevated', 'unelevated'],
     },
     {
         key: 'sandboxWritableRoots',
@@ -417,6 +484,21 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     },
     { key: 'tuiRawOutputMode', path: 'tui.raw_output_mode', group: 'display', type: 'boolean', defaultOn: false },
     { key: 'tuiVimModeDefault', path: 'tui.vim_mode_default', group: 'display', type: 'boolean', defaultOn: false },
+    { key: 'tuiAutoRecap', path: 'tui.auto_recap', group: 'display', type: 'boolean', defaultOn: true },
+    {
+        key: 'tuiDisablePasteBurst',
+        path: 'tui.disable_paste_burst',
+        group: 'display',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'tuiShowServerVersionNotice',
+        path: 'tui.show_server_version_notice',
+        group: 'display',
+        type: 'boolean',
+        defaultOn: true,
+    },
     {
         key: 'noticeHideFullAccessWarning',
         path: 'notice.hide_full_access_warning',
@@ -448,7 +530,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'tuiNotifications', path: 'tui.notifications', group: 'display', type: 'directEdit' },
     { key: 'tuiStatusLine', path: 'tui.status_line', group: 'display', type: 'directEdit' },
     { key: 'tuiTerminalTitle', path: 'tui.terminal_title', group: 'display', type: 'directEdit' },
-    { key: 'tuiKeymap', path: 'tui.keymap', group: 'display', type: 'directEdit' },
+    // tui.model_availability_nux は起動時の案内表示の内部状態のため登録しない。
     {
         key: 'tuiResumeCwd',
         path: 'tui.resume_cwd',
@@ -456,7 +538,49 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'string',
         choices: ['current', 'session'],
     },
-    { key: 'tuiTheme', path: 'tui.theme', group: 'display', type: 'string', allowCustom: true, choices: [] },
+    // tui.theme の組み込みテーマ名（codex-rs/tui の BUILTIN_THEME_NAMES）。$CODEX_HOME/themes のカスタムテーマ名も
+    // 指定できるため候補外の入力を受け付ける。未設定時は端末の背景色で決まるため既定値を宣言しない。
+    {
+        key: 'tuiTheme',
+        path: 'tui.theme',
+        group: 'display',
+        type: 'string',
+        allowCustom: true,
+        choices: [
+            '1337',
+            'ansi',
+            'base16',
+            'base16-256',
+            'base16-eighties-dark',
+            'base16-mocha-dark',
+            'base16-ocean-dark',
+            'base16-ocean-light',
+            'catppuccin-frappe',
+            'catppuccin-latte',
+            'catppuccin-macchiato',
+            'catppuccin-mocha',
+            'coldark-cold',
+            'coldark-dark',
+            'dark-neon',
+            'dracula',
+            'github',
+            'gruvbox-dark',
+            'gruvbox-light',
+            'inspired-github',
+            'monokai-extended',
+            'monokai-extended-bright',
+            'monokai-extended-light',
+            'monokai-extended-origin',
+            'nord',
+            'one-half-dark',
+            'one-half-light',
+            'solarized-dark',
+            'solarized-light',
+            'sublime-snazzy',
+            'two-dark',
+            'zenburn',
+        ],
+    },
 
     // === データ ===
     { key: 'projectDocMaxBytes', path: 'project_doc_max_bytes', group: 'data', type: 'number', min: 0, integer: true },
@@ -468,10 +592,10 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: true,
     },
-    { key: 'disablePasteBurst', path: 'disable_paste_burst', group: 'data', type: 'boolean', defaultOn: false },
     { key: 'modelInstructionsFile', path: 'model_instructions_file', group: 'data', type: 'string' },
-    { key: 'developerInstructions', path: 'developer_instructions', group: 'data', type: 'string' },
-    { key: 'compactPrompt', path: 'compact_prompt', group: 'data', type: 'string' },
+    // 指示文・要約プロンプトは複数行の文字列（"""…"""）で書くことが多く、表では編集できないため直接編集とする。
+    { key: 'developerInstructions', path: 'developer_instructions', group: 'data', type: 'directEdit' },
+    { key: 'compactPrompt', path: 'compact_prompt', group: 'data', type: 'directEdit' },
     {
         key: 'experimentalCompactPromptFile',
         path: 'experimental_compact_prompt_file',
@@ -495,11 +619,12 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'cli_auth_credentials_store',
         group: 'data',
         type: 'string',
-        choices: ['file', 'keyring', 'auto'],
+        choices: ['file', 'keyring', 'auto', 'ephemeral'],
         defaultValue: 'file',
     },
     { key: 'chatgptBaseUrl', path: 'chatgpt_base_url', group: 'data', type: 'string' },
-    { key: 'forcedChatgptWorkspaceId', path: 'forced_chatgpt_workspace_id', group: 'data', type: 'string' },
+    // forced_chatgpt_workspace_id は文字列と文字列の配列のどちらも取る union 型のため直接編集とする。
+    { key: 'forcedChatgptWorkspaceId', path: 'forced_chatgpt_workspace_id', group: 'data', type: 'directEdit' },
     {
         key: 'forcedLoginMethod',
         path: 'forced_login_method',
@@ -525,6 +650,15 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         integer: true,
     },
     { key: 'mcpOauthCallbackUrl', path: 'mcp_oauth_callback_url', group: 'data', type: 'string' },
+    {
+        key: 'mcpOptionalStartupGraceMs',
+        path: 'mcp_optional_startup_grace_ms',
+        group: 'data',
+        type: 'number',
+        min: 0,
+        integer: true,
+        defaultValue: 1000,
+    },
     {
         key: 'windowsWslSetupAcknowledged',
         path: 'windows_wsl_setup_acknowledged',
@@ -552,7 +686,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'shell_environment_policy.ignore_default_excludes',
         group: 'data',
         type: 'boolean',
-        defaultOn: false,
+        defaultOn: true,
     },
     {
         key: 'shellEnvironmentExperimentalUseProfile',
@@ -568,29 +702,12 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'string',
         defaultValue: 'dev',
     },
-    {
-        key: 'otelMetricsExporter',
-        path: 'otel.metrics_exporter',
-        group: 'data',
-        type: 'string',
-        choices: ['none', 'statsig', 'otlp-http', 'otlp-grpc'],
-        defaultValue: 'statsig',
-    },
-    {
-        key: 'otelTraceExporter',
-        path: 'otel.trace_exporter',
-        group: 'data',
-        type: 'string',
-        choices: ['none', 'otlp-http', 'otlp-grpc'],
-    },
-    {
-        key: 'otelExporter',
-        path: 'otel.exporter',
-        group: 'data',
-        type: 'string',
-        choices: ['none', 'otlp-http', 'otlp-grpc'],
-    },
     { key: 'otelLogUserPrompt', path: 'otel.log_user_prompt', group: 'data', type: 'boolean' },
+    // otel の各エクスポータは "none" などの文字列か、{ otlp-http = { endpoint = ... } } の
+    // テーブルで書くハイブリッド型。単純値になるとは限らないため表示のみ（直接編集）とする。
+    { key: 'otelExporter', path: 'otel.exporter', group: 'data', type: 'directEdit' },
+    { key: 'otelTraceExporter', path: 'otel.trace_exporter', group: 'data', type: 'directEdit' },
+    { key: 'otelMetricsExporter', path: 'otel.metrics_exporter', group: 'data', type: 'directEdit' },
     {
         key: 'projectDocFallbackFilenames',
         path: 'project_doc_fallback_filenames',
@@ -598,19 +715,13 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'directEdit',
     },
     { key: 'projectRootMarkers', path: 'project_root_markers', group: 'data', type: 'directEdit' },
-    { key: 'shellEnvironmentExclude', path: 'shell_environment_policy.exclude', group: 'data', type: 'directEdit' },
+    // shell_environment_policy.exclude / include_only は filters と重複する非推奨キーのため登録しない。
     { key: 'shellEnvironmentFilters', path: 'shell_environment_policy.filters', group: 'data', type: 'directEdit' },
     { key: 'shellEnvironmentSet', path: 'shell_environment_policy.set', group: 'data', type: 'directEdit' },
-    {
-        key: 'shellEnvironmentIncludeOnly',
-        path: 'shell_environment_policy.include_only',
-        group: 'data',
-        type: 'directEdit',
-    },
     { key: 'projects', path: 'projects', group: 'data', type: 'directEdit' },
 
     // === サブエージェント・機能 ===
-    // agents.max_threads は agents.max_concurrent_threads_per_session の旧別名のため登録しない。
+    // agents.max_threads は agents.max_concurrent_threads_per_session と同じ設定の非推奨の別名のため登録しない。
     {
         key: 'agentsMaxConcurrentThreadsPerSession',
         path: 'agents.max_concurrent_threads_per_session',
@@ -633,12 +744,19 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'agents.default_subagent_reasoning_effort',
         group: 'features',
         type: 'string',
-        choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+        choices: CODEX_REASONING_EFFORT_CHOICES,
         allowCustom: true,
     },
     { key: 'featuresGoals', path: 'features.goals', group: 'features', type: 'boolean', defaultOn: true },
     { key: 'featuresHooks', path: 'features.hooks', group: 'features', type: 'boolean', defaultOn: true },
     { key: 'featuresFastMode', path: 'features.fast_mode', group: 'features', type: 'boolean', defaultOn: true },
+    {
+        key: 'featuresUltrafastMode',
+        path: 'features.ultrafast_mode',
+        group: 'features',
+        type: 'boolean',
+        defaultOn: true,
+    },
     { key: 'featuresMemories', path: 'features.memories', group: 'features', type: 'boolean', defaultOn: false },
     { key: 'memoriesGenerate', path: 'memories.generate_memories', group: 'features', type: 'boolean' },
     { key: 'memoriesUse', path: 'memories.use_memories', group: 'features', type: 'boolean' },
@@ -664,7 +782,6 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'string',
     },
     { key: 'featuresMultiAgent', path: 'features.multi_agent', group: 'features', type: 'boolean', defaultOn: true },
-    { key: 'featuresPersonality', path: 'features.personality', group: 'features', type: 'boolean', defaultOn: true },
     {
         key: 'featuresRemotePlugin',
         path: 'features.remote_plugin',
@@ -685,7 +802,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'features.unified_exec',
         group: 'features',
         type: 'boolean',
-        defaultOn: false,
+        defaultOn: true,
     },
     { key: 'featuresApps', path: 'features.apps', group: 'features', type: 'boolean', defaultOn: true },
     // features.network_proxy は boolean でもテーブル（enabled / proxy_url 等）でも書けるハイブリッド型。
@@ -712,7 +829,31 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: false,
     },
+    // features.prefer_mxc の既定は実行クライアントにより異なる（スタンドアロン CLI は無効、
+    // デスクトップアプリはロールアウト設定で有効化しうる）ため既定値を宣言しない。
+    { key: 'featuresPreferMxc', path: 'features.prefer_mxc', group: 'features', type: 'boolean' },
     { key: 'toolsViewImage', path: 'tools.view_image', group: 'features', type: 'boolean' },
+    {
+        key: 'skillsMaxContextTokens',
+        path: 'skills.max_context_tokens',
+        group: 'features',
+        type: 'number',
+        min: 1,
+        integer: true,
+    },
+    {
+        key: 'browserUseAllowHistoryAccess',
+        path: 'browser_use.allow_history_access',
+        group: 'features',
+        type: 'boolean',
+    },
+    {
+        key: 'computerUseDefaultAppAccess',
+        path: 'computer_use.default_app_access',
+        group: 'features',
+        type: 'string',
+        choices: ['allow', 'deny'],
+    },
     {
         key: 'memoriesMaxRawMemoriesForConsolidation',
         path: 'memories.max_raw_memories_for_consolidation',
@@ -758,64 +899,20 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         max: 48,
         integer: true,
     },
-    {
-        key: 'featuresCodeModeEnabled',
-        path: 'features.code_mode.enabled',
-        group: 'features',
-        type: 'boolean',
-        defaultOn: false,
-    },
-    {
-        key: 'featuresRolloutBudgetEnabled',
-        path: 'features.rollout_budget.enabled',
-        group: 'features',
-        type: 'boolean',
-        defaultOn: false,
-    },
-    {
-        key: 'featuresRolloutBudgetLimitTokens',
-        path: 'features.rollout_budget.limit_tokens',
-        group: 'features',
-        type: 'number',
-        min: 0,
-        integer: true,
-    },
-    {
-        key: 'featuresRolloutBudgetPrefillTokenWeight',
-        path: 'features.rollout_budget.prefill_token_weight',
-        group: 'features',
-        type: 'number',
-        min: 0,
-        defaultValue: 1,
-    },
-    {
-        key: 'featuresRolloutBudgetSamplingTokenWeight',
-        path: 'features.rollout_budget.sampling_token_weight',
-        group: 'features',
-        type: 'number',
-        min: 0,
-        defaultValue: 1,
-    },
-    {
-        key: 'featuresRolloutBudgetReminderIntervalTokens',
-        path: 'features.rollout_budget.reminder_interval_tokens',
-        group: 'features',
-        type: 'number',
-        min: 0,
-        integer: true,
-    },
     { key: 'appsDefaultEnabled', path: 'apps._default.enabled', group: 'features', type: 'boolean', defaultOn: true },
     {
         key: 'appsDefaultDestructiveEnabled',
         path: 'apps._default.destructive_enabled',
         group: 'features',
         type: 'boolean',
+        defaultOn: true,
     },
     {
         key: 'appsDefaultOpenWorldEnabled',
         path: 'apps._default.open_world_enabled',
         group: 'features',
         type: 'boolean',
+        defaultOn: true,
     },
     {
         key: 'appsDefaultDefaultToolsApprovalMode',
@@ -835,6 +932,8 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'skillsConfig', path: 'skills.config', group: 'features', type: 'directEdit' },
     { key: 'hooks', path: 'hooks', group: 'features', type: 'directEdit' },
     { key: 'mcpServers', path: 'mcp_servers.<id>', group: 'features', type: 'directEdit' },
+    { key: 'marketplaces', path: 'marketplaces.<name>', group: 'features', type: 'directEdit' },
+    { key: 'pluginsEnabled', path: 'plugins.<plugin>.enabled', group: 'features', type: 'directEdit' },
     {
         key: 'pluginsMcpServers',
         path: 'plugins.<plugin>.mcp_servers',
@@ -845,15 +944,20 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'toolSuggest', path: 'tool_suggest', group: 'features', type: 'directEdit' },
     // tools.web_search は boolean | object のハイブリッド型。単純値になるとは限らないため直接編集。
     { key: 'toolsWebSearch', path: 'tools.web_search', group: 'features', type: 'directEdit' },
+    // features.code_mode / features.rollout_budget は boolean でもテーブル（enabled ほか）でも書けるハイブリッド型。
+    // 配下の値を個別行に分解すると boolean とテーブルの書き込みが競合しうるため、親を直接編集とする。
+    { key: 'featuresCodeMode', path: 'features.code_mode', group: 'features', type: 'directEdit' },
+    { key: 'featuresRolloutBudget', path: 'features.rollout_budget', group: 'features', type: 'directEdit' },
     {
-        key: 'featuresCodeModeDirectOnlyToolNamespaces',
-        path: 'features.code_mode.direct_only_tool_namespaces',
+        key: 'browserUseDefaultOriginPolicy',
+        path: 'browser_use.default_origin_policy',
         group: 'features',
         type: 'directEdit',
     },
+    { key: 'browserUseOrigins', path: 'browser_use.origins.<origin>', group: 'features', type: 'directEdit' },
     {
-        key: 'featuresCodeModeExcludedToolNamespaces',
-        path: 'features.code_mode.excluded_tool_namespaces',
+        key: 'computerUseMacosBundleIds',
+        path: 'computer_use.macos.bundle_ids',
         group: 'features',
         type: 'directEdit',
     },
@@ -863,11 +967,10 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'features',
         type: 'directEdit',
     },
+    { key: 'computerUseWindowsAumids', path: 'computer_use.windows.aumids', group: 'features', type: 'directEdit' },
+    { key: 'computerUseWindowsExes', path: 'computer_use.windows.exes', group: 'features', type: 'directEdit' },
     { key: 'desktopCustomFileHandlers', path: 'desktop.custom_file_handlers', group: 'features', type: 'directEdit' },
 ];
-
-// グループの表示順（UI の見出し順）。
-export const SETTINGS_GROUP_ORDER: string[] = ['model', 'security', 'display', 'data', 'features'];
 
 // ============================================================
 // 公式スキルリポジトリ（OpenAI 公式 skills）

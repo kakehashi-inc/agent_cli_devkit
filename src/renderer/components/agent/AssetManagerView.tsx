@@ -32,6 +32,8 @@ import type { AssetApi, Notify } from './types';
 interface Props {
     agentId: string;
     api: AssetApi;
+    // 種別ごとの一覧の列構成。未指定の種別は name + description を使う。
+    columns?: Partial<Record<AssetKind, FmColumn[]>>;
 }
 
 const FRONTMATTER_COLUMNS: Record<AssetKind, FmColumn[]> = {
@@ -55,7 +57,8 @@ const AssetSection: React.FC<{
     api: AssetApi;
     env: AgentEnvironment;
     notify: Notify;
-}> = ({ agentId, api, env, notify }) => {
+    columns?: Partial<Record<AssetKind, FmColumn[]>>;
+}> = ({ agentId, api, env, notify, columns: columnsByKind }) => {
     const { t } = useTranslation();
     const [tab, setTab] = useState<AssetKind>('agents');
     const kind: AssetKind = tab;
@@ -113,7 +116,7 @@ const AssetSection: React.FC<{
     const entries = useMemo(() => report?.entries ?? [], [report]);
     const searchQuery = searchQueries[kind];
     const filteredEntries = useMemo(() => filterAssetEntries(entries, searchQuery), [entries, searchQuery]);
-    const columns = FRONTMATTER_COLUMNS[kind];
+    const columns = columnsByKind?.[kind] ?? FRONTMATTER_COLUMNS[kind];
     // name（fit 列）の幅を実データから見積もる。
     const fitWidth = useMemo(() => {
         const fitCol = columns.find(c => c.fit);
@@ -299,7 +302,11 @@ const AssetSection: React.FC<{
 
     return (
         <Paper variant='outlined' sx={{ mb: 3 }}>
-            <Tabs value={tab} onChange={(_, v: AssetKind) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+            <Tabs
+                value={tab}
+                onChange={(_, v: AssetKind) => setTab(v)}
+                sx={{ borderBottom: 1, borderColor: 'divider' }}
+            >
                 <Tab value='agents' label={t(`${agentId}.assets.tabAgents`)} />
                 <Tab value='skills' label={t(`${agentId}.assets.tabSkills`)} />
             </Tabs>
@@ -458,7 +465,7 @@ const AssetSection: React.FC<{
     );
 };
 
-export const AssetManagerView: React.FC<Props> = ({ agentId, api }) => {
+export const AssetManagerView: React.FC<Props> = ({ agentId, api, columns }) => {
     const { t } = useTranslation();
     const [environments, setEnvironments] = useState<{ env: AgentEnvironment; label: string }[]>([]);
     const [loading, setLoading] = useState(true);
@@ -469,10 +476,10 @@ export const AssetManagerView: React.FC<Props> = ({ agentId, api }) => {
         severity: 'success' | 'error' | 'warning';
     }>({ open: false, message: '', severity: 'success' });
 
-    const load = async () => {
+    const load = async (refresh = false) => {
         setLoading(true);
         try {
-            setEnvironments(await api.getEnvironments());
+            setEnvironments(await api.getEnvironments(refresh));
             setReload(value => value + 1);
         } catch (error) {
             console.error('Failed to load asset manager environments:', error);
@@ -514,19 +521,24 @@ export const AssetManagerView: React.FC<Props> = ({ agentId, api }) => {
                 <Button
                     variant='outlined'
                     startIcon={<RefreshIcon />}
-                    onClick={load}
+                    onClick={() => void load(true)}
                     sx={{ textTransform: 'none', flexShrink: 0 }}
                 >
                     {t('common.refresh')}
                 </Button>
             </Box>
 
+            {environments.length === 0 && (
+                <Alert severity='info' sx={{ mb: 2 }}>
+                    {t(`${agentId}.noEnvironment`)}
+                </Alert>
+            )}
             {nativeEnvs.map(item => (
                 <Box key={`${envId(item.env)}-${reload}`}>
                     <Typography variant='h6' sx={{ mb: 1 }}>
                         {item.label}
                     </Typography>
-                    <AssetSection agentId={agentId} api={api} env={item.env} notify={notify} />
+                    <AssetSection agentId={agentId} api={api} env={item.env} notify={notify} columns={columns} />
                 </Box>
             ))}
 
@@ -541,7 +553,13 @@ export const AssetManagerView: React.FC<Props> = ({ agentId, api }) => {
                             <Typography variant='h6' sx={{ mb: 1 }}>
                                 {t(`${agentId}.assets.wslSection`, { distro: item.label })}
                             </Typography>
-                            <AssetSection agentId={agentId} api={api} env={item.env} notify={notify} />
+                            <AssetSection
+                                agentId={agentId}
+                                api={api}
+                                env={item.env}
+                                notify={notify}
+                                columns={columns}
+                            />
                         </Box>
                     ))}
                 </>

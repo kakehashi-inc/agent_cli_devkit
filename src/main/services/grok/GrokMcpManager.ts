@@ -1,5 +1,6 @@
 import { GROK_CONFIG_REL, GROK_DISABLED_MCP_REL, GROK_WSL_CLI_TEST } from '../../../shared/agents/grok/constants';
 import { GrokEnvironment, GrokMcpEnvInfo, MCPServerInfo, OSType } from '../../../shared/agents/grok/types';
+import { stripBom } from '../common/json/stripBom';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import {
@@ -37,6 +38,11 @@ export class GrokMcpManager {
         return new HomeFs(env, this.detector);
     }
 
+    /** TOML ファイルのテキスト（先頭の BOM を除く）。無ければ空文字列。 */
+    private async readToml(fs: HomeFs, rel: string): Promise<string> {
+        return stripBom(await fs.readText(rel)) ?? '';
+    }
+
     /** 管理対象の環境一覧（native + Grok 入り WSL distro）。 */
     async getEnvironments(): Promise<GrokMcpEnvInfo[]> {
         const result: GrokMcpEnvInfo[] = [];
@@ -59,8 +65,8 @@ export class GrokMcpManager {
     /** 有効/無効の MCP サーバー一覧を取得する（出現順を保持）。 */
     async getMCPServers(env: GrokEnvironment): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const configText = (await fs.readText(GROK_CONFIG_REL)) ?? '';
-        const disabledText = (await fs.readText(GROK_DISABLED_MCP_REL)) ?? '';
+        const configText = await this.readToml(fs, GROK_CONFIG_REL);
+        const disabledText = await this.readToml(fs, GROK_DISABLED_MCP_REL);
 
         return {
             enabled: this.buildInfos(configText, true),
@@ -87,7 +93,7 @@ export class GrokMcpManager {
     /** MCP サーバーを無効化（config.toml → disabled ファイルへブロック移動）。 */
     async disableMCPServer(env: GrokEnvironment, serverName: string): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const configText = (await fs.readText(GROK_CONFIG_REL)) ?? '';
+        const configText = await this.readToml(fs, GROK_CONFIG_REL);
         const extracted = extractServerBlock(configText, serverName);
         if (!extracted) {
             throw new Error(`Server "${serverName}" not found in enabled config`);
@@ -97,7 +103,7 @@ export class GrokMcpManager {
         await fs.writeText(GROK_CONFIG_REL, extracted.rest);
 
         // disabled ファイルへブロックを追記する。
-        const disabledText = (await fs.readText(GROK_DISABLED_MCP_REL)) ?? '';
+        const disabledText = await this.readToml(fs, GROK_DISABLED_MCP_REL);
         const nextDisabled = insertServerBlock(disabledText, extracted.block);
         await fs.writeText(GROK_DISABLED_MCP_REL, nextDisabled);
 
@@ -107,14 +113,14 @@ export class GrokMcpManager {
     /** MCP サーバーを有効化（disabled ファイル → config.toml へブロック移動）。 */
     async enableMCPServer(env: GrokEnvironment, serverName: string): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const disabledText = (await fs.readText(GROK_DISABLED_MCP_REL)) ?? '';
+        const disabledText = await this.readToml(fs, GROK_DISABLED_MCP_REL);
         const extracted = extractServerBlock(disabledText, serverName);
         if (!extracted) {
             throw new Error(`Server "${serverName}" not found in disabled config`);
         }
 
         // config.toml へブロックを追記する。
-        const configText = (await fs.readText(GROK_CONFIG_REL)) ?? '';
+        const configText = await this.readToml(fs, GROK_CONFIG_REL);
         const nextConfig = insertServerBlock(configText, extracted.block);
         await fs.writeText(GROK_CONFIG_REL, nextConfig);
 
@@ -131,7 +137,7 @@ export class GrokMcpManager {
     /** 有効な MCP サーバーの順序を変更する。 */
     async reorderMCPServers(env: GrokEnvironment, serverNames: string[]): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const configText = (await fs.readText(GROK_CONFIG_REL)) ?? '';
+        const configText = await this.readToml(fs, GROK_CONFIG_REL);
         await fs.writeText(GROK_CONFIG_REL, reorderServerBlocks(configText, serverNames));
         return this.getMCPServers(env);
     }
@@ -139,7 +145,7 @@ export class GrokMcpManager {
     /** 無効な MCP サーバーの順序を変更する。 */
     async reorderDisabledMCPServers(env: GrokEnvironment, serverNames: string[]): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const disabledText = (await fs.readText(GROK_DISABLED_MCP_REL)) ?? '';
+        const disabledText = await this.readToml(fs, GROK_DISABLED_MCP_REL);
         await fs.writeText(GROK_DISABLED_MCP_REL, reorderServerBlocks(disabledText, serverNames));
         return this.getMCPServers(env);
     }

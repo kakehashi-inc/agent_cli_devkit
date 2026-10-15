@@ -2,7 +2,7 @@
 // Codex 固有の型定義
 // ------------------------------------------------------------
 // agent 非依存の共通型（shared/agents/types.ts）を再エクスポートしつつ、
-// Codex 系コードが従来の名前で参照できるエイリアスをここに定義する。
+// Codex 系コードが Codex 固有の名前（CodexEnvironment など）で参照するエイリアスをここに定義する。
 // ============================================================
 import type { AgentEnvironment, AgentEnvKind, McpEnvInfo } from '../types';
 

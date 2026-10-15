@@ -35,7 +35,6 @@ export const CLAUDE_CODE_DISABLED_FILENAME = '.claude-disabled-mcp.json';
 export const CLAUDE_DIR = '.claude';
 
 // WSL distro に Claude Code が導入されているかの判定コマンド（bash -lc で実行）。
-// 共通 WslDetector.getDistrosWithTest() に渡す。
 export const CLAUDE_WSL_CLI_TEST = `test -f ~/${CLAUDE_CODE_CONFIG_FILENAME}`;
 
 // ============================================================
@@ -119,6 +118,17 @@ export const CLAUDE_CLI_COMMAND = 'claude';
 // 組み込みマーケットプレイス（削除ボタンを無効化する）
 export const CLAUDE_BUILTIN_MARKETPLACES = ['claude-plugins-official'];
 
+// プラグイン ID（<name>@<origin>）の @ 以降のうち、マーケットプレイスではない由来を表す予約名。
+// inline=--plugin-dir 等のセッション限定、skills-dir=skills/ 配下のプラグインディレクトリ、
+// synced=claude.ai から同期、builtin=組み込み。いずれもインストール記録を持たないため
+// `claude plugin uninstall` の対象にならない（有効/無効は enabledPlugins で切り替える）。
+export const CLAUDE_NON_MARKETPLACE_PLUGIN_ORIGINS = ['inline', 'skills-dir', 'synced', 'builtin'];
+
+// プラグイン一覧に表示するスコープ。本アプリはホームディレクトリの管理ツールのため、
+// user スコープのインストールと claude.ai 同期分（synced）だけを扱う。project / local は
+// 特定プロジェクトの設定に属し、managed は組織管理のため対象外とする。
+export const CLAUDE_LISTED_PLUGIN_SCOPES = ['user', 'synced'];
+
 // GUI の機能出し分け。
 // - directInstall=false: 個別リポジトリは「マーケットプレイスとして追加 → プラグイン選択」の 2 段階。
 // - marketplaceRemoteUrl=true: ホストされた marketplace.json への直接 URL をソースに指定できる。
@@ -134,23 +144,50 @@ export const CLAUDE_PLUGIN_CAPABILITIES: PluginCapabilities = {
 // クリーンアップ候補
 // ============================================================
 
-// クリーンアップ候補ディレクトリ（~/.claude 配下、表示順・projects 先頭）。
-// 対象は履歴／キャッシュ／一時／ログのみ。plugins/skills（インストール資産）や
-// daemon/ide（稼働中ランタイム状態）、jobs/teams（設定）は対象外。
-// backups は復旧用セーフティネットのためデフォルト未チェック。
+// ~/.claude 外の一時物を扱う特別候補のキー。
+// - BUNDLED_SKILLS: 一時ルート配下 bundled-skills/<バージョン>（組み込みスキルの展開先）。
+// - BASH_EDIT_DIFF: 一時ルート配下 bash-edit-diff のうち、どのプロジェクトの会話履歴にも対応しないもの。
+export const CLAUDE_TEMP_CLEANUP_KEYS = {
+    BUNDLED_SKILLS: 'temp-bundled-skills',
+    BASH_EDIT_DIFF: 'temp-bash-edit-diff',
+} as const;
+
+// 会話履歴の候補キー。プロジェクトごとの子要素に、同じプロジェクトの一時物（OS の一時フォルダの
+// セッション作業フォルダ・bash-edit-diff、MCP ログのキャッシュ）を連動させる。
+export const CLAUDE_PROJECTS_CLEANUP_KEY = 'projects';
+
+// クリーンアップ候補（~/.claude 配下と ~/.claude 外の一時物、表示順・projects 先頭）。
+// 対象は公式ドキュメント（claude-directory の「Application data」）が手動削除してよいとする
+// 履歴／キャッシュ／一時／ログと、OS の一時フォルダに Claude Code が残す一時物。末尾の
+// image-cache / todos / statsig / logs は現行版が書き込まない旧版のディレクトリ。
+// 次は対象外: 設定・認証情報（settings.json / .credentials.json）、agents / skills / commands 等の
+// 利用者資産、plugins の導入物（skills/.trash・plugins/.trash の退避分のみ対象）、agent-memory、
+// jobs / daemon / teams / ide（バックグラウンドセッション等の稼働状態）、sessions（稼働中
+// セッションの登録。終了時に Claude Code 自身が消す）、一時ルート自体と Claude Code 自身が掃除する一時物。
 // デフォルトはすべてチェック OFF（ユーザーが明示的に選択する）。
 export const CLEANUP_CANDIDATES: CleanupCandidateSpec[] = [
-    { key: 'projects', defaultChecked: false, expandable: true, childKind: 'dir' },
+    { key: CLAUDE_PROJECTS_CLEANUP_KEY, defaultChecked: false, expandable: true, childKind: 'dir' },
     { key: 'plans', defaultChecked: false, expandable: true, childKind: 'file' },
     { key: 'file-history', defaultChecked: false },
     { key: 'history', defaultChecked: false, kind: 'file', path: 'history.jsonl' },
+    { key: 'paste-cache', defaultChecked: false },
+    { key: 'uploads', defaultChecked: false },
     { key: 'shell-snapshots', defaultChecked: false },
     { key: 'cache', defaultChecked: false },
     { key: 'debug', defaultChecked: false },
-    { key: 'sessions', defaultChecked: false },
     { key: 'session-env', defaultChecked: false },
     { key: 'tasks', defaultChecked: false },
+    { key: 'usage-data', defaultChecked: false },
+    { key: 'feedback-bundles', defaultChecked: false },
+    { key: 'skills-trash', defaultChecked: false, path: 'skills/.trash' },
+    { key: 'plugins-trash', defaultChecked: false, path: 'plugins/.trash' },
     { key: 'backups', defaultChecked: false },
+    { key: CLAUDE_TEMP_CLEANUP_KEYS.BUNDLED_SKILLS, defaultChecked: false, expandable: true, childKind: 'dir' },
+    { key: CLAUDE_TEMP_CLEANUP_KEYS.BASH_EDIT_DIFF, defaultChecked: false, expandable: true, childKind: 'dir' },
+    { key: 'image-cache', defaultChecked: false },
+    { key: 'todos', defaultChecked: false },
+    { key: 'statsig', defaultChecked: false },
+    { key: 'logs', defaultChecked: false },
 ];
 
 // 「その他のツール」クリーンアップ項目の registry。
@@ -188,7 +225,7 @@ export const CLAUDE_CODE_SETTINGS_FILENAME = 'settings.json';
 // settings.json の設定項目 registry。
 // scalar は読み取り・テーブル編集・保存まで反映し、配列・オブジェクトは directEdit として
 // 一覧へ表示するだけでテーブル保存から除外する。
-// group ごとにまとめて宣言する。SETTINGS_GROUP_ORDER の順で UI に見出し付きで表示される。
+// group ごとにまとめて宣言する。UI はグループが最初に現れる順に見出し付きで表示する。
 // defaultOn は未設定時に Claude Code が採用する既定値（公式ドキュメント準拠）。
 export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     // === モデル・思考 ===
@@ -207,13 +244,11 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
             'sonnet[1m]',
             'opus[1m]',
             'opusplan',
+            'claude-fable-5-1',
             'claude-fable-5',
-            'claude-fable-5[1m]',
-            'claude-sonnet-5',
-            'claude-sonnet-5[1m]',
-            'claude-opus-4-8',
-            'claude-opus-4-8[1m]',
-            'claude-haiku-4-5',
+            'claude-opus-5-5',
+            'claude-sonnet-5-5',
+            'claude-haiku-5-5',
         ],
         allowCustom: true,
     },
@@ -222,7 +257,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'advisorModel',
         group: 'model',
         type: 'string',
-        choices: ['opus', 'sonnet', 'fable', 'claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-8'],
+        choices: ['opus', 'sonnet', 'fable', 'claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5'],
         allowCustom: true,
     },
     {
@@ -232,17 +267,49 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'string',
         choices: ['low', 'medium', 'high', 'xhigh'],
     },
+    // max は上限なしを意味する（未設定と同じく制限しない）。
+    {
+        key: 'maxEffortLevel',
+        path: 'maxEffortLevel',
+        group: 'model',
+        type: 'string',
+        choices: ['low', 'medium', 'high', 'xhigh', 'max'],
+    },
+    { key: 'ultracode', path: 'ultracode', group: 'model', type: 'boolean', defaultOn: false },
     { key: 'alwaysThinkingEnabled', path: 'alwaysThinkingEnabled', group: 'model', type: 'boolean' },
     // language は任意の言語名を受け付ける自由文字列（japanese / english / spanish ...）。choices で限定しない。
     { key: 'language', path: 'language', group: 'model', type: 'string' },
     // outputStyle は組み込み（default / Explanatory / Learning）に加えカスタムも可。自由入力とする。
     { key: 'outputStyle', path: 'outputStyle', group: 'model', type: 'string' },
     { key: 'fastMode', path: 'fastMode', group: 'model', type: 'boolean' },
-    { key: 'fastModePerSessionOptIn', path: 'fastModePerSessionOptIn', group: 'model', type: 'boolean' },
+    {
+        key: 'fastModePerSessionOptIn',
+        path: 'fastModePerSessionOptIn',
+        group: 'model',
+        type: 'boolean',
+        defaultOn: false,
+    },
     { key: 'switchModelsOnFlag', path: 'switchModelsOnFlag', group: 'model', type: 'boolean', defaultOn: true },
+    { key: 'promptCacheTtl', path: 'promptCacheTtl', group: 'model', type: 'string', choices: ['5m', '1h'] },
+    {
+        key: 'subagentPromptCacheTtl',
+        path: 'subagentPromptCacheTtl',
+        group: 'model',
+        type: 'string',
+        choices: ['5m', '1h'],
+    },
+    {
+        key: 'enforceAvailableModels',
+        path: 'enforceAvailableModels',
+        group: 'model',
+        type: 'boolean',
+        defaultOn: false,
+    },
     { key: 'availableModels', path: 'availableModels', group: 'model', type: 'directEdit' },
     { key: 'fallbackModel', path: 'fallbackModel', group: 'model', type: 'directEdit' },
     { key: 'modelOverrides', path: 'modelOverrides', group: 'model', type: 'directEdit' },
+    { key: 'modelPicker', path: 'modelPicker', group: 'model', type: 'directEdit' },
+    { key: 'modelSettings', path: 'modelSettings', group: 'model', type: 'directEdit' },
 
     // === エージェント ===
     // env オブジェクト内の CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS を ON/OFF するフラグ。
@@ -272,6 +339,14 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultOn: false,
     },
     { key: 'agent', path: 'agent', group: 'agent', type: 'string' },
+    {
+        key: 'crossSessionInbound',
+        path: 'crossSessionInbound',
+        group: 'agent',
+        type: 'string',
+        choices: ['accept', 'hold', 'refuse'],
+    },
+    { key: 'isolatePeerMachines', path: 'isolatePeerMachines', group: 'agent', type: 'boolean', defaultOn: false },
 
     // === 表示・通知 ===
     {
@@ -302,7 +377,20 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'autoScrollEnabled', path: 'autoScrollEnabled', group: 'display', type: 'boolean', defaultOn: true },
     { key: 'awaySummaryEnabled', path: 'awaySummaryEnabled', group: 'display', type: 'boolean', defaultOn: true },
     { key: 'axScreenReader', path: 'axScreenReader', group: 'display', type: 'boolean' },
-    { key: 'prefersReducedMotion', path: 'prefersReducedMotion', group: 'display', type: 'boolean' },
+    {
+        key: 'prefersReducedMotion',
+        path: 'prefersReducedMotion',
+        group: 'display',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'promptSuggestionEnabled',
+        path: 'promptSuggestionEnabled',
+        group: 'display',
+        type: 'boolean',
+        defaultOn: true,
+    },
     {
         key: 'showThinkingSummaries',
         path: 'showThinkingSummaries',
@@ -310,10 +398,23 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: false,
     },
-    { key: 'syntaxHighlightingDisabled', path: 'syntaxHighlightingDisabled', group: 'display', type: 'boolean' },
+    {
+        key: 'syntaxHighlightingDisabled',
+        path: 'syntaxHighlightingDisabled',
+        group: 'display',
+        type: 'boolean',
+        defaultOn: false,
+    },
     {
         key: 'terminalProgressBarEnabled',
         path: 'terminalProgressBarEnabled',
+        group: 'display',
+        type: 'boolean',
+        defaultOn: true,
+    },
+    {
+        key: 'terminalTitleFromRename',
+        path: 'terminalTitleFromRename',
         group: 'display',
         type: 'boolean',
         defaultOn: true,
@@ -327,6 +428,19 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         allowCustom: true,
         defaultValue: 'dark',
     },
+    // timeFormat はプリセットに加え strftime パターン（% を含む値）も受け付けるため自由入力を許可する。
+    {
+        key: 'timeFormat',
+        path: 'timeFormat',
+        group: 'display',
+        type: 'string',
+        choices: ['auto', '12-hour', '24-hour', '24-hour-utc'],
+        allowCustom: true,
+        defaultValue: 'auto',
+    },
+    // timeZone は IANA タイムゾーン名（UTC / Asia/Tokyo ...）の自由文字列。
+    { key: 'timeZone', path: 'timeZone', group: 'display', type: 'string' },
+    { key: 'maxProseWidth', path: 'maxProseWidth', group: 'display', type: 'number', min: 40, integer: true },
     { key: 'tui', path: 'tui', group: 'display', type: 'string', choices: ['default', 'fullscreen'] },
     { key: 'verbose', path: 'verbose', group: 'display', type: 'boolean', defaultOn: false },
     { key: 'viewMode', path: 'viewMode', group: 'display', type: 'string', choices: ['default', 'verbose', 'focus'] },
@@ -340,8 +454,13 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'footerLinksRegexes', path: 'footerLinksRegexes', group: 'display', type: 'directEdit' },
     { key: 'spinnerTipsOverride', path: 'spinnerTipsOverride', group: 'display', type: 'directEdit' },
     { key: 'spinnerVerbs', path: 'spinnerVerbs', group: 'display', type: 'directEdit' },
+    { key: 'spellcheck', path: 'spellcheck', group: 'display', type: 'directEdit' },
     { key: 'vimInsertModeRemaps', path: 'vimInsertModeRemaps', group: 'display', type: 'directEdit' },
     { key: 'voice', path: 'voice', group: 'display', type: 'directEdit' },
+    // statusLine / subagentStatusLine は type="command" と command が必須のオブジェクト。配下の値を個別行に
+    // 分解すると必須キーを欠いたオブジェクトを書けてしまうため、親を directEdit とする。
+    { key: 'statusLine', path: 'statusLine', group: 'display', type: 'directEdit' },
+    { key: 'subagentStatusLine', path: 'subagentStatusLine', group: 'display', type: 'directEdit' },
 
     // === 動作・データ ===
     { key: 'autoMemoryEnabled', path: 'autoMemoryEnabled', group: 'behavior', type: 'boolean', defaultOn: true },
@@ -354,8 +473,20 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['stable', 'latest'],
         defaultValue: 'latest',
     },
+    // minimumVersion は "2.1.100" 形式のバージョン文字列。
+    { key: 'minimumVersion', path: 'minimumVersion', group: 'behavior', type: 'string' },
     { key: 'cleanupPeriodDays', path: 'cleanupPeriodDays', group: 'behavior', type: 'number', min: 1, integer: true },
+    {
+        key: 'desktopSessionCleanupPeriodDays',
+        path: 'desktopSessionCleanupPeriodDays',
+        group: 'behavior',
+        type: 'number',
+        min: 0,
+        integer: true,
+        defaultValue: 0,
+    },
     { key: 'autoCompactEnabled', path: 'autoCompactEnabled', group: 'behavior', type: 'boolean', defaultOn: true },
+    { key: 'idleCompaction', path: 'idleCompaction', group: 'behavior', type: 'boolean', defaultOn: true },
     {
         key: 'autoCompactWindow',
         path: 'autoCompactWindow',
@@ -381,6 +512,32 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultValue: 'never',
     },
     {
+        key: 'dialogExpiry',
+        path: 'dialogExpiry',
+        group: 'behavior',
+        type: 'string',
+        choices: ['60s', '5m', '10m', 'never'],
+        defaultValue: '5m',
+    },
+    {
+        key: 'autoContinueAtUsageLimit',
+        path: 'autoContinueAtUsageLimit',
+        group: 'behavior',
+        type: 'boolean',
+        defaultOn: true,
+    },
+    { key: 'bashEditDiffEnabled', path: 'bashEditDiffEnabled', group: 'behavior', type: 'boolean' },
+    // 4000 未満・128000 超の値は Claude Code 側でも範囲内へ丸められる。
+    {
+        key: 'bashOutputMaxChars',
+        path: 'bashOutputMaxChars',
+        group: 'behavior',
+        type: 'number',
+        min: 4000,
+        max: 128000,
+        integer: true,
+    },
+    {
         key: 'defaultShell',
         path: 'defaultShell',
         group: 'behavior',
@@ -388,6 +545,14 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['bash', 'powershell'],
     },
     { key: 'feedbackSurveyRate', path: 'feedbackSurveyRate', group: 'behavior', type: 'number', min: 0, max: 1 },
+    {
+        key: 'feedbackDrafts',
+        path: 'feedbackDrafts',
+        group: 'behavior',
+        type: 'string',
+        choices: ['notify', 'quiet', 'off'],
+        defaultValue: 'notify',
+    },
     {
         key: 'includeGitInstructions',
         path: 'includeGitInstructions',
@@ -434,13 +599,23 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['unrestricted', 'small', 'medium', 'large'],
         defaultValue: 'medium',
     },
+    // enableWorkflows の未設定時はプランに依存する（Pro プランのみ無効）ため既定値を宣言しない。
+    { key: 'enableWorkflows', path: 'enableWorkflows', group: 'behavior', type: 'boolean' },
     { key: 'disableWorkflows', path: 'disableWorkflows', group: 'behavior', type: 'boolean', defaultOn: false },
     { key: 'disableBundledSkills', path: 'disableBundledSkills', group: 'behavior', type: 'boolean' },
+    // syncClaudeAi* は false のみが意味を持つ（true は未設定と同じ）。
+    { key: 'syncClaudeAiSkills', path: 'syncClaudeAiSkills', group: 'behavior', type: 'boolean' },
+    { key: 'syncClaudeAiPlugins', path: 'syncClaudeAiPlugins', group: 'behavior', type: 'boolean' },
     { key: 'disableAllHooks', path: 'disableAllHooks', group: 'behavior', type: 'boolean' },
     { key: 'disableAgentView', path: 'disableAgentView', group: 'behavior', type: 'boolean' },
-    { key: 'disableArtifact', path: 'disableArtifact', group: 'behavior', type: 'boolean' },
-    { key: 'disableClaudeAiConnectors', path: 'disableClaudeAiConnectors', group: 'behavior', type: 'boolean' },
-    { key: 'disableRemoteControl', path: 'disableRemoteControl', group: 'behavior', type: 'boolean' },
+    {
+        key: 'disableClaudeAiConnectors',
+        path: 'disableClaudeAiConnectors',
+        group: 'behavior',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    { key: 'disableRemoteControl', path: 'disableRemoteControl', group: 'behavior', type: 'boolean', defaultOn: false },
     { key: 'remoteControlAtStartup', path: 'remoteControlAtStartup', group: 'behavior', type: 'boolean' },
     { key: 'apiKeyHelper', path: 'apiKeyHelper', group: 'behavior', type: 'string' },
     { key: 'awsAuthRefresh', path: 'awsAuthRefresh', group: 'behavior', type: 'string' },
@@ -456,6 +631,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'string',
         choices: ['claudeai', 'console', 'gateway'],
     },
+    { key: 'forceLoginGatewayUrl', path: 'forceLoginGatewayUrl', group: 'behavior', type: 'string' },
     { key: 'remoteDefaultEnvironmentId', path: 'remote.defaultEnvironmentId', group: 'behavior', type: 'string' },
     {
         key: 'worktreeBaseRef',
@@ -473,12 +649,14 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['worktree', 'none'],
         defaultValue: 'worktree',
     },
+    { key: 'worktreeLocation', path: 'worktree.location', group: 'behavior', type: 'string' },
     {
         key: 'enableAllProjectMcpServers',
         path: 'enableAllProjectMcpServers',
         group: 'behavior',
         type: 'boolean',
     },
+    // enableArtifact は false のみが意味を持つ（true は未設定と同じ）。
     { key: 'enableArtifact', path: 'enableArtifact', group: 'behavior', type: 'boolean' },
     { key: 'disableAutoMode', path: 'disableAutoMode', group: 'behavior', type: 'string', choices: ['disable'] },
     {
@@ -489,13 +667,16 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['disable'],
     },
     { key: 'disableSkillShellExecution', path: 'disableSkillShellExecution', group: 'behavior', type: 'boolean' },
+    // skillListingBudgetFraction は 0 より大きく 1 以下（0 は受け付けない）。
     {
         key: 'skillListingBudgetFraction',
         path: 'skillListingBudgetFraction',
         group: 'behavior',
         type: 'number',
         min: 0,
+        exclusiveMin: true,
         max: 1,
+        defaultValue: 0.01,
     },
     {
         key: 'skillListingMaxDescChars',
@@ -504,22 +685,23 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'number',
         min: 1,
         integer: true,
+        defaultValue: 1536,
     },
-    { key: 'attributionCommit', path: 'attribution.commit', group: 'behavior', type: 'string' },
-    { key: 'attributionPr', path: 'attribution.pr', group: 'behavior', type: 'string' },
     {
-        key: 'attributionSessionUrl',
-        path: 'attribution.sessionUrl',
+        key: 'autoModeClassifyAllShell',
+        path: 'autoMode.classifyAllShell',
         group: 'behavior',
         type: 'boolean',
-        defaultOn: true,
+        defaultOn: false,
     },
-    { key: 'autoModeClassifyAllShell', path: 'autoMode.classifyAllShell', group: 'behavior', type: 'boolean' },
+    // attribution はオブジェクト（commit / pr / sessionUrl）または false を取るハイブリッド型のため、
+    // 配下の値を個別行に分解せず親を directEdit とする。
+    { key: 'attribution', path: 'attribution', group: 'behavior', type: 'directEdit' },
     { key: 'autoMode', path: 'autoMode', group: 'behavior', type: 'directEdit' },
     { key: 'companyAnnouncements', path: 'companyAnnouncements', group: 'behavior', type: 'directEdit' },
     { key: 'env', path: 'env', group: 'behavior', type: 'directEdit' },
-    { key: 'fileSuggestionType', path: 'fileSuggestion.type', group: 'behavior', type: 'string', choices: ['command'] },
-    { key: 'fileSuggestionCommand', path: 'fileSuggestion.command', group: 'behavior', type: 'string' },
+    // fileSuggestion も type="command" と command が必須のオブジェクトのため、親を directEdit とする。
+    { key: 'fileSuggestion', path: 'fileSuggestion', group: 'behavior', type: 'directEdit' },
     { key: 'hooks', path: 'hooks', group: 'behavior', type: 'directEdit' },
     { key: 'skillOverrides', path: 'skillOverrides', group: 'behavior', type: 'directEdit' },
     { key: 'sshConfigs', path: 'sshConfigs', group: 'behavior', type: 'directEdit' },
@@ -527,19 +709,24 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'worktreeSparsePaths', path: 'worktree.sparsePaths', group: 'behavior', type: 'directEdit' },
     { key: 'enabledPlugins', path: 'enabledPlugins', group: 'behavior', type: 'directEdit' },
     { key: 'pluginConfigs', path: 'pluginConfigs', group: 'behavior', type: 'directEdit' },
+    { key: 'prependPlugins', path: 'prependPlugins', group: 'behavior', type: 'directEdit' },
+    { key: 'appendPlugins', path: 'appendPlugins', group: 'behavior', type: 'directEdit' },
     { key: 'extraKnownMarketplaces', path: 'extraKnownMarketplaces', group: 'behavior', type: 'directEdit' },
     { key: 'enabledMcpjsonServers', path: 'enabledMcpjsonServers', group: 'behavior', type: 'directEdit' },
     { key: 'disabledMcpjsonServers', path: 'disabledMcpjsonServers', group: 'behavior', type: 'directEdit' },
+    { key: 'allowedMcpServers', path: 'allowedMcpServers', group: 'behavior', type: 'directEdit' },
+    { key: 'deniedMcpServers', path: 'deniedMcpServers', group: 'behavior', type: 'directEdit' },
     { key: 'allowedHttpHookUrls', path: 'allowedHttpHookUrls', group: 'behavior', type: 'directEdit' },
     { key: 'httpHookAllowedEnvVars', path: 'httpHookAllowedEnvVars', group: 'behavior', type: 'directEdit' },
     { key: 'claudeMdExcludes', path: 'claudeMdExcludes', group: 'behavior', type: 'directEdit' },
     // forceLoginOrgUUID は文字列と配列のどちらも取りうるハイブリッド型のため directEdit とする。
     { key: 'forceLoginOrgUUID', path: 'forceLoginOrgUUID', group: 'behavior', type: 'directEdit' },
 
-    // === 権限（permissions オブジェクト内の定義済みキー） ===
+    // === 権限（permissions オブジェクト内の定義済みキーと、権限確認に関わるトップレベルキー） ===
     // scalar（defaultMode / disableBypassPermissionsMode 等）はドット区切り path でネスト編集する。
     // 配列（allow / ask / deny / additionalDirectories）は directEdit として一覧表示のみ。
     // permissions.disableAutoMode はトップレベル disableAutoMode の別名のため登録しない。
+    // skipDangerousModePermissionPrompt / skipAutoPermissionPrompt はトップレベルのキー。
     {
         key: 'permissionsDefaultMode',
         path: 'permissions.defaultMode',
@@ -556,10 +743,25 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['disable'],
     },
     {
-        key: 'permissionsSkipDangerousModePermissionPrompt',
-        path: 'permissions.skipDangerousModePermissionPrompt',
+        key: 'permissionsBlockReadsOutsideWorkingDirectories',
+        path: 'permissions.blockReadsOutsideWorkingDirectories',
         group: 'permissions',
         type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'skipDangerousModePermissionPrompt',
+        path: 'skipDangerousModePermissionPrompt',
+        group: 'permissions',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'skipAutoPermissionPrompt',
+        path: 'skipAutoPermissionPrompt',
+        group: 'permissions',
+        type: 'boolean',
+        defaultOn: false,
     },
     { key: 'permissionsAllow', path: 'permissions.allow', group: 'permissions', type: 'directEdit' },
     { key: 'permissionsAsk', path: 'permissions.ask', group: 'permissions', type: 'directEdit' },
@@ -671,47 +873,13 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultOn: false,
     },
     { key: 'sandbox', path: 'sandbox', group: 'sandbox', type: 'directEdit' },
-
-    // === ステータスライン（display 配下のネストオブジェクト） ===
-    { key: 'statusLineType', path: 'statusLine.type', group: 'display', type: 'string', choices: ['command'] },
-    { key: 'statusLineCommand', path: 'statusLine.command', group: 'display', type: 'string' },
-    {
-        key: 'statusLinePadding',
-        path: 'statusLine.padding',
-        group: 'display',
-        type: 'number',
-        min: 0,
-        integer: true,
-        defaultValue: 0,
-    },
-    {
-        key: 'statusLineRefreshInterval',
-        path: 'statusLine.refreshInterval',
-        group: 'display',
-        type: 'number',
-        min: 1,
-        integer: true,
-    },
-    {
-        key: 'statusLineHideVimModeIndicator',
-        path: 'statusLine.hideVimModeIndicator',
-        group: 'display',
-        type: 'boolean',
-    },
-    {
-        key: 'subagentStatusLineType',
-        path: 'subagentStatusLine.type',
-        group: 'display',
-        type: 'string',
-        choices: ['command'],
-    },
-    { key: 'subagentStatusLineCommand', path: 'subagentStatusLine.command', group: 'display', type: 'string' },
 ];
 
-// グループの表示順（UI の見出し順）。
-export const SETTINGS_GROUP_ORDER: string[] = ['model', 'agent', 'display', 'behavior', 'permissions', 'sandbox'];
-
 // ============================================================
+// claude.ai のアカウントで有効なスキルを Claude Code が同期する skills/ 直下のディレクトリ。
+// 構成は synced/<組織ID>_<ユーザーID>/<スキル名>/SKILL.md（同期バケット配下に各スキル）。
+export const SYNCED_SKILLS_DIR = 'synced';
+
 // 公式スキルリポジトリ（Anthropic 公式 skills）
 // ============================================================
 

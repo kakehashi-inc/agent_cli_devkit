@@ -16,7 +16,7 @@ import type {
 
 export const opencodeApi: OpenCodeIpcApi = {
     mcp: {
-        getEnvironments: () => ipcRenderer.invoke(OPENCODE_MCP_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: refresh => ipcRenderer.invoke(OPENCODE_MCP_CHANNELS.GET_ENVIRONMENTS, refresh),
         getMCPServers: env => ipcRenderer.invoke(OPENCODE_MCP_CHANNELS.GET_MCP_SERVERS, env),
         enableMCPServer: (env, name) => ipcRenderer.invoke(OPENCODE_MCP_CHANNELS.ENABLE, env, name),
         disableMCPServer: (env, name) => ipcRenderer.invoke(OPENCODE_MCP_CHANNELS.DISABLE, env, name),
@@ -25,7 +25,7 @@ export const opencodeApi: OpenCodeIpcApi = {
             ipcRenderer.invoke(OPENCODE_MCP_CHANNELS.REORDER_DISABLED, env, names),
     },
     asset: {
-        getEnvironments: () => ipcRenderer.invoke(OPENCODE_ASSET_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: refresh => ipcRenderer.invoke(OPENCODE_ASSET_CHANNELS.GET_ENVIRONMENTS, refresh),
         list: (env: OpenCodeEnvironment, kind: AssetKind) =>
             ipcRenderer.invoke(OPENCODE_ASSET_CHANNELS.LIST, env, kind),
         readEntry: (env, kind, rel) => ipcRenderer.invoke(OPENCODE_ASSET_CHANNELS.READ_ENTRY, env, kind, rel),
@@ -39,20 +39,20 @@ export const opencodeApi: OpenCodeIpcApi = {
         deleteSelected: (env, kind, rels) => ipcRenderer.invoke(OPENCODE_ASSET_CHANNELS.DELETE, env, kind, rels),
     },
     cleanup: {
-        getEnvironments: () => ipcRenderer.invoke(OPENCODE_CLEANUP_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: refresh => ipcRenderer.invoke(OPENCODE_CLEANUP_CHANNELS.GET_ENVIRONMENTS, refresh),
         scan: env => ipcRenderer.invoke(OPENCODE_CLEANUP_CHANNELS.SCAN, env),
         delete: (env: OpenCodeEnvironment, selection: CleanupSelection) =>
             ipcRenderer.invoke(OPENCODE_CLEANUP_CHANNELS.DELETE, env, selection),
     },
     settings: {
-        getEnvironments: () => ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: refresh => ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.GET_ENVIRONMENTS, refresh),
         read: env => ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.READ, env),
         write: (env: OpenCodeEnvironment, values: SettingsValues) =>
             ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.WRITE, env, values),
         writeRaw: (env, raw) => ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.WRITE_RAW, env, raw),
     },
     plugin: {
-        getEnvironments: () => ipcRenderer.invoke(OPENCODE_PLUGIN_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: refresh => ipcRenderer.invoke(OPENCODE_PLUGIN_CHANNELS.GET_ENVIRONMENTS, refresh),
         list: env => ipcRenderer.invoke(OPENCODE_PLUGIN_CHANNELS.LIST, env),
         catalog: env => ipcRenderer.invoke(OPENCODE_PLUGIN_CHANNELS.CATALOG, env),
         install: (env, id) => ipcRenderer.invoke(OPENCODE_PLUGIN_CHANNELS.INSTALL, env, id),

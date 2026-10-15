@@ -6,6 +6,8 @@ export default {
         settings: 'Agy CLI 設定',
         cleanup: 'Agy CLI クリーンアップ',
     },
+    noEnvironment:
+        'Agy CLI が見つかりません。Windows または WSL で agy コマンドを使えるように Antigravity CLI を導入してから、「再取得」を押してください。導入した直後に見つからない場合は、アプリの再起動が必要なことがあります。',
     dashboard: {
         mcpDesc: 'Agy CLI が使うグローバル MCP サーバーを有効化/無効化/並べ替えします。',
         assetsDesc: 'Agy CLI のカスタムエージェントと、グローバルスキルディレクトリを管理します。',
@@ -40,6 +42,7 @@ export default {
         col: {
             name: '名前',
             description: '説明',
+            model: 'モデル',
         },
         columnFiles: 'ファイル数',
         columnLastModified: '最終更新日時',
@@ -82,6 +85,10 @@ export default {
     plugins: {
         title: 'Agy CLI プラグイン管理',
         description: '公式の agy plugin コマンドを使い、Gemini 共通の ~/.gemini/config/plugins を管理します。',
+        sourceHelp:
+            'プラグイン名（例: name@antigravity-plugins-official、公式マーケットプレイスのもの）、GitHub のリポジトリ URL、またはローカルディレクトリを指定して agy plugin install でインストールします。',
+        invalidNameNote:
+            'プラグイン名（plugin.json の name、無ければフォルダー名）が「-」で始まるか、CLI に渡せない文字を含むため、この画面では有効化・無効化・削除できません。',
     },
     settings: {
         title: 'Agy CLI 設定',
@@ -109,7 +116,13 @@ export default {
         verifyFailed:
             '編集結果の検証に失敗したため保存を中止しました。ファイルは変更されていません。この項目は「直接編集」で変更してください。',
         unavailable: 'この環境の設定へアクセスできません。',
-        group: { appearance: '表示', behavior: '動作', security: 'セキュリティ', data: 'データ', advanced: '直接編集' },
+        group: {
+            appearance: '表示',
+            behavior: '動作',
+            security: 'セキュリティ',
+            data: 'アカウント・データ',
+            advanced: '直接編集',
+        },
         field: {
             colorScheme: {
                 label: 'カラースキーム（colorScheme）',
@@ -119,21 +132,50 @@ export default {
                 label: '代替画面モード（altScreenMode）',
                 desc: 'TUI でターミナルの代替画面を使う条件です。',
             },
-            notifications: { label: '通知（notifications）', desc: 'ターミナル通知を有効にします。' },
-            showTips: { label: 'ヒント表示（showTips）', desc: 'CLI 内に操作ヒントを表示します。' },
+            notifications: {
+                label: '通知（notifications）',
+                desc: 'タスクの完了時や確認待ちのときに、デスクトップ通知とターミナルのベルで知らせます。',
+            },
+            showTips: { label: 'ヒント表示（showTips）', desc: '応答の生成中に操作ヒントを表示します。' },
             showFeedbackSurvey: {
                 label: 'フィードバック調査（showFeedbackSurvey）',
-                desc: 'フィードバック調査の案内表示を許可します。',
+                desc: 'タスク完了後に簡単なフィードバック調査を表示します。',
             },
-            verbosity: { label: '詳細度（verbosity）', desc: 'CLI の状態表示の詳細度を指定します。' },
+            verbosity: {
+                label: '詳細度（verbosity）',
+                desc: '会話表示の詳細度です。high はツール呼び出しと思考をすべて表示し、medium は関連する手順を要約し、low は最小限の進捗だけを表示します。',
+            },
             runningLightSpeed: {
                 label: '動作インジケーター速度（runningLightSpeed）',
                 desc: '動作表示の速度を指定するか、表示を停止します。',
             },
-            editor: { label: 'エディター（editor）', desc: 'CLI が連携するエディターです。任意の値も入力できます。' },
+            editor: {
+                label: 'エディター（editor）',
+                desc: '成果物の表示や Ctrl+G でのプロンプト作成に使う外部エディターです。auto は $EDITOR に従います。',
+            },
+            editorMode: {
+                label: 'エディターモード（editorMode）',
+                desc: 'プロンプト入力欄の編集方式です。vim にすると Normal / Insert / Visual のモーダル編集になります。',
+            },
+            vimInsertFirst: {
+                label: 'Insert モードで開始（vimInsertFirst）',
+                desc: 'Vim 編集で各プロンプトを Insert モードから始め、Enter だけで送信します。editorMode が vim のときに働きます。',
+            },
+            copyOnSelect: {
+                label: '選択時にコピー（copyOnSelect）',
+                desc: '代替画面モードでマウス選択を離したときに、選択した文字列をクリップボードへコピーします。',
+            },
+            queuedMessages: {
+                label: '実行中に送るメッセージ（queuedMessages）',
+                desc: 'エージェントの実行中に送ったメッセージの扱いです。send-immediately ではすぐにエージェントへ届け、未設定では現在のターンが終わるまで待機させます。',
+            },
             toolPermission: {
                 label: 'ツール権限（toolPermission）',
                 desc: 'ツール実行時の既定権限ポリシーです。',
+            },
+            agentMode: {
+                label: '実行モード（agentMode）',
+                desc: '起動時の実行モードです。accept-edits はファイル編集を自動承認し、plan はコードを変更する前に手順を計画します。',
             },
             artifactReviewPolicy: {
                 label: '成果物レビューポリシー（artifactReviewPolicy）',
@@ -145,15 +187,19 @@ export default {
             },
             enableTerminalSandbox: {
                 label: 'ターミナルサンドボックス（enableTerminalSandbox）',
-                desc: 'ターミナル操作を Agy CLI のサンドボックス内で実行します。',
+                desc: 'エージェントが実行するターミナルコマンドを OS のサンドボックス内に制限します。',
+            },
+            modelProvider: {
+                label: 'モデルプロバイダー（modelProvider）',
+                desc: 'gemini にすると、サインインせずに環境変数 GEMINI_API_KEY の API キーで Gemini API を直接使います。',
             },
             enableTelemetry: {
                 label: 'テレメトリー（enableTelemetry）',
-                desc: 'Agy CLI のテレメトリー収集を許可します。',
+                desc: '匿名の利用統計とクラッシュレポートを Google に送信します。',
             },
             useG1Credits: {
-                label: 'G1 クレジット（useG1Credits）',
-                desc: '対応アカウントで G1 クレジットを使用します。',
+                label: 'AI クレジットの使用（useG1Credits）',
+                desc: 'プランの標準クォータを使い切ったときに、個人の AI クレジットでモデルを呼び出します。',
             },
             permissions: {
                 label: '権限定義（permissions）',
@@ -173,9 +219,9 @@ export default {
     cleanup: {
         title: 'Agy CLI クリーンアップ',
         description:
-            '~/.gemini/antigravity-cli 配下のキャッシュ、ログ、クラッシュ、履歴、会話データを削除します。設定、スキル、実行ファイル、組み込み資産、MCP ランタイム、Gemini 共通設定は対象外です。',
+            '~/.gemini/antigravity-cli 配下のキャッシュ、ログ、クラッシュ、履歴、会話データと、自動更新で退避された旧バージョンの agy 実行ファイルを削除します。設定、キーバインド、スキル、現行の実行ファイル、組み込み資産、MCP ランタイム、プラグインデータ、ナレッジ、認証情報、Gemini 共通設定は対象外です。',
         wslSection: 'WSL: {{distro}}',
-        inUseWarning:
+        inUseNotice:
             '実行中の Agy CLI を終了してから削除してください。使用中のファイルはスキップされる場合があります。',
         noCandidates: '削除候補はありません',
         name: '項目',
@@ -190,13 +236,32 @@ export default {
         deletePartial: '使用中の一部ファイルをスキップしました',
         deleteError: 'クリーンアップに失敗しました',
         item: {
-            cache: { label: 'cache', desc: 'Agy CLI の一時キャッシュ。' },
-            log: { label: 'log', desc: 'Agy CLI のログディレクトリ。' },
+            cache: {
+                label: 'cache',
+                desc: 'Agy CLI のキャッシュ（ワークスペースごとの直近の会話、プロジェクト対応表、変更履歴など）。',
+            },
+            log: { label: 'log', desc: 'Agy CLI のログ（cli.log が指す最新ログを含む）。' },
             crashes: { label: 'crashes', desc: 'Agy CLI が生成したクラッシュレポート。' },
-            'cli-log': { label: 'cli.log', desc: 'トップレベルの CLI ログ。' },
-            conversations: { label: 'conversations', desc: '保存済みの会話データ。会話単位で選択できます。' },
-            brain: { label: 'brain', desc: '会話の作業データ。項目単位で選択できます。' },
-            'conversation-summaries': { label: 'conversation_summaries.db', desc: '会話要約データベース。' },
+            conversations: {
+                label: 'conversations',
+                desc: '保存済みの会話（会話ごとの SQLite ファイル）。ファイル単位で選択できます。',
+            },
+            brain: {
+                label: 'brain',
+                desc: '会話ごとの成果物と作業データ（トランスクリプトを含む）。会話単位で選択できます。',
+            },
+            scratch: {
+                label: 'scratch',
+                desc: 'エージェントの作業用ディレクトリ。生成した画像などの出力も含みます。項目単位で選択できます。',
+            },
+            worktrees: {
+                label: 'worktrees',
+                desc: 'サブエージェントが作業に使う Git worktree。未コミットの変更も削除されます。項目単位で選択できます。',
+            },
+            'conversation-summaries': {
+                label: 'conversation_summaries.db',
+                desc: '会話一覧（/resume）に使う会話要約データベース。',
+            },
             'conversation-summaries-wal': {
                 label: 'conversation_summaries.db-wal',
                 desc: '会話要約 DB の WAL ファイル。',
@@ -205,8 +270,15 @@ export default {
                 label: 'conversation_summaries.db-shm',
                 desc: '会話要約 DB の共有メモリファイル。',
             },
-            history: { label: 'history.jsonl', desc: 'プロンプトとコマンドの履歴。' },
-            'update-lock': { label: 'updater/update.lock', desc: '停止した更新処理が残したロックファイル。' },
+            history: { label: 'history.jsonl', desc: 'プロンプトとコマンドの入力履歴。' },
+            'update-lock': {
+                label: 'updater/update.lock',
+                desc: '停止した更新処理が残したロックファイル。自動更新がロックを保持している間は表示・削除しません。',
+            },
+            'old-binaries': {
+                label: '旧バージョンの agy 実行ファイル（*.old）',
+                desc: '自動更新で退避された旧バージョンの実行ファイル（Windows は %LOCALAPPDATA%\\agy\\bin、Linux は ~/.local/bin の agy*.<数字>.old）。退避から 15 分以上経過したものだけを対象とし、自動更新の実行中と、実行中のもの（書き込みで開けないもの）は削除しません。現行の agy は対象外です。',
+            },
         },
     },
 };

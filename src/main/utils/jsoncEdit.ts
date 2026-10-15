@@ -81,8 +81,10 @@ function stripTrailingCommas(text: string): string {
     return result;
 }
 
+/** JSONC を解釈する。先頭の UTF-8 BOM は読み飛ばす（OpenCode は BOM 付きのファイルも読み込むため）。 */
 export function parseJsonc(text: string): unknown {
-    const normalized = stripTrailingCommas(stripComments(text));
+    const body = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+    const normalized = stripTrailingCommas(stripComments(body));
     return JSON.parse(normalized);
 }
 

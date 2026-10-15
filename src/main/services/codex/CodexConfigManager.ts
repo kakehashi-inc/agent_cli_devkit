@@ -9,8 +9,10 @@ import {
     SettingsValues,
     SettingsWriteResult,
 } from '../../../shared/agents/codex/types';
+import { settingsValueProblem } from '../../../shared/agents/settingsValue';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
+import { stripBom } from '../common/json/stripBom';
 import { deleteScalar, getScalar, setScalar } from '../../utils/tomlEdit';
 import { deepEqualLoose, deleteNestedValue, setNestedValue, withoutEmptyObjects } from '../../utils/nestedValue';
 
@@ -56,14 +58,14 @@ export class CodexConfigManager {
     }
 
     /**
-     * 指定環境の config.toml を読み、登録項目の現在値と生 TOML を返す。
+     * 指定環境の config.toml を読み、登録項目の現在値と生 TOML（先頭の BOM は除く）を返す。
      * ファイルが無い場合は exists=false・raw=null・値は未設定（undefined）。
      */
     async read(env: CodexEnvironment): Promise<SettingsReadResult> {
         const label = env.kind === 'wsl' ? (env.distro ?? '') : this.nativeLabel();
         const fs = this.fsFor(env);
 
-        const raw = await fs.readText(CODEX_CONFIG_REL);
+        const raw = stripBom(await fs.readText(CODEX_CONFIG_REL));
         const exists = raw !== null;
         const text = raw ?? '';
 
@@ -100,7 +102,7 @@ export class CodexConfigManager {
 
     /**
      * テーブル編集の保存。既存 TOML に対し、登録項目だけを行スライスで反映する。
-     * 値が undefined / 空文字なら削除、それ以外は型に応じて設定する。
+     * 値が undefined / 空文字なら削除、それ以外は型に応じて設定する。空でないファイルは改行で終える。
      *
      * 安全弁: 編集後 TOML の parse 結果が「編集前の parse 結果へ意図した変更を適用した
      * 期待モデル」と deep 一致することを検証し、一致しない場合はファイルを書かずに失敗を返す。
@@ -108,7 +110,7 @@ export class CodexConfigManager {
      */
     async write(env: CodexEnvironment, values: SettingsValues): Promise<SettingsWriteResult> {
         const fs = this.fsFor(env);
-        let text = (await fs.readText(CODEX_CONFIG_REL)) ?? '';
+        let text = stripBom(await fs.readText(CODEX_CONFIG_REL)) ?? '';
 
         const expected: Record<string, unknown> = {};
         if (text.trim().length > 0) {
@@ -119,9 +121,14 @@ export class CodexConfigManager {
             }
         }
 
+        // 受け付けない値があれば何も書かない。
         for (const field of SETTINGS_FIELDS) {
             if (!Object.prototype.hasOwnProperty.call(values, field.key)) continue;
-            text = this.applyField(text, expected, field, values[field.key]);
+            const result = this.applyField(text, expected, field, values[field.key]);
+            if (result === null) {
+                return { ok: false, message: 'invalid-value' };
+            }
+            text = result;
         }
 
         // 検証: 編集後 TOML が期待モデルと一致しなければ書き込まない（空テーブルは無視して比較）。
@@ -136,7 +143,7 @@ export class CodexConfigManager {
         }
 
         try {
-            await fs.writeText(CODEX_CONFIG_REL, text);
+            await fs.writeText(CODEX_CONFIG_REL, text === '' || text.endsWith('\n') ? text : `${text}\n`);
             return { ok: true };
         } catch (error) {
             console.error(`Failed to write config.toml (${JSON.stringify(env)}):`, error);
@@ -144,13 +151,16 @@ export class CodexConfigManager {
         }
     }
 
-    /** 1 項目をテキストと期待モデルの両方へ反映し、更新後テキストを返す。 */
+    /**
+     * 1 項目をテキストと期待モデルの両方へ反映し、更新後テキストを返す。
+     * registry の制約を満たさない数値（範囲の外・数値として読めない値・整数項目の小数）は反映せず null を返す。
+     */
     private applyField(
         text: string,
         model: Record<string, unknown>,
         field: SettingsFieldSpec,
         value: SettingsFieldValue
-    ): string {
+    ): string | null {
         if (field.type === 'directEdit') {
             return text;
         }
@@ -166,16 +176,12 @@ export class CodexConfigManager {
                     ? value
                     : undefined;
         } else if (field.type === 'number') {
-            if (typeof value === 'number' && Number.isFinite(value)) {
-                let n = value;
-                if (typeof field.min === 'number' && n < field.min) {
-                    n = field.min;
+            // 数値以外（未設定）はキー削除。数値は registry の制約（範囲・整数）を満たすものだけをそのまま設定する。
+            if (typeof value === 'number') {
+                if (settingsValueProblem(field, value) !== null) {
+                    return null;
                 }
-                if (typeof field.max === 'number' && n > field.max) {
-                    n = field.max;
-                }
-                if (field.integer) n = Math.trunc(n);
-                resolved = n;
+                resolved = value;
             } else {
                 resolved = undefined;
             }
@@ -195,9 +201,10 @@ export class CodexConfigManager {
     }
 
     /**
-     * 直接編集の保存。生 TOML を構文チェックしてそのまま書き込む。
+     * 直接編集の保存。生 TOML（先頭の BOM は除く）を構文チェックしてそのまま書き込む。
      */
-    async writeRaw(env: CodexEnvironment, raw: string): Promise<SettingsWriteResult> {
+    async writeRaw(env: CodexEnvironment, input: string): Promise<SettingsWriteResult> {
+        const raw = stripBom(input);
         try {
             parse(raw);
         } catch {

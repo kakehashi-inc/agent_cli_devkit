@@ -1,5 +1,6 @@
 import { CODEX_CONFIG_REL, CODEX_DISABLED_MCP_REL, CODEX_WSL_CLI_TEST } from '../../../shared/agents/codex/constants';
 import { CodexEnvironment, CodexMcpEnvInfo, MCPServerInfo, OSType } from '../../../shared/agents/codex/types';
+import { stripBom } from '../common/json/stripBom';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import {
@@ -37,6 +38,11 @@ export class CodexMcpManager {
         return new HomeFs(env, this.detector);
     }
 
+    /** TOML ファイルのテキスト（先頭の BOM を除く）。無ければ空文字列。 */
+    private async readToml(fs: HomeFs, rel: string): Promise<string> {
+        return stripBom(await fs.readText(rel)) ?? '';
+    }
+
     /** 管理対象の環境一覧（native + Codex 入り WSL distro）。 */
     async getEnvironments(): Promise<CodexMcpEnvInfo[]> {
         const result: CodexMcpEnvInfo[] = [];
@@ -59,8 +65,8 @@ export class CodexMcpManager {
     /** 有効/無効の MCP サーバー一覧を取得する（出現順を保持）。 */
     async getMCPServers(env: CodexEnvironment): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const configText = (await fs.readText(CODEX_CONFIG_REL)) ?? '';
-        const disabledText = (await fs.readText(CODEX_DISABLED_MCP_REL)) ?? '';
+        const configText = await this.readToml(fs, CODEX_CONFIG_REL);
+        const disabledText = await this.readToml(fs, CODEX_DISABLED_MCP_REL);
 
         return {
             enabled: this.buildInfos(configText, true),
@@ -87,7 +93,7 @@ export class CodexMcpManager {
     /** MCP サーバーを無効化（config.toml → disabled ファイルへブロック移動）。 */
     async disableMCPServer(env: CodexEnvironment, serverName: string): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const configText = (await fs.readText(CODEX_CONFIG_REL)) ?? '';
+        const configText = await this.readToml(fs, CODEX_CONFIG_REL);
         const extracted = extractServerBlock(configText, serverName);
         if (!extracted) {
             throw new Error(`Server "${serverName}" not found in enabled config`);
@@ -97,7 +103,7 @@ export class CodexMcpManager {
         await fs.writeText(CODEX_CONFIG_REL, extracted.rest);
 
         // disabled ファイルへブロックを追記する。
-        const disabledText = (await fs.readText(CODEX_DISABLED_MCP_REL)) ?? '';
+        const disabledText = await this.readToml(fs, CODEX_DISABLED_MCP_REL);
         const nextDisabled = insertServerBlock(disabledText, extracted.block);
         await fs.writeText(CODEX_DISABLED_MCP_REL, nextDisabled);
 
@@ -107,14 +113,14 @@ export class CodexMcpManager {
     /** MCP サーバーを有効化（disabled ファイル → config.toml へブロック移動）。 */
     async enableMCPServer(env: CodexEnvironment, serverName: string): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const disabledText = (await fs.readText(CODEX_DISABLED_MCP_REL)) ?? '';
+        const disabledText = await this.readToml(fs, CODEX_DISABLED_MCP_REL);
         const extracted = extractServerBlock(disabledText, serverName);
         if (!extracted) {
             throw new Error(`Server "${serverName}" not found in disabled config`);
         }
 
         // config.toml へブロックを追記する。
-        const configText = (await fs.readText(CODEX_CONFIG_REL)) ?? '';
+        const configText = await this.readToml(fs, CODEX_CONFIG_REL);
         const nextConfig = insertServerBlock(configText, extracted.block);
         await fs.writeText(CODEX_CONFIG_REL, nextConfig);
 
@@ -131,7 +137,7 @@ export class CodexMcpManager {
     /** 有効な MCP サーバーの順序を変更する。 */
     async reorderMCPServers(env: CodexEnvironment, serverNames: string[]): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const configText = (await fs.readText(CODEX_CONFIG_REL)) ?? '';
+        const configText = await this.readToml(fs, CODEX_CONFIG_REL);
         await fs.writeText(CODEX_CONFIG_REL, reorderServerBlocks(configText, serverNames));
         return this.getMCPServers(env);
     }
@@ -139,7 +145,7 @@ export class CodexMcpManager {
     /** 無効な MCP サーバーの順序を変更する。 */
     async reorderDisabledMCPServers(env: CodexEnvironment, serverNames: string[]): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const disabledText = (await fs.readText(CODEX_DISABLED_MCP_REL)) ?? '';
+        const disabledText = await this.readToml(fs, CODEX_DISABLED_MCP_REL);
         await fs.writeText(CODEX_DISABLED_MCP_REL, reorderServerBlocks(disabledText, serverNames));
         return this.getMCPServers(env);
     }

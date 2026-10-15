@@ -25,8 +25,10 @@ import {
     KeyboardArrowRight as CollapseIcon,
 } from '@mui/icons-material';
 import { SettingsValueEditor } from '../../components/settings/SettingsValueEditor';
+import { settingsValueProblemMessage } from '../../components/settings/settingsValueMessage';
 import { AssetSearchField } from '../../components/assets/AssetSearchField';
 import { filterSettingsFields } from '../../utils/settingsSearch';
+import { findInvalidSettingsValue } from '@shared/agents/settingsValue';
 import type {
     ClaudeEnvironment,
     SettingsFieldSpec,
@@ -164,9 +166,23 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         );
 
     const handleSave = async () => {
+        const values = collectValues();
+        const invalid = findInvalidSettingsValue(fields, values);
+        if (invalid) {
+            onNotify(
+                settingsValueProblemMessage(
+                    t,
+                    invalid.field,
+                    invalid.problem,
+                    t(`claude.settings.field.${invalid.field.key}.label`)
+                ),
+                'error'
+            );
+            return;
+        }
         setBusy(true);
         try {
-            const result = await window.agentCliDevkit.claude.settings.write(env, collectValues());
+            const result = await window.agentCliDevkit.claude.settings.write(env, values);
             if (result.ok) {
                 onNotify(t('claude.settings.saveSuccess'), 'success');
                 await load();

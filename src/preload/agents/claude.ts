@@ -82,7 +82,7 @@ export const claudeApi: ClaudeIpcApi = {
             ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.WRITE_RAW, env, rawJson),
     },
     plugin: {
-        getEnvironments: () => ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.GET_ENVIRONMENTS, refresh),
         list: (env: ClaudeEnvironment) => ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.LIST, env),
         catalog: (env: ClaudeEnvironment) => ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.CATALOG, env),
         install: (env: ClaudeEnvironment, id: string) => ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.INSTALL, env, id),

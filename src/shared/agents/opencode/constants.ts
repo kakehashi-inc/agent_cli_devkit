@@ -1,28 +1,43 @@
 import type { AssetKind, CleanupCandidateSpec, PluginCapabilities, SettingsFieldSpec } from '../types';
+import { wslCliTest } from '../wsl';
 
+// 対象は OpenCode 2（npm @opencode/cli 2.x、コマンド名 opencode2）。
 export const OPENCODE_CONFIG_DIR = '.config/opencode';
-export const OPENCODE_CONFIG_REL = `${OPENCODE_CONFIG_DIR}/opencode.json`;
+export const OPENCODE_CONFIG_SCHEMA_URL = 'https://opencode.ai/config.json';
+// グローバル設定ファイルの候補。OpenCode は両方を読み込み、同じ値は opencode.jsonc が優先する。
+// MCP・プラグインの編集対象は `opencode2 mcp add --global` / `opencode2 plugin add` と同じく存在する最初の候補、
+// 設定画面の編集対象は OpenCode が値を優先する、存在する最後の候補とし、どちらも無ければ先頭を作成する。
+export const OPENCODE_CONFIG_CANDIDATES_REL = [
+    `${OPENCODE_CONFIG_DIR}/opencode.json`,
+    `${OPENCODE_CONFIG_DIR}/opencode.jsonc`,
+] as const;
+// 設定ファイル内で MCP サーバーを並べるオブジェクトの位置（mcp.servers.<name>）。
+export const OPENCODE_MCP_SERVERS_PATH = ['mcp', 'servers'];
 // 無効化した MCP はエントリごと sidecar ファイルへ退避する（他 agent と同じ方式）。
-// 命名は Claude Code（.claude.json → .claude-disabled-mcp.json）と同じ
-// 「<設定ファイル名>-disabled-mcp.<ext>」ルールに従う。
+// 命名は「<設定ファイル名>-disabled-mcp.<ext>」、中身は設定ファイルと同じ { mcp: { servers: {...} } }。
 export const OPENCODE_DISABLED_MCP_REL = `${OPENCODE_CONFIG_DIR}/opencode-disabled-mcp.json`;
 export const OPENCODE_AGENTS_REL = `${OPENCODE_CONFIG_DIR}/agents`;
 export const OPENCODE_SKILLS_REL = `${OPENCODE_CONFIG_DIR}/skills`;
-export const OPENCODE_PLUGINS_REL = `${OPENCODE_CONFIG_DIR}/plugins`;
-export const OPENCODE_DISABLED_PLUGINS_REL = `${OPENCODE_CONFIG_DIR}/plugins-disabled`;
-export const OPENCODE_DISABLED_NPM_PLUGINS_REL = `${OPENCODE_CONFIG_DIR}/disabled-npm-plugins.json`;
+// ローカルプラグインの配置先。OpenCode は直下の .ts / .js ファイルとプラグインパッケージのフォルダーを読み込む。
+export const OPENCODE_PLUGINS_DIR = 'plugins';
+// 無効化したローカルプラグインの退避先（OpenCode は読み込まない）。
+export const OPENCODE_DISABLED_PLUGINS_DIR = 'plugins-disabled';
+// 無効化した plugins 配列の要素の退避先。中身は設定ファイルと同じ { plugins: [...] } と、
+// 有効化で元の位置へ戻すための無効化した時点の並び { positions: { <指定子>: [...] } }。
+export const OPENCODE_DISABLED_PLUGINS_REL = `${OPENCODE_CONFIG_DIR}/opencode-disabled-plugins.json`;
+// ターミナル UI の設定。`opencode2 plugin add` は TUI 専用のプラグインをこのファイルの plugins へ追加する。
+export const OPENCODE_CLI_CONFIG_REL = `${OPENCODE_CONFIG_DIR}/cli.json`;
 
 export const ASSET_PARENT_REL: Record<AssetKind, string> = {
     agents: OPENCODE_AGENTS_REL,
     skills: OPENCODE_SKILLS_REL,
 };
 
-export const OPENCODE_CLI_COMMAND = 'opencode';
-// WSL distro の検出は他 agent と同じくディレクトリ存在チェックで行う。
-// bash -lc（非対話シェル）では .bashrc の PATH 追記が効かず `command -v opencode` が
-// 失敗し得るため、CLI 実行による判定は使わない。
-export const OPENCODE_WSL_CLI_TEST = `test -d ~/${OPENCODE_CONFIG_DIR}`;
-
+// OpenCode 2 のコマンド名。このコマンドの有無で OpenCode 2 の導入を判定する（CLI 本体は実行しない）。
+export const OPENCODE_CLI_COMMAND = 'opencode2';
+// WSL distro の検出は opencode2 コマンドの有無で行う。CLI の実行と同じ PATH・同じ規則（Windows 側のドライブにある
+// ものを除く）で解決する。
+export const OPENCODE_WSL_CLI_TEST = wslCliTest(OPENCODE_CLI_COMMAND);
 export const OPENCODE_MCP_CHANNELS = {
     GET_ENVIRONMENTS: 'opencode-mcp:get-environments',
     GET_MCP_SERVERS: 'opencode-mcp:get-mcp-servers',
@@ -75,110 +90,148 @@ export const OPENCODE_PLUGIN_CAPABILITIES: PluginCapabilities = {
     catalog: false,
     marketplaceManagement: false,
     packageSource: true,
+    sourceHelpKey: 'opencode.plugins.sourceHelp',
 };
 
-// OpenCode の公式 XDG ディレクトリだけを対象にする。認証ファイルと設定資産は除外する。
+// OpenCode の公式 XDG ディレクトリ（cache / data / state）のうち、再生成されるデータと履歴だけを対象にする。
+// データベース（opencode.db*。資格情報と保存済みの権限を含むためファイルごとは消さない）は、
+// セッション履歴だけを OpenCode の CLI（session delete）で消す候補（sessions）として扱う。
+// ワークツリー（worktree）、
+// サービスの設定と登録（service.json）、永続ターミナル（pty）、ロック（locks。OpenCode が古いものを自動で回収する）、
+// TUI の状態（model.json / session.json / prompt-stash.jsonl）、設定ファイルと資産は対象にしない。
 export const CLEANUP_CANDIDATES: CleanupCandidateSpec[] = [
     { key: 'cache', path: '.cache/opencode', defaultChecked: false },
     { key: 'logs', path: '.local/share/opencode/log', defaultChecked: false },
+    { key: 'tool-output', path: '.local/share/opencode/tool-output', defaultChecked: false },
+    { key: 'shell-output', path: '.local/share/opencode/shell', defaultChecked: false },
+    {
+        key: 'snapshot',
+        path: '.local/share/opencode/snapshot',
+        defaultChecked: false,
+        expandable: true,
+        childKind: 'dir',
+    },
     { key: 'repos', path: '.local/share/opencode/repos', defaultChecked: false, expandable: true, childKind: 'dir' },
-    { key: 'database', path: '.local/share/opencode/opencode.db', kind: 'file', defaultChecked: false },
-    { key: 'database-wal', path: '.local/share/opencode/opencode.db-wal', kind: 'file', defaultChecked: false },
-    { key: 'database-shm', path: '.local/share/opencode/opencode.db-shm', kind: 'file', defaultChecked: false },
-    { key: 'locks', path: '.local/state/opencode/locks', defaultChecked: false },
+    {
+        key: 'prompt-history',
+        path: '.local/state/opencode/prompt-history.jsonl',
+        kind: 'file',
+        defaultChecked: false,
+    },
+    { key: 'frecency', path: '.local/state/opencode/frecency.jsonl', kind: 'file', defaultChecked: false },
+    // セッション履歴。パスは持たず、CLI で一覧・削除する（子要素 = 親なしのセッション）。
+    { key: 'sessions', defaultChecked: false, expandable: true, childKind: 'dir' },
 ];
 
-// トップレベルの単一スカラーのみテーブル編集。配列・マップ・オブジェクトと union 型は直接編集。
-// TUI 専用 tui.json / keybinds は Claude の機能対応外なので扱わない。
+// セッション履歴を保存するデータベース（XDG データ領域の opencode.db。OpenCode 2 の正式リリースが使う名前）。
+// これが無い環境ではセッション履歴が無いため、CLI を実行せずにセッション履歴の候補を出さない。
+export const OPENCODE_DATABASE_REL = '.local/share/opencode/opencode.db';
+
+// model の文字列形式（provider/model#variant。variant は省略可）。OpenCode の設定スキーマと同じパターン。
+export const OPENCODE_MODEL_PATTERN = '^[^/#]+/[^#]+(?:#[^#]+)?$';
+
+// OpenCode 2 のグローバル設定ファイル（opencode.json / opencode.jsonc）のキー。
+// 単一スカラーと model はテーブル編集、配列・マップ・オブジェクトとそのほかの union 型は直接編集。
+// enterprise（組織管理）、受け付けるだけで動作に使われないキー（share / username / instructions / lsp）、
+// TUI 専用の cli.json とバックグラウンドサービスの service.json は対象外。
 export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
-    { key: 'model', path: 'model', group: 'model', type: 'string', allowCustom: true },
-    { key: 'smallModel', path: 'small_model', group: 'model', type: 'string', allowCustom: true },
-    { key: 'defaultAgent', path: 'default_agent', group: 'model', type: 'string', allowCustom: true },
+    // model は provider/model#variant 形式の文字列と { providerID, model, variant } オブジェクトの union。
+    // 表では文字列として編集し、オブジェクト形式は文字列表記で示す（変更して保存したときだけ文字列で上書きする）。
     {
-        key: 'subagentDepth',
-        path: 'subagent_depth',
+        key: 'model',
+        path: 'model',
         group: 'model',
+        type: 'string',
+        pattern: OPENCODE_MODEL_PATTERN,
+    },
+    {
+        key: 'defaultAgent',
+        path: 'default_agent',
+        group: 'model',
+        type: 'string',
+        choices: ['build', 'plan'],
+        allowCustom: true,
+        defaultValue: 'build',
+    },
+    { key: 'agents', path: 'agents', group: 'model', type: 'directEdit' },
+    { key: 'providers', path: 'providers', group: 'model', type: 'directEdit' },
+    { key: 'shell', path: 'shell', group: 'behavior', type: 'string' },
+    {
+        key: 'update',
+        path: 'update',
+        group: 'behavior',
+        type: 'string',
+        choices: ['disable', 'notify', 'auto'],
+        defaultValue: 'notify',
+    },
+    { key: 'snapshots', path: 'snapshots', group: 'behavior', type: 'boolean', defaultOn: true },
+    // 未設定時はサーバーのデータディレクトリ配下（worktree/<プロジェクト ID>）を使うため既定値を宣言しない。
+    { key: 'worktreeDirectory', path: 'worktree.directory', group: 'behavior', type: 'string' },
+    { key: 'websearch', path: 'websearch', group: 'behavior', type: 'directEdit' },
+    { key: 'warming', path: 'warming', group: 'behavior', type: 'directEdit' },
+    { key: 'formatter', path: 'formatter', group: 'behavior', type: 'directEdit' },
+    { key: 'watcherIgnore', path: 'watcher.ignore', group: 'behavior', type: 'directEdit' },
+    { key: 'permissions', path: 'permissions', group: 'permissions', type: 'directEdit' },
+    { key: 'policies', path: 'policies', group: 'permissions', type: 'directEdit' },
+    {
+        key: 'mcpTimeoutStartup',
+        path: 'mcp.timeout.startup',
+        group: 'mcp',
         type: 'number',
-        min: 0,
+        min: 1,
         integer: true,
-        defaultValue: 1,
-    },
-    { key: 'username', path: 'username', group: 'behavior', type: 'string' },
-    { key: 'layout', path: 'layout', group: 'behavior', type: 'string', choices: ['auto', 'stretch'] },
-    { key: 'shell', path: 'shell', group: 'behavior', type: 'string', allowCustom: true },
-    {
-        key: 'logLevel',
-        path: 'logLevel',
-        group: 'behavior',
-        type: 'string',
-        choices: ['DEBUG', 'INFO', 'WARN', 'ERROR'],
+        defaultValue: 30000,
     },
     {
-        key: 'share',
-        path: 'share',
-        group: 'behavior',
-        type: 'string',
-        choices: ['manual', 'auto', 'disabled'],
-        defaultValue: 'manual',
+        key: 'mcpTimeoutCatalog',
+        path: 'mcp.timeout.catalog',
+        group: 'mcp',
+        type: 'number',
+        min: 1,
+        integer: true,
+        defaultValue: 30000,
     },
-    { key: 'snapshot', path: 'snapshot', group: 'behavior', type: 'boolean', defaultOn: true },
-    // autoupdate は boolean（true/false）でも文字列 "notify" でも書ける型混在キー。
-    // 候補ごとに型を保持し、選択された値を真偽値 / 文字列のまま書き分ける。
     {
-        key: 'autoupdate',
-        path: 'autoupdate',
-        group: 'behavior',
-        type: 'enum',
-        enumChoices: [
-            { value: true, labelKey: 'enabled' },
-            { value: false, labelKey: 'disabled' },
-            { value: 'notify', labelKey: 'notify' },
-        ],
+        key: 'mcpTimeoutExecution',
+        path: 'mcp.timeout.execution',
+        group: 'mcp',
+        type: 'number',
+        min: 1,
+        integer: true,
+        defaultValue: 43200000,
     },
-    // ネストしたスカラー（server.* / attachment.image.* など）もテーブル編集できる。
-    // 親オブジェクト（server / attachment / compaction ...）は複合値も含むため directEdit 側にも残す。
-    { key: 'serverPort', path: 'server.port', group: 'server', type: 'number', min: 1, max: 65535, integer: true },
-    { key: 'serverHostname', path: 'server.hostname', group: 'server', type: 'string', defaultValue: '0.0.0.0' },
-    { key: 'serverMdns', path: 'server.mdns', group: 'server', type: 'boolean' },
+    { key: 'mcpServers', path: 'mcp.servers', group: 'mcp', type: 'directEdit' },
     {
-        key: 'serverMdnsDomain',
-        path: 'server.mdnsDomain',
-        group: 'server',
-        type: 'string',
-        defaultValue: 'opencode.local',
-    },
-    { key: 'serverCors', path: 'server.cors', group: 'server', type: 'directEdit' },
-    {
-        key: 'attachmentImageAutoResize',
-        path: 'attachment.image.auto_resize',
-        group: 'attachment',
+        key: 'mediaImageAutoResize',
+        path: 'media.image.auto_resize',
+        group: 'media',
         type: 'boolean',
         defaultOn: true,
     },
     {
-        key: 'attachmentImageMaxWidth',
-        path: 'attachment.image.max_width',
-        group: 'attachment',
+        key: 'mediaImageMaxWidth',
+        path: 'media.image.max_width',
+        group: 'media',
         type: 'number',
-        min: 0,
+        min: 1,
         integer: true,
         defaultValue: 2000,
     },
     {
-        key: 'attachmentImageMaxHeight',
-        path: 'attachment.image.max_height',
-        group: 'attachment',
+        key: 'mediaImageMaxHeight',
+        path: 'media.image.max_height',
+        group: 'media',
         type: 'number',
-        min: 0,
+        min: 1,
         integer: true,
         defaultValue: 2000,
     },
     {
-        key: 'attachmentImageMaxBase64Bytes',
-        path: 'attachment.image.max_base64_bytes',
-        group: 'attachment',
+        key: 'mediaImageMaxBase64Bytes',
+        path: 'media.image.max_base64_bytes',
+        group: 'media',
         type: 'number',
-        min: 0,
+        min: 1,
         integer: true,
         defaultValue: 5242880,
     },
@@ -187,7 +240,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'tool_output.max_lines',
         group: 'toolOutput',
         type: 'number',
-        min: 0,
+        min: 1,
         integer: true,
         defaultValue: 2000,
     },
@@ -196,184 +249,47 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'tool_output.max_bytes',
         group: 'toolOutput',
         type: 'number',
-        min: 0,
+        min: 1,
         integer: true,
         defaultValue: 51200,
     },
     { key: 'compactionAuto', path: 'compaction.auto', group: 'compaction', type: 'boolean', defaultOn: true },
-    { key: 'compactionPrune', path: 'compaction.prune', group: 'compaction', type: 'boolean', defaultOn: false },
     {
-        key: 'compactionTailTurns',
-        path: 'compaction.tail_turns',
+        key: 'compactionKeepTokens',
+        path: 'compaction.keep.tokens',
         group: 'compaction',
         type: 'number',
         min: 0,
         integer: true,
-        defaultValue: 2,
+        defaultValue: 15000,
     },
+    // 未設定時はモデルの上限の 10% のため既定値を宣言しない。
     {
-        key: 'compactionPreserveRecentTokens',
-        path: 'compaction.preserve_recent_tokens',
-        group: 'compaction',
-        type: 'number',
-        min: 0,
-        integer: true,
-    },
-    {
-        key: 'compactionReserved',
-        path: 'compaction.reserved',
+        key: 'compactionBuffer',
+        path: 'compaction.buffer',
         group: 'compaction',
         type: 'number',
         min: 0,
         integer: true,
     },
+    { key: 'skills', path: 'skills', group: 'extensions', type: 'directEdit' },
+    { key: 'commands', path: 'commands', group: 'extensions', type: 'directEdit' },
+    { key: 'references', path: 'references', group: 'extensions', type: 'directEdit' },
+    { key: 'plugins', path: 'plugins', group: 'extensions', type: 'directEdit' },
+    // 未設定時に使う解析器は実行環境によって異なるため既定値を宣言しない。
     {
-        key: 'permissionRead',
-        path: 'permission.read',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionEdit',
-        path: 'permission.edit',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionGlob',
-        path: 'permission.glob',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionGrep',
-        path: 'permission.grep',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionList',
-        path: 'permission.list',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionBash',
-        path: 'permission.bash',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionTask',
-        path: 'permission.task',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionExternalDirectory',
-        path: 'permission.external_directory',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionLsp',
-        path: 'permission.lsp',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionSkill',
-        path: 'permission.skill',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionTodowrite',
-        path: 'permission.todowrite',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionQuestion',
-        path: 'permission.question',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionWebfetch',
-        path: 'permission.webfetch',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionWebsearch',
-        path: 'permission.websearch',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'permissionDoomLoop',
-        path: 'permission.doom_loop',
-        group: 'permission',
-        type: 'string',
-        choices: ['ask', 'allow', 'deny'],
-    },
-    {
-        key: 'experimentalDisablePasteSummary',
-        path: 'experimental.disable_paste_summary',
-        group: 'experimental',
-        type: 'boolean',
-    },
-    { key: 'experimentalBatchTool', path: 'experimental.batch_tool', group: 'experimental', type: 'boolean' },
-    { key: 'experimentalOpenTelemetry', path: 'experimental.openTelemetry', group: 'experimental', type: 'boolean' },
-    {
-        key: 'experimentalContinueLoopOnDeny',
-        path: 'experimental.continue_loop_on_deny',
+        key: 'experimentalPortableShellScanner',
+        path: 'experimental.portable_shell_scanner',
         group: 'experimental',
         type: 'boolean',
     },
     {
-        key: 'experimentalMcpTimeout',
-        path: 'experimental.mcp_timeout',
+        key: 'experimentalSubagentDepth',
+        path: 'experimental.subagent_depth',
         group: 'experimental',
         type: 'number',
         min: 0,
         integer: true,
+        defaultValue: 1,
     },
-    { key: 'experimentalPrimaryTools', path: 'experimental.primary_tools', group: 'experimental', type: 'directEdit' },
-    { key: 'experimentalPolicies', path: 'experimental.policies', group: 'experimental', type: 'directEdit' },
-    { key: 'skills', path: 'skills', group: 'advanced', type: 'directEdit' },
-    { key: 'references', path: 'references', group: 'advanced', type: 'directEdit' },
-    { key: 'provider', path: 'provider', group: 'advanced', type: 'directEdit' },
-    { key: 'agent', path: 'agent', group: 'advanced', type: 'directEdit' },
-    { key: 'permission', path: 'permission', group: 'advanced', type: 'directEdit' },
-    { key: 'tools', path: 'tools', group: 'advanced', type: 'directEdit' },
-    { key: 'server', path: 'server', group: 'advanced', type: 'directEdit' },
-    { key: 'command', path: 'command', group: 'advanced', type: 'directEdit' },
-    { key: 'formatter', path: 'formatter', group: 'advanced', type: 'directEdit' },
-    { key: 'lsp', path: 'lsp', group: 'advanced', type: 'directEdit' },
-    { key: 'compaction', path: 'compaction', group: 'advanced', type: 'directEdit' },
-    { key: 'watcher', path: 'watcher', group: 'advanced', type: 'directEdit' },
-    { key: 'attachment', path: 'attachment', group: 'advanced', type: 'directEdit' },
-    { key: 'toolOutput', path: 'tool_output', group: 'advanced', type: 'directEdit' },
-    { key: 'mcp', path: 'mcp', group: 'advanced', type: 'directEdit' },
-    { key: 'plugin', path: 'plugin', group: 'advanced', type: 'directEdit' },
-    { key: 'instructions', path: 'instructions', group: 'advanced', type: 'directEdit' },
-    { key: 'disabledProviders', path: 'disabled_providers', group: 'advanced', type: 'directEdit' },
-    { key: 'enabledProviders', path: 'enabled_providers', group: 'advanced', type: 'directEdit' },
-    { key: 'experimental', path: 'experimental', group: 'advanced', type: 'directEdit' },
 ];

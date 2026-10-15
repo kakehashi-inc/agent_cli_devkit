@@ -16,18 +16,9 @@ import {
 import { Visibility as ViewIcon, Article as FullViewIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import type { AssetEntry } from '@shared/agents/types';
 import { formatCount, formatDateTime, isRecent, relativeTimeParts } from '../../utils/format';
+import { AssetDetails, ColumnValue, EffortLine, resolveColumnValue, type FmColumn } from './assetColumns';
 
-// frontmatter 列の表示設定（table-layout: fixed と併用）。
-// - fit:    内容に合わせて伸縮し、maxWidth で上限を制限する（name）。上限超過は省略（…）。
-// - width:  固定幅。
-// - flex:   残り幅をすべて使う伸縮列（description。width:auto で貪欲に確保）。
-export interface FmColumn {
-    key: string;
-    width?: number; // 固定幅（px）
-    maxWidthPct?: number; // fit 列の最大幅（ウィンドウ幅に対する割合 0〜1）
-    fit?: boolean; // 内容フィット（maxWidth 上限）
-    flex?: boolean; // 残り幅を使う伸縮列
-}
+export type { FmColumn };
 
 // name（fit 列）の最小幅と、1 文字あたりの概算 px（幅見積り用）。
 const NAME_MIN_WIDTH = 80;
@@ -81,7 +72,7 @@ interface Props {
     onToggle: (relPath: string) => void;
     onToggleAll: () => void;
     onView: (entry: AssetEntry) => void;
-    // OS 標準のファイルマネージャーで対象を表示。本体一覧でのみ指定する。
+    // OS 標準のファイルマネージャーで対象を表示。未指定なら名前横の表示アイコンを出さない。
     onReveal?: (entry: AssetEntry) => void;
     // 「全体」参照（ファイル内容全体の表示）。未指定なら「全体」ボタンを表示しない。
     onViewFull?: (entry: AssetEntry) => void;
@@ -92,7 +83,7 @@ const LAST_MODIFIED_WIDTH = 140;
 
 /**
  * Agent・Skill の一覧テーブル（agent 非依存の共通実装）。
- * 既存 agent（Claude / Codex / Grok）の AssetEntriesTable と同じレイアウト。
+ * チェックボックス選択・frontmatter 列・最終更新日時・ファイル数・参照ボタンを 1 行ずつ表示する。
  */
 export const AssetEntriesTable: React.FC<Props> = ({
     i18nPrefix,
@@ -171,9 +162,7 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                     />
                                 </TableCell>
                                 {columns.map(col => {
-                                    // name 列はディレクトリ名 / ファイル名を基準に、frontmatter があれば優先。
-                                    const fmValue = entry.frontmatter?.[col.key];
-                                    const value = fmValue ?? (col.key === 'name' ? (entry.name ?? '') : '');
+                                    const { value, effort } = resolveColumnValue(entry, col);
                                     // name 列のみ: 親からの相対サブパスがあれば名前の下に控えめな色で表示。
                                     const subPath = col.key === 'name' ? relSubDir(entry.relPath) : '';
                                     // name（fit 列）は 1 行で内容フィット＋maxWidth 超過を省略。
@@ -223,9 +212,7 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                                     </Tooltip>
                                                 </Box>
                                             ) : (
-                                                <Tooltip title={value} disableHoverListener={!value}>
-                                                    <Box sx={valueSx}>{value}</Box>
-                                                </Tooltip>
+                                                <ColumnValue value={value} sx={valueSx} />
                                             )}
                                             {subPath && (
                                                 <Tooltip title={subPath}>
@@ -244,6 +231,10 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                                         {subPath}
                                                     </Box>
                                                 </Tooltip>
+                                            )}
+                                            {effort && <EffortLine effort={effort} />}
+                                            {col.detailKeys && (
+                                                <AssetDetails frontmatter={entry.frontmatter} keys={col.detailKeys} />
                                             )}
                                         </TableCell>
                                     );

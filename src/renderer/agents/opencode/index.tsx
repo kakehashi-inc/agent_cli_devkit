@@ -10,13 +10,48 @@ import { CleanupManagerView } from '../../components/agent/CleanupManagerView';
 import { McpManagerView } from '../../components/agent/McpManagerView';
 import { SettingsManagerView } from '../../components/agent/SettingsManagerView';
 import { PluginManagerView } from '../../components/plugins/PluginManagerView';
+import type { AssetKind } from '@shared/agents/types';
+import type { FmColumn } from '../../components/assets/assetColumns';
 import type { AgentModule } from '../types';
+import { resolveOpenCodeModel } from './modelColumn';
 
 const api = window.agentCliDevkit.opencode;
+
+// Agent・Skill 一覧の列構成。エージェントはモデル列（次の行に推論レベル）を持ち、
+// 説明列の下に動作・権限を変える重要な設定（permissions は規則を「action:resource=effect」に要約した値）を補足表示する。
+// スキルはモデルからの自動選択を止める設定を補足表示する。
+const ASSET_COLUMNS: Partial<Record<AssetKind, FmColumn[]>> = {
+    agents: [
+        { key: 'name', fit: true, maxWidthPct: 0.3 },
+        { key: 'model', width: 150, resolve: resolveOpenCodeModel },
+        {
+            key: 'description',
+            flex: true,
+            detailKeys: [
+                { key: 'mode', defaultValue: 'primary' },
+                { key: 'disabled', defaultValue: 'false' },
+                'steps',
+                'permissions',
+            ],
+        },
+    ],
+    skills: [
+        { key: 'name', fit: true, maxWidthPct: 0.3 },
+        {
+            key: 'description',
+            flex: true,
+            detailKeys: [
+                { key: 'metadata.opencode/autoinvoke', defaultValue: 'true' },
+                { key: 'disable-model-invocation', defaultValue: 'false' },
+            ],
+        },
+    ],
+};
 
 export const opencodeModule: AgentModule = {
     id: 'opencode',
     label: 'OpenCode',
+    dashboardLabel: 'OpenCode 2',
     features: [
         {
             path: '/opencode/mcp',
@@ -34,7 +69,7 @@ export const opencodeModule: AgentModule = {
             descKey: 'opencode.dashboard.assetsDesc',
             Icon: AssetIcon,
             color: '#d98a3a',
-            element: <AssetManagerView agentId='opencode' api={api.asset} />,
+            element: <AssetManagerView agentId='opencode' api={api.asset} columns={ASSET_COLUMNS} />,
         },
         {
             path: '/opencode/plugins',
@@ -48,6 +83,7 @@ export const opencodeModule: AgentModule = {
                     titleKey='opencode.plugins.title'
                     descKey='opencode.plugins.description'
                     api={api.plugin}
+                    noEnvironmentKey='opencode.noEnvironment'
                 />
             ),
         },

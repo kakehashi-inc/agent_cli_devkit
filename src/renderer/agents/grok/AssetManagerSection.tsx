@@ -13,21 +13,15 @@ import {
     DialogContentText,
     DialogActions,
     Typography,
-    Tooltip,
-    CircularProgress,
 } from '@mui/material';
-import {
-    Download as DownloadIcon,
-    Upload as UploadIcon,
-    DeleteOutlined as DeleteIcon,
-    CloudDownloadOutlined as CloudDownloadIcon,
-} from '@mui/icons-material';
+import { Download as DownloadIcon, Upload as UploadIcon, DeleteOutlined as DeleteIcon } from '@mui/icons-material';
 import type { AssetEntry, AssetKind, AssetListReport, GrokEnvironment } from '@shared/agents/grok/types';
 import { AssetSearchField } from '../../components/assets/AssetSearchField';
 import { filterAssetEntries } from '../../utils/assetSearch';
 import { AssetEntriesTable, computeFitWidth, type FmColumn } from './AssetEntriesTable';
+import type { DetailKey } from '../../components/assets/assetColumns';
 
-// セクションのタブ値: エージェント / スキル（AssetKind）に加え、設定タブを持つ。
+// セクションのタブ値: エージェント / スキル（AssetKind）。
 type SectionTab = AssetKind;
 
 interface Props {
@@ -35,25 +29,34 @@ interface Props {
     onNotify: (message: string, severity: 'success' | 'error' | 'warning') => void;
 }
 
+// エージェント一覧の説明列の下に補足表示する frontmatter キー。使えるツールと権限の扱いに絞る。
+const AGENT_DETAIL_KEYS: DetailKey[] = ['tools', 'disallowedTools', { key: 'permissionMode', defaultValue: 'default' }];
+
+// スキル一覧の説明列の下に補足表示する frontmatter キー。
+// 実行モデル・推論レベル・確認なしで許可するツール・呼び出され方に絞る。
+const SKILL_DETAIL_KEYS: DetailKey[] = [
+    'model',
+    'effort',
+    'allowed-tools',
+    { key: 'disable-model-invocation', defaultValue: 'false' },
+    { key: 'user-invocable', defaultValue: 'true' },
+];
+
 const FRONTMATTER_COLUMNS: Record<AssetKind, FmColumn[]> = {
     agents: [
         { key: 'name', fit: true, maxWidthPct: 0.3 },
-        { key: 'model', width: 90 },
-        { key: 'description', flex: true },
+        { key: 'model', width: 90, effortKey: 'effort' },
+        { key: 'description', flex: true, detailKeys: AGENT_DETAIL_KEYS },
     ],
     skills: [
         { key: 'name', fit: true, maxWidthPct: 0.3 },
-        { key: 'description', flex: true },
+        { key: 'description', flex: true, detailKeys: SKILL_DETAIL_KEYS },
     ],
 };
-
-// 公式スキルダイアログの一覧は skills 列構成（name + description）を使う。
-const OFFICIAL_COLUMNS: FmColumn[] = FRONTMATTER_COLUMNS.skills;
 
 /**
  * 1 環境分の Agent・Skill 管理セクション。
  * 「エージェント」「スキル」をタブで分離し、各タブで一覧 / ダウンロード / アップロードを行う。
- * スキルタブでは公式スキル（anthropics/skills）の取り込みも行える（git が必要）。
  * 各エントリの frontmatter（ヘッダー部）を固定列で展開表示し、「参照」で生のヘッダー部全体を見られる。
  */
 export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
@@ -121,13 +124,6 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     // name 列の最大幅をウィンドウ幅の割合で算出するため、ウィンドウ幅を監視する。
     const [windowWidth, setWindowWidth] = useState<number>(() => window.innerWidth);
 
-    // 公式スキルインポート関連。
-    const [gitAvailable, setGitAvailable] = useState(false);
-    const [officialOpen, setOfficialOpen] = useState(false);
-    const [officialEntries, setOfficialEntries] = useState<AssetEntry[]>([]);
-    const [officialChecked, setOfficialChecked] = useState<Set<string>>(new Set());
-    const [officialLoading, setOfficialLoading] = useState(false);
-
     useEffect(() => {
         const onResize = () => setWindowWidth(window.innerWidth);
         window.addEventListener('resize', onResize);
@@ -149,11 +145,6 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
 
     useEffect(() => {
         load();
-        // git の利用可否を判定（公式スキルインポートボタンの活性に使う）。
-        window.agentCliDevkit.grok.asset
-            .isGitAvailable()
-            .then(setGitAvailable)
-            .catch(() => setGitAvailable(false));
         // env は安定参照（親で固定）。マウント時に一度ロードする。
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -173,15 +164,6 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         const maxWidthPx = Math.round(windowWidth * (fitCol.maxWidthPct ?? 0.25));
         return computeFitWidth(filteredEntries, maxWidthPx, true);
     }, [columns, filteredEntries, windowWidth]);
-    // 公式ダイアログ用の fit 幅（skills 列構成）。
-    const officialFitWidth = useMemo(() => {
-        const fitCol = OFFICIAL_COLUMNS.find(c => c.fit);
-        if (!fitCol) {
-            return 0;
-        }
-        const maxWidthPx = Math.round(windowWidth * (fitCol.maxWidthPct ?? 0.25));
-        return computeFitWidth(officialEntries, maxWidthPx);
-    }, [officialEntries, windowWidth]);
     // ファイル数列は skills のみ表示（agents は 1 ファイル固定なので不要）。
     const showFileCount = kind === 'skills';
     const selectedEntries = filteredEntries.filter(entry => checkedKeys.has(entry.relPath));
@@ -366,72 +348,6 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         }
     };
 
-    // 公式スキルインポート: リポジトリを更新して一覧を取得し、ダイアログを開く。
-    const handleOpenOfficial = async () => {
-        setBusy(true);
-        setOfficialLoading(true);
-        setOfficialOpen(true);
-        setOfficialEntries([]);
-        setOfficialChecked(new Set());
-        try {
-            const result = await window.agentCliDevkit.grok.asset.listOfficialSkills();
-            if (result.ok && result.entries) {
-                setOfficialEntries(result.entries);
-            } else {
-                onNotify(t('grok.assetManager.officialListError'), 'error');
-                setOfficialOpen(false);
-            }
-        } catch {
-            onNotify(t('grok.assetManager.officialListError'), 'error');
-            setOfficialOpen(false);
-        } finally {
-            setOfficialLoading(false);
-            setBusy(false);
-        }
-    };
-
-    const toggleOfficial = (relPath: string) => {
-        const next = new Set(officialChecked);
-        if (next.has(relPath)) {
-            next.delete(relPath);
-        } else {
-            next.add(relPath);
-        }
-        setOfficialChecked(next);
-    };
-
-    const officialAllChecked = officialEntries.length > 0 && officialEntries.every(e => officialChecked.has(e.relPath));
-    const toggleOfficialAll = () => {
-        if (officialAllChecked) {
-            setOfficialChecked(new Set());
-        } else {
-            setOfficialChecked(new Set(officialEntries.map(e => e.relPath)));
-        }
-    };
-
-    // 公式スキルを取り込む（公式同士は確認なしで置換）。
-    const handleImportOfficial = async () => {
-        const relPaths = officialEntries.filter(e => officialChecked.has(e.relPath)).map(e => e.relPath);
-        if (relPaths.length === 0) {
-            return;
-        }
-        setBusy(true);
-        try {
-            const result = await window.agentCliDevkit.grok.asset.importOfficialSkills(env, relPaths);
-            if (result.ok) {
-                onNotify(t('grok.assetManager.officialImportSuccess', { count: result.importedCount ?? 0 }), 'success');
-                setOfficialOpen(false);
-                await load();
-            } else {
-                onNotify(t('grok.assetManager.officialImportError'), 'error');
-            }
-        } catch {
-            onNotify(t('grok.assetManager.officialImportError'), 'error');
-        } finally {
-            setBusy(false);
-        }
-    };
-
     if (loading) {
         return (
             <Paper variant='outlined' sx={{ p: 2, mb: 2 }}>
@@ -485,25 +401,6 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                             >
                                 {t('grok.assetManager.delete')}
                             </Button>
-                            {/* スキルタブのみ: 公式スキルインポートを右寄せで配置 */}
-                            {kind === 'skills' && (
-                                <>
-                                    <Box sx={{ flexGrow: 1 }} />
-                                    <Tooltip title={gitAvailable ? '' : t('grok.assetManager.gitRequired')}>
-                                        <span>
-                                            <Button
-                                                variant='outlined'
-                                                size='small'
-                                                startIcon={<CloudDownloadIcon />}
-                                                disabled={busy || !gitAvailable}
-                                                onClick={handleOpenOfficial}
-                                            >
-                                                {t('grok.assetManager.importOfficial')}
-                                            </Button>
-                                        </span>
-                                    </Tooltip>
-                                </>
-                            )}
                         </Box>
 
                         <AssetSearchField value={searchQuery} onChange={setKindSearchQuery} />
@@ -633,48 +530,6 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setViewFull(null)}>{t('grok.assetManager.close')}</Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* 公式スキルインポートダイアログ */}
-            <Dialog open={officialOpen} onClose={() => !busy && setOfficialOpen(false)} maxWidth='lg' fullWidth>
-                <DialogTitle>{t('grok.assetManager.importOfficialTitle')}</DialogTitle>
-                <DialogContent>
-                    <DialogContentText sx={{ mb: 2 }}>{t('grok.assetManager.importOfficialDesc')}</DialogContentText>
-                    {officialLoading ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2 }}>
-                            <CircularProgress size={20} />
-                            <Typography color='text.secondary'>{t('grok.assetManager.repoUpdating')}</Typography>
-                        </Box>
-                    ) : officialEntries.length === 0 ? (
-                        <Typography color='text.secondary' sx={{ py: 1 }}>
-                            {t('grok.assetManager.noEntries')}
-                        </Typography>
-                    ) : (
-                        <AssetEntriesTable
-                            entries={officialEntries}
-                            columns={OFFICIAL_COLUMNS}
-                            fitWidth={officialFitWidth}
-                            showFileCount
-                            checkedKeys={officialChecked}
-                            onToggle={toggleOfficial}
-                            onToggleAll={toggleOfficialAll}
-                            onView={setViewEntry}
-                        />
-                    )}
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOfficialOpen(false)} disabled={busy}>
-                        {t('grok.assetManager.cancel')}
-                    </Button>
-                    <Button
-                        variant='contained'
-                        startIcon={<CloudDownloadIcon />}
-                        onClick={handleImportOfficial}
-                        disabled={busy || officialChecked.size === 0}
-                    >
-                        {t('grok.assetManager.import')}
-                    </Button>
                 </DialogActions>
             </Dialog>
         </Paper>

@@ -31,33 +31,45 @@ import {
     ToggleOn as EnableIcon,
     ToggleOff as DisableIcon,
 } from '@mui/icons-material';
-import type { AgentEnvironment, PluginEnvReport, PluginMarketplaceEntry } from '@shared/agents/types';
+import type { AgentEnvironment, PluginEntry, PluginEnvReport, PluginMarketplaceEntry } from '@shared/agents/types';
+import { envId } from '../../utils/format';
 import { AddMarketplaceDialog } from './AddMarketplaceDialog';
 import { AddPluginDialog } from './AddPluginDialog';
+import { formatPluginMessage } from './pluginMessage';
 import type { PluginManagerApi, PluginNotify } from './types';
 
 type SectionTab = 'plugins' | 'marketplaces';
+
+// 直近の操作（削除・切り替え）の失敗。見出しと、理由（CLI の出力や失敗理由の文言）を画面に残す。
+interface OperationError {
+    title: string;
+    detail: string;
+}
 
 interface Props {
     api: PluginManagerApi;
     env: AgentEnvironment;
     onNotify: PluginNotify;
+    // 操作の実行中かどうかの変化を、環境 ID（envId）とともに受け取る。
+    onBusyChange: (id: string, busy: boolean) => void;
 }
 
 /**
  * 1 環境分のプラグイン管理セクション。
  * 「インストール済み」「マーケットプレイス」をタブで分離し、
  * プラグインの追加（マーケットプレイスから / 個別リポジトリから）・アンインストール・
- * マーケットプレイスの追加・削除を行う。
+ * マーケットプレイスの追加・削除を行う。操作の実行中かどうかを onBusyChange で知らせる
+ * （アンマウント時は実行中でないものとして知らせる）。
  */
-export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
+export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify, onBusyChange }) => {
     const { t } = useTranslation();
     const [report, setReport] = useState<PluginEnvReport | null>(null);
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState<SectionTab>('plugins');
     const [busy, setBusy] = useState(false);
-    const [uninstallTarget, setUninstallTarget] = useState<{ id: string; name: string } | null>(null);
+    const [uninstallTarget, setUninstallTarget] = useState<PluginEntry | null>(null);
     const [removeMarketTarget, setRemoveMarketTarget] = useState<PluginMarketplaceEntry | null>(null);
+    const [opError, setOpError] = useState<OperationError | null>(null);
     const [addPluginOpen, setAddPluginOpen] = useState(false);
     const [addMarketOpen, setAddMarketOpen] = useState(false);
 
@@ -80,6 +92,11 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    useEffect(() => {
+        onBusyChange(envId(env), busy);
+    }, [busy, env, onBusyChange]);
+    useEffect(() => () => onBusyChange(envId(env), false), [env, onBusyChange]);
+
     const handleUninstall = async () => {
         if (!uninstallTarget) {
             return;
@@ -87,17 +104,28 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
         const target = uninstallTarget;
         setUninstallTarget(null);
         setBusy(true);
+        setOpError(null);
         try {
-            const result = await api.uninstall(env, target.id);
+            // 確認画面で一緒に削除されると示した名前を渡し、それを超える削除は行わせない。
+            const result = await api.uninstall(env, target.id, target.sameRepoPlugins ?? []);
             if (result.ok) {
                 onNotify(t('pluginManager.uninstallSuccess'), 'success');
                 await load();
             } else {
                 console.error('Plugin uninstall failed:', result.message);
+                setOpError({
+                    title: t('pluginManager.uninstallError'),
+                    detail: formatPluginMessage(t, result.message),
+                });
                 onNotify(t('pluginManager.uninstallError'), 'error');
+                // 一緒に削除される対象が確認後に変わったときは、一覧を取り直して確認し直せるようにする。
+                if (result.message === 'needs-reconfirm') {
+                    await load();
+                }
             }
         } catch (error) {
             console.error('Plugin uninstall failed:', error);
+            setOpError({ title: t('pluginManager.uninstallError'), detail: formatPluginMessage(t, String(error)) });
             onNotify(t('pluginManager.uninstallError'), 'error');
         } finally {
             setBusy(false);
@@ -106,6 +134,7 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
 
     const handleToggleEnabled = async (id: string, enabled: boolean) => {
         setBusy(true);
+        setOpError(null);
         try {
             const result = await api.setEnabled(env, id, enabled);
             if (result.ok) {
@@ -113,10 +142,12 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
                 await load();
             } else {
                 console.error('Plugin enable/disable failed:', result.message);
+                setOpError({ title: t('pluginManager.toggleError'), detail: formatPluginMessage(t, result.message) });
                 onNotify(t('pluginManager.toggleError'), 'error');
             }
         } catch (error) {
             console.error('Plugin enable/disable failed:', error);
+            setOpError({ title: t('pluginManager.toggleError'), detail: formatPluginMessage(t, String(error)) });
             onNotify(t('pluginManager.toggleError'), 'error');
         } finally {
             setBusy(false);
@@ -130,6 +161,7 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
         const target = removeMarketTarget;
         setRemoveMarketTarget(null);
         setBusy(true);
+        setOpError(null);
         try {
             const result = await api.removeMarketplace(env, target.name);
             if (result.ok) {
@@ -137,10 +169,15 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
                 await load();
             } else {
                 console.error('Marketplace remove failed:', result.message);
+                setOpError({
+                    title: t('pluginManager.removeMarketError'),
+                    detail: formatPluginMessage(t, result.message),
+                });
                 onNotify(t('pluginManager.removeMarketError'), 'error');
             }
         } catch (error) {
             console.error('Marketplace remove failed:', error);
+            setOpError({ title: t('pluginManager.removeMarketError'), detail: formatPluginMessage(t, String(error)) });
             onNotify(t('pluginManager.removeMarketError'), 'error');
         } finally {
             setBusy(false);
@@ -187,7 +224,11 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
 
     return (
         <Paper variant='outlined' sx={{ mb: 3 }}>
-            <Tabs value={tab} onChange={(_, v: SectionTab) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+            <Tabs
+                value={tab}
+                onChange={(_, v: SectionTab) => setTab(v)}
+                sx={{ borderBottom: 1, borderColor: 'divider' }}
+            >
                 <Tab value='plugins' label={t('pluginManager.tabPlugins')} />
                 {report.capabilities.marketplaceManagement && (
                     <Tab value='marketplaces' label={t('pluginManager.tabMarketplaces')} />
@@ -204,8 +245,23 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
                     <Alert severity='error' sx={{ mb: 2 }}>
                         {t('pluginManager.listError')}
                         <Typography component='pre' variant='caption' sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
-                            {report.error}
+                            {formatPluginMessage(t, report.error)}
                         </Typography>
+                    </Alert>
+                )}
+                {report.warningKey && (
+                    <Alert severity='warning' sx={{ mb: 2 }}>
+                        {t(report.warningKey)}
+                    </Alert>
+                )}
+                {opError && (
+                    <Alert severity='error' sx={{ mb: 2 }} onClose={() => setOpError(null)}>
+                        {opError.title}
+                        {opError.detail.length > 0 && (
+                            <Typography component='pre' variant='caption' sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
+                                {opError.detail}
+                            </Typography>
+                        )}
                     </Alert>
                 )}
 
@@ -255,58 +311,78 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {report.plugins.map(p => (
-                                        <TableRow key={p.id} hover>
-                                            <TableCell sx={{ fontWeight: 500, wordBreak: 'break-all' }}>
-                                                {p.name}
-                                            </TableCell>
-                                            <TableCell sx={{ wordBreak: 'break-all' }}>{p.version ?? '-'}</TableCell>
-                                            <TableCell sx={{ wordBreak: 'break-all' }}>
-                                                {p.marketplace ?? '-'}
-                                            </TableCell>
-                                            <TableCell>
-                                                {p.enabled ? (
-                                                    <Tooltip title={t('pluginManager.disable')}>
+                                    {report.plugins.map(p => {
+                                        // 変更できない理由は、行の注記があればそれを、無ければ共通の説明を示す。
+                                        const note = p.noteKey ? t(p.noteKey) : null;
+                                        const toggleTooltip =
+                                            p.toggleable === false
+                                                ? (note ?? t('pluginManager.notToggleable'))
+                                                : t(p.enabled ? 'pluginManager.disable' : 'pluginManager.enable');
+                                        const uninstallTooltip =
+                                            p.uninstallable === false
+                                                ? (note ?? t('pluginManager.notUninstallable'))
+                                                : '';
+                                        return (
+                                            <TableRow key={p.id} hover>
+                                                <TableCell sx={{ fontWeight: 500, wordBreak: 'break-all' }}>
+                                                    {p.name}
+                                                    {note && (
+                                                        <Typography
+                                                            variant='caption'
+                                                            color='text.secondary'
+                                                            sx={{
+                                                                display: 'block',
+                                                                fontWeight: 400,
+                                                                wordBreak: 'normal',
+                                                            }}
+                                                        >
+                                                            {note}
+                                                        </Typography>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell sx={{ wordBreak: 'break-all' }}>
+                                                    {p.version ?? '-'}
+                                                </TableCell>
+                                                <TableCell sx={{ wordBreak: 'break-all' }}>
+                                                    {p.marketplace ?? '-'}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Tooltip title={toggleTooltip}>
                                                         <span>
                                                             <IconButton
                                                                 size='large'
-                                                                color='success'
-                                                                disabled={busy}
-                                                                onClick={() => handleToggleEnabled(p.id, false)}
+                                                                color={p.enabled ? 'success' : 'error'}
+                                                                disabled={busy || p.toggleable === false}
+                                                                onClick={() => handleToggleEnabled(p.id, !p.enabled)}
                                                             >
-                                                                <EnableIcon sx={{ fontSize: 40 }} />
+                                                                {p.enabled ? (
+                                                                    <EnableIcon sx={{ fontSize: 40 }} />
+                                                                ) : (
+                                                                    <DisableIcon sx={{ fontSize: 40 }} />
+                                                                )}
                                                             </IconButton>
                                                         </span>
                                                     </Tooltip>
-                                                ) : (
-                                                    <Tooltip title={t('pluginManager.enable')}>
+                                                </TableCell>
+                                                <TableCell align='right'>
+                                                    <Tooltip title={uninstallTooltip}>
                                                         <span>
-                                                            <IconButton
-                                                                size='large'
+                                                            <Button
+                                                                size='small'
                                                                 color='error'
-                                                                disabled={busy}
-                                                                onClick={() => handleToggleEnabled(p.id, true)}
+                                                                startIcon={<DeleteIcon />}
+                                                                disabled={busy || p.uninstallable === false}
+                                                                onClick={() => setUninstallTarget(p)}
+                                                                sx={{ textTransform: 'none' }}
                                                             >
-                                                                <DisableIcon sx={{ fontSize: 40 }} />
-                                                            </IconButton>
+                                                                {t('pluginManager.uninstall')}
+                                                            </Button>
                                                         </span>
                                                     </Tooltip>
-                                                )}
-                                            </TableCell>
-                                            <TableCell align='right'>
-                                                <Button
-                                                    size='small'
-                                                    color='error'
-                                                    startIcon={<DeleteIcon />}
-                                                    disabled={busy}
-                                                    onClick={() => setUninstallTarget({ id: p.id, name: p.name })}
-                                                    sx={{ textTransform: 'none' }}
-                                                >
-                                                    {t('pluginManager.uninstall')}
-                                                </Button>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
                                 </TableBody>
                             </Table>
                         </TableContainer>
@@ -381,6 +457,23 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify }) => {
                     <DialogContentText>
                         {t('pluginManager.uninstallConfirmBody', { name: uninstallTarget?.name ?? '' })}
                     </DialogContentText>
+                    {uninstallTarget?.sameRepoPlugins && uninstallTarget.sameRepoPlugins.length > 0 && (
+                        <Alert severity='warning' sx={{ mt: 2 }}>
+                            {t('pluginManager.uninstallSameRepo', { count: uninstallTarget.sameRepoPlugins.length })}
+                            <Box component='ul' sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
+                                {uninstallTarget.sameRepoPlugins.map(name => (
+                                    <Typography
+                                        key={name}
+                                        component='li'
+                                        variant='body2'
+                                        sx={{ wordBreak: 'break-all' }}
+                                    >
+                                        {name}
+                                    </Typography>
+                                ))}
+                            </Box>
+                        </Alert>
+                    )}
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setUninstallTarget(null)} sx={{ textTransform: 'none' }}>

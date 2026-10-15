@@ -6,17 +6,22 @@ export default {
         settings: 'OpenCode Settings',
         cleanup: 'OpenCode Cleanup',
     },
+    noEnvironment:
+        'OpenCode 2 was not found. Install OpenCode 2 so that the opencode2 command is available on Windows or in WSL, then press Refresh. If it is not found right after installing, you may need to restart the app.',
     dashboard: {
-        mcpDesc: 'Enable/disable/reorder global OpenCode MCP servers.',
+        mcpDesc: 'Enable/disable/reorder the MCP servers (mcp.servers) in the global OpenCode configuration.',
         assetsDesc: 'Manage OpenCode agents and skills under its own global config directory.',
-        pluginsDesc: 'Manage global npm plugins and local JavaScript or TypeScript plugins.',
-        settingsDesc: 'Edit OpenCode server/runtime settings while preserving JSONC comments.',
-        cleanupDesc: 'Remove selected OpenCode caches, logs, repositories, locks, and session database files.',
+        pluginsDesc:
+            'Manage npm and Git package plugins and local TypeScript or JavaScript plugins (files and folders).',
+        settingsDesc: 'Edit the global OpenCode configuration while preserving JSONC comments.',
+        cleanupDesc:
+            'Remove selected OpenCode caches, logs, tool output, shell output, snapshots, referenced repositories, input history, and session history.',
     },
     mcp: {
         title: 'OpenCode MCP Management',
         wslSection: 'WSL: {{distro}}',
-        notFound: '~/.config/opencode/opencode.json was not found. It will be created when settings are changed.',
+        notFound:
+            'Neither ~/.config/opencode/opencode.json nor opencode.jsonc was found. opencode.json will be created when settings are changed.',
         configPath: 'Config',
         disabledConfigPath: 'Disabled',
         enabledServers: 'Enabled MCP servers',
@@ -33,13 +38,14 @@ export default {
     assets: {
         title: 'OpenCode Agent / Skill Management',
         descriptionText:
-            'List your OpenCode custom agents and skills, download selected ones together as a ZIP, or upload a ZIP/md file to import them. Only OpenCode-owned global paths are managed: ~/.config/opencode/agents/*.md and ~/.config/opencode/skills/<name>/SKILL.md. Compatibility directories are excluded.',
+            'List your OpenCode custom agents and skills, download selected ones together as a ZIP, or upload a ZIP/md file to import them. Only OpenCode-owned global paths are managed: ~/.config/opencode/agents/*.md and ~/.config/opencode/skills/<name>/SKILL.md. Compatibility directories (~/.claude and ~/.agents) are excluded.',
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'Agents',
         tabSkills: 'Skills',
         col: {
             name: 'Name',
             description: 'Description',
+            model: 'Model',
         },
         columnFiles: 'Files',
         columnLastModified: 'Last modified',
@@ -83,17 +89,22 @@ export default {
     plugins: {
         title: 'OpenCode Plugin Manager',
         description:
-            'Manage npm package entries in opencode.json and local .js/.ts files under ~/.config/opencode/plugins. OpenCode installs npm dependencies automatically with Bun.',
+            'Manage package (npm and Git) and local path entries in the plugins array of opencode.json / opencode.jsonc, and .ts / .js files and plugin folders directly under ~/.config/opencode/plugins. Enable and disable directives (-ID, *, built-in IDs) are not listed and are kept as they are. Terminal UI plugins (the plugins in cli.json) are shown for reference only.',
+        sourceHelp:
+            'Installs an npm package (optionally with an @ version, tag, or range) or a Git package specifier (such as github:owner/repo#branch) with opencode2 plugin add and adds it to the plugins setting (terminal UI packages are added to cli.json). An absolute path to a local .ts / .js file or plugin folder (one containing package.json or an index, server, or tui .ts / .js file) is copied into the plugins folder.',
+        tuiNote: 'Terminal UI only (cli.json). It cannot be enabled, disabled, or removed here.',
+        disabledFileInvalid:
+            'Disabled plugins cannot be shown because the file that keeps them (~/.config/opencode/opencode-disabled-plugins.json) is malformed. Until you fix or delete this file, plugins in the plugins setting cannot be enabled, disabled, or removed, and packages cannot be installed.',
     },
     settings: {
         title: 'OpenCode Settings',
         description:
-            'Edit scalar values in ~/.config/opencode/opencode.json. Arrays, maps, objects, and union values are direct-edit only; JSONC comments outside changed values are preserved.',
+            'Edit scalar values in ~/.config/opencode/opencode.json or opencode.jsonc (opencode.jsonc, whose values OpenCode prefers, when both exist). Arrays, maps, objects, and union values other than the model are direct-edit only; JSONC comments outside changed values are preserved. Terminal UI settings (cli.json) and background service settings (service.json) are out of scope.',
         wslSection: 'WSL: {{distro}}',
         item: 'Item',
         value: 'Value',
         directEdit: 'Direct edit',
-        directTitle: 'Edit opencode.json directly',
+        directTitle: 'Edit the OpenCode config file directly',
         directDesc: 'Saving replaces the file contents. JSONC comments and trailing commas are accepted.',
         directEditValue: 'Edit the file directly',
         unknownValue: '{{value}} (saved value; not in current suggestions)',
@@ -111,270 +122,167 @@ export default {
         verifyFailed:
             'Verification of the edit result failed, so saving was aborted. The file is unchanged. Change this item via direct edit.',
         unavailable: 'These settings cannot be accessed.',
+        notice: {
+            modelObjectForm:
+                'Set in object form. The value above shows the same content in string notation (providerID/model#variant). It is overwritten in string form only when you change the value and save.',
+            modelUnsupported:
+                'Contains keys other than providerID, model, and variant, or unexpected values, so it cannot be edited in the table (editing would lose them).',
+            jsonAlsoExists:
+                'Both opencode.json and opencode.jsonc exist. OpenCode loads both and the opencode.jsonc value wins for any setting defined in both, so this screen and direct editing show and change opencode.jsonc. Settings that exist only in opencode.json still take effect in OpenCode but are not shown in this table.',
+        },
         group: {
             model: 'Models & Agents',
             behavior: 'Behavior',
-            server: 'Server',
-            attachment: 'Attachments',
+            permissions: 'Permissions & Policies',
+            mcp: 'MCP',
+            media: 'Media',
             toolOutput: 'Tool output',
             compaction: 'Compaction',
-            permission: 'Permissions',
+            extensions: 'Extensions',
             experimental: 'Experimental',
-            advanced: 'Direct edit',
         },
         field: {
             model: {
                 label: 'Model (model)',
-                desc: 'Default model ID in provider/model format. Custom values are accepted.',
-            },
-            smallModel: {
-                label: 'Small model (small_model)',
-                desc: 'Model used for lightweight tasks such as title generation.',
+                desc: 'Default model used when no session or agent model is selected. Enter it as provider/model, and append #variant to choose a variant (for example, anthropic/claude-sonnet-4-5#high). The file can also hold an object with providerID, model, and variant.',
             },
             defaultAgent: {
                 label: 'Default agent (default_agent)',
-                desc: 'Primary agent used when no agent is selected.',
+                desc: 'Primary agent used when a session has not selected one. If it does not exist, is hidden, or cannot run as primary, build is used.',
             },
-            subagentDepth: {
-                label: 'Subagent depth (subagent_depth)',
-                desc: 'Maximum nested subagent depth. Zero prevents subagent launches.',
+            agents: {
+                label: 'Agents (agents)',
+                desc: 'Overrides for built-in agents and custom agent definitions (model, system prompt, mode, permissions, and more).',
             },
-            username: { label: 'Username (username)', desc: 'Username displayed by OpenCode where supported.' },
+            providers: {
+                label: 'Providers (providers)',
+                desc: 'Provider settings and added or overridden models (request settings, headers, and variants).',
+            },
             shell: {
                 label: 'Shell (shell)',
-                desc: 'Shell executable used for interactive terminals and agent shell tools.',
+                desc: 'Default shell used by the terminal and the shell tool.',
             },
-            layout: {
-                label: 'Layout (layout)',
-                desc: 'How the screen width is used: auto keeps a readable column, stretch fills the terminal width.',
+            update: {
+                label: 'Updates (update)',
+                desc: 'How updates are handled: disable skips update checks, notify shows available updates before installing, and auto installs them automatically (a running server is not restarted). Only the global configuration applies.',
             },
-            logLevel: { label: 'Log level (logLevel)', desc: 'Controls the detail level of OpenCode runtime logs.' },
-            share: { label: 'Sharing (share)', desc: 'Manual, automatic, or disabled session sharing.' },
-            snapshot: { label: 'Snapshots (snapshot)', desc: 'Tracks file changes so they can be reverted.' },
-            autoupdate: {
-                label: 'Automatic updates (autoupdate)',
-                desc: 'Startup auto-update behavior. Enabled updates automatically, while Notify only announces available updates.',
-                choice: { enabled: 'Enabled', disabled: 'Disabled', notify: 'Notify only' },
+            snapshots: {
+                label: 'Snapshots (snapshots)',
+                desc: 'Records file snapshots used to undo and revert changes.',
             },
-            skills: {
-                label: 'Additional skill sources (skills)',
-                desc: 'Extra folders and URLs to load skills from.',
+            worktreeDirectory: {
+                label: 'Worktree directory (worktree.directory)',
+                desc: "Parent directory for new worktrees. Relative paths resolve from the project's original checkout. When unset, worktrees are created under the OpenCode data directory.",
             },
-            references: {
-                label: 'References (references)',
-                desc: 'Git repositories or local directories you can refer to by name in a conversation.',
+            websearch: {
+                label: 'Web search (websearch)',
+                desc: 'Web search provider selection (provider; random picks one automatically). Set false to remove the web search tool.',
             },
-            provider: {
-                label: 'Providers (provider)',
-                desc: 'Custom provider definitions and model overrides for existing providers.',
+            warming: {
+                label: 'Warming (warming)',
+                desc: 'Keeps recently active sessions warm with periodic transient requests. Set true for the default timing, or an object with prompt, interval, and duration. Disabled by default.',
             },
-            agent: { label: 'Agents (agent)', desc: 'Per-agent model, prompt, and available tools.' },
-            permission: {
-                label: 'Permissions (permission)',
-                desc: 'Permission policy for every tool in one place, including pattern-based rules.',
-            },
-            tools: { label: 'Tools (tools)', desc: 'Turns individual tools on or off.' },
-            server: { label: 'Server (server)', desc: 'HTTP server host, port, CORS, and mDNS settings.' },
-            command: { label: 'Commands (command)', desc: 'Defines your own slash commands.' },
             formatter: {
-                label: 'Formatters (formatter)',
-                desc: 'Enables and configures formatters. false disables them, true enables the built-ins, an object enables the built-ins with overrides.',
+                label: 'Formatter (formatter)',
+                desc: 'Formats files changed by the write, edit, and patch tools. Set true to enable available built-in formatters, or an object to configure each formatter.',
             },
-            lsp: {
-                label: 'LSP servers (lsp)',
-                desc: 'Enables and configures LSP servers. false disables them, true enables the built-ins, an object enables the built-ins with overrides.',
+            watcherIgnore: {
+                label: 'Watcher ignore (watcher.ignore)',
+                desc: 'File and directory patterns excluded from file change watching.',
             },
-            compaction: {
-                label: 'Compaction (compaction)',
-                desc: 'How a long conversation is compacted automatically.',
+            permissions: {
+                label: 'Permission rules (permissions)',
+                desc: 'Ordered rules (action, resource, effect) that allow, deny, or ask before an agent uses a tool. The last matching rule applies.',
             },
-            watcher: { label: 'Watcher (watcher)', desc: 'File-watching behavior and the paths excluded from it.' },
-            attachment: {
-                label: 'Attachments (attachment)',
-                desc: 'Automatic resizing and size limits for attached images.',
+            policies: {
+                label: 'Policies (policies)',
+                desc: 'Ordered policies that allow or deny use of providers, tools, and integrations.',
             },
-            toolOutput: {
-                label: 'Tool output (tool_output)',
-                desc: 'Line and byte thresholds for truncating tool output. Anything beyond them is written to a file and only a preview is returned.',
+            mcpTimeoutStartup: {
+                label: 'Startup timeout (mcp.timeout.startup)',
+                desc: 'Time in milliseconds to wait for an MCP server to connect and initialize. A per-server timeout overrides it.',
             },
-            mcp: { label: 'MCP servers (mcp)', desc: 'MCP server map; use MCP Management or direct edit.' },
-            plugin: { label: 'npm plugins (plugin)', desc: 'Plugin array; use Plugin Manager or direct edit.' },
-            instructions: {
-                label: 'Instructions (instructions)',
-                desc: 'Additional instruction files or patterns to load.',
+            mcpTimeoutCatalog: {
+                label: 'Catalog timeout (mcp.timeout.catalog)',
+                desc: 'Time in milliseconds to wait for listing tools, prompts, and resources. A per-server timeout overrides it.',
             },
-            disabledProviders: {
-                label: 'Disabled providers (disabled_providers)',
-                desc: 'Providers to disable among those loaded automatically.',
+            mcpTimeoutExecution: {
+                label: 'Execution timeout (mcp.timeout.execution)',
+                desc: 'Time in milliseconds to wait for tool calls, prompt retrieval, and resource reads. A per-server timeout overrides it.',
             },
-            enabledProviders: {
-                label: 'Enabled providers (enabled_providers)',
-                desc: 'Enables only the listed providers. Any provider not listed is ignored.',
+            mcpServers: {
+                label: 'MCP servers (mcp.servers)',
+                desc: 'Change them in MCP Management or by direct edit.',
             },
-            experimental: {
-                label: 'Experimental (experimental)',
-                desc: 'Experimental options whose shape may still change.',
+            mediaImageAutoResize: {
+                label: 'Image auto resize (media.image.auto_resize)',
+                desc: 'Resizes images that exceed a limit. When disabled, such images are rejected.',
             },
-            serverPort: {
-                label: 'Server port (server.port)',
-                desc: 'TCP port the headless server listens on. Accepts an integer from 1 to 65535.',
+            mediaImageMaxWidth: {
+                label: 'Image max width (media.image.max_width)',
+                desc: 'Maximum width in pixels of images sent to a model.',
             },
-            serverHostname: {
-                label: 'Server hostname (server.hostname)',
-                desc: 'Hostname the server binds to. Defaults to 0.0.0.0 (all addresses).',
+            mediaImageMaxHeight: {
+                label: 'Image max height (media.image.max_height)',
+                desc: 'Maximum height in pixels of images sent to a model.',
             },
-            serverMdns: {
-                label: 'mDNS advertising (server.mdns)',
-                desc: 'Whether to advertise the server over mDNS on the local network.',
-            },
-            serverMdnsDomain: {
-                label: 'mDNS domain (server.mdnsDomain)',
-                desc: 'Local domain name used when advertising over mDNS.',
-            },
-            serverCors: {
-                label: 'CORS origins (server.cors)',
-                desc: 'Additional origins allowed for CORS when browser-based clients call the HTTP server.',
-            },
-            attachmentImageAutoResize: {
-                label: 'Image auto-resize (attachment.image.auto_resize)',
-                desc: 'Automatically downscale attached images to the size limits.',
-            },
-            attachmentImageMaxWidth: {
-                label: 'Image max width (attachment.image.max_width)',
-                desc: 'Maximum width, in pixels, for attached images.',
-            },
-            attachmentImageMaxHeight: {
-                label: 'Image max height (attachment.image.max_height)',
-                desc: 'Maximum height, in pixels, for attached images.',
-            },
-            attachmentImageMaxBase64Bytes: {
-                label: 'Image base64 limit (attachment.image.max_base64_bytes)',
-                desc: 'Maximum size, in bytes, of an attached image after base64 encoding.',
+            mediaImageMaxBase64Bytes: {
+                label: 'Image Base64 limit (media.image.max_base64_bytes)',
+                desc: 'Maximum size in bytes of a Base64-encoded image.',
             },
             toolOutputMaxLines: {
                 label: 'Tool output max lines (tool_output.max_lines)',
-                desc: 'Maximum number of lines kept from tool output; excess is truncated.',
+                desc: 'Maximum number of lines kept from a tool result. Longer output is truncated and saved to a file.',
             },
             toolOutputMaxBytes: {
                 label: 'Tool output max bytes (tool_output.max_bytes)',
-                desc: 'Maximum number of bytes kept from tool output; excess is truncated.',
+                desc: 'Maximum number of bytes kept from a tool result. Longer output is truncated and saved to a file.',
             },
             compactionAuto: {
-                label: 'Automatic compaction (compaction.auto)',
-                desc: 'Automatically compact the conversation as it approaches the context limit.',
+                label: 'Auto compaction (compaction.auto)',
+                desc: 'Compacts the conversation automatically near the context limit. Manual compaction always works.',
             },
-            compactionPrune: {
-                label: 'Prune on compaction (compaction.prune)',
-                desc: 'Remove older messages during compaction to reduce size.',
+            compactionKeepTokens: {
+                label: 'Kept tokens (compaction.keep.tokens)',
+                desc: 'Approximate number of recent conversation tokens kept beside the summary.',
             },
-            compactionTailTurns: {
-                label: 'Preserved turns (compaction.tail_turns)',
-                desc: 'Number of most recent turns kept intact during compaction.',
+            compactionBuffer: {
+                label: 'Buffer tokens (compaction.buffer)',
+                desc: "Tokens kept free below the model's limit. Larger values start automatic compaction earlier. When unset, 10% of the limit is used.",
             },
-            compactionPreserveRecentTokens: {
-                label: 'Preserved recent tokens (compaction.preserve_recent_tokens)',
-                desc: 'Approximate amount of recent tokens preserved during compaction.',
+            skills: {
+                label: 'Additional skill sources (skills)',
+                desc: 'Extra directories and HTTP catalog URLs to search for skills.',
             },
-            compactionReserved: {
-                label: 'Reserved tokens (compaction.reserved)',
-                desc: 'Token budget reserved in the compaction calculation.',
+            commands: {
+                label: 'Commands (commands)',
+                desc: 'Named slash commands defined as prompt templates.',
             },
-            permissionRead: {
-                label: 'File read permission (permission.read)',
-                desc: 'Permission policy (ask/allow/deny) for the read tool. If you use pattern-based rules (an object), use direct edit instead.',
+            references: {
+                label: 'References (references)',
+                desc: 'Local directories or Git repositories that conversations can reference by name.',
             },
-            permissionEdit: {
-                label: 'File edit permission (permission.edit)',
-                desc: 'Permission policy (ask/allow/deny) for the edit tool. If you use pattern-based rules (an object), use direct edit instead.',
+            plugins: {
+                label: 'Plugins (plugins)',
+                desc: 'Change them in the Plugin Manager or by direct edit.',
             },
-            permissionGlob: {
-                label: 'File glob permission (permission.glob)',
-                desc: 'Permission policy (ask/allow/deny) for the glob tool. If you use pattern-based rules (an object), use direct edit instead.',
+            experimentalPortableShellScanner: {
+                label: 'Portable shell scanner (experimental.portable_shell_scanner)',
+                desc: 'Uses the experimental portable parser for shell command permission checks.',
             },
-            permissionGrep: {
-                label: 'Content search permission (permission.grep)',
-                desc: 'Permission policy (ask/allow/deny) for the grep tool. If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionList: {
-                label: 'Directory list permission (permission.list)',
-                desc: 'Permission policy (ask/allow/deny) for the list tool. If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionBash: {
-                label: 'Shell permission (permission.bash)',
-                desc: 'Permission policy (ask/allow/deny) for the bash tool. If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionTask: {
-                label: 'Task permission (permission.task)',
-                desc: 'Permission policy (ask/allow/deny) for the task tool (subagent launches). If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionExternalDirectory: {
-                label: 'External directory permission (permission.external_directory)',
-                desc: 'Permission policy (ask/allow/deny) for access outside the workspace. If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionLsp: {
-                label: 'LSP permission (permission.lsp)',
-                desc: 'Permission policy (ask/allow/deny) for the lsp tool. If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionSkill: {
-                label: 'Skill permission (permission.skill)',
-                desc: 'Permission policy (ask/allow/deny) for the skill tool. If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionTodowrite: {
-                label: 'Todo write permission (permission.todowrite)',
-                desc: 'Permission policy (ask/allow/deny) for the todowrite tool. If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionQuestion: {
-                label: 'Question permission (permission.question)',
-                desc: 'Permission policy (ask/allow/deny) for the question tool. If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionWebfetch: {
-                label: 'Web fetch permission (permission.webfetch)',
-                desc: 'Permission policy (ask/allow/deny) for the webfetch tool. If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionWebsearch: {
-                label: 'Web search permission (permission.websearch)',
-                desc: 'Permission policy (ask/allow/deny) for the websearch tool. If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            permissionDoomLoop: {
-                label: 'Doom loop permission (permission.doom_loop)',
-                desc: 'Permission policy (ask/allow/deny) for doom_loop (repeated-run guarding). If you use pattern-based rules (an object), use direct edit instead.',
-            },
-            experimentalDisablePasteSummary: {
-                label: 'Disable paste summary (experimental.disable_paste_summary)',
-                desc: 'Disables summarizing large pasted input. Experimental option.',
-            },
-            experimentalBatchTool: {
-                label: 'Batch tool (experimental.batch_tool)',
-                desc: 'Enables the experimental batching of multiple tool calls.',
-            },
-            experimentalOpenTelemetry: {
-                label: 'OpenTelemetry (experimental.openTelemetry)',
-                desc: 'Enables OpenTelemetry trace export. Experimental option.',
-            },
-            experimentalContinueLoopOnDeny: {
-                label: 'Continue loop on deny (experimental.continue_loop_on_deny)',
-                desc: 'Keeps the agent loop running after a permission denial. Experimental option.',
-            },
-            experimentalMcpTimeout: {
-                label: 'MCP timeout (experimental.mcp_timeout)',
-                desc: 'Timeout, in milliseconds, for MCP calls. Experimental option.',
-            },
-            experimentalPrimaryTools: {
-                label: 'Primary-only tools (experimental.primary_tools)',
-                desc: 'Restricts which tools only primary agents can use. Experimental.',
-            },
-            experimentalPolicies: {
-                label: 'Policies (experimental.policies)',
-                desc: 'Allow and deny policies for resources, currently used to control provider usage.',
+            experimentalSubagentDepth: {
+                label: 'Subagent depth (experimental.subagent_depth)',
+                desc: 'Maximum subagent nesting depth. With the default of 1, subagents cannot launch further subagents.',
             },
         },
     },
     cleanup: {
         title: 'OpenCode Cleanup',
         description:
-            'Delete selected data only from OpenCode official XDG directories. Configuration, agents, skills, plugins, credentials, and model selections are excluded.',
+            'Delete selected data only from OpenCode official XDG directories. The database file itself (it holds credentials, saved permissions, and accounts), configuration, agents, skills, plugins, worktrees, and service configuration and registration are excluded.',
         wslSection: 'WSL: {{distro}}',
-        inUseWarning: 'Close running OpenCode processes before cleanup. Open database or lock files may be skipped.',
+        inUseNotice:
+            'Close OpenCode and its background service (stop it with opencode2 service stop) before cleanup. Files in use may be skipped.',
         noCandidates: 'No cleanup targets found',
         name: 'Item',
         descriptionColumn: 'Description',
@@ -388,13 +296,36 @@ export default {
         deletePartial: 'Some files were in use and were skipped',
         deleteError: 'Cleanup failed',
         item: {
-            cache: { label: '~/.cache/opencode', desc: 'Downloaded binaries, package cache, and model cache.' },
-            logs: { label: 'log', desc: 'OpenCode runtime logs.' },
-            repos: { label: 'repos', desc: 'OpenCode repository working data; expandable by repository.' },
-            database: { label: 'opencode.db', desc: 'Session and message database.' },
-            'database-wal': { label: 'opencode.db-wal', desc: 'Database write-ahead log.' },
-            'database-shm': { label: 'opencode.db-shm', desc: 'Database shared-memory file.' },
-            locks: { label: 'locks', desc: 'OpenCode state lock files.' },
+            cache: {
+                label: '~/.cache/opencode',
+                desc: 'Tools such as ripgrep, installed package plugins, the remote skill cache, and executable links kept for updates. Downloaded again when needed; package plugins are reinstalled automatically at the next startup.',
+            },
+            logs: { label: 'log', desc: 'OpenCode logs, CPU profiles, and heap snapshots.' },
+            'tool-output': {
+                label: 'tool-output',
+                desc: 'Full output of truncated tool results. OpenCode also removes entries older than 7 days.',
+            },
+            'shell-output': {
+                label: 'shell',
+                desc: 'Output of commands run by the shell tool, per project. OpenCode also removes entries older than 7 days.',
+            },
+            snapshot: {
+                label: 'snapshot',
+                desc: 'File snapshots used to undo and revert changes, selectable by project. After deletion, past changes can no longer be reverted.',
+            },
+            repos: {
+                label: 'repos',
+                desc: 'Clones of Git repositories registered as references, selectable by host. Downloaded again the next time they are referenced.',
+            },
+            'prompt-history': { label: 'prompt-history.jsonl', desc: 'Prompt input history of the terminal UI.' },
+            frecency: {
+                label: 'frecency.jsonl',
+                desc: 'Usage history the terminal UI uses to order file suggestions.',
+            },
+            sessions: {
+                label: 'sessions',
+                desc: 'OpenCode session history (conversations). Where the session database exists, the session list is loaded with the OpenCode CLI when this screen opens, and this row appears only when there are sessions that can be deleted. You can select sessions individually or all of them. Deleted with the OpenCode CLI (opencode2 session delete), which also removes sub-sessions. Sign-in information, saved permissions, and account information in the database are kept. Sessions that were updated, or whose sub-sessions were updated, within the last 5 minutes may be in use and are excluded.',
+            },
         },
     },
 };

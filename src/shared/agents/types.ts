@@ -73,6 +73,8 @@ export interface CleanupCandidateSpec {
     // データディレクトリ配下の実パス。key と異なる場合に指定
     // （i18n キーにドットを使えないため history.jsonl 等で使用）。
     path?: string;
+    // kind='file' のロックファイル。他から保持されている間は候補に出さず、削除もしない。
+    lockFile?: boolean;
 }
 
 // クリーンアップ: 展開可能候補配下の個別の子要素
@@ -80,6 +82,14 @@ export interface CleanupChild {
     name: string;
     size: number;
     fileCount: number;
+    // 大きさを取得できない子要素（画面にはサイズを表示しない）。
+    sizeUnknown?: boolean;
+    // 使用中のため削除対象から外した子要素（画面では選択できない）。
+    inUse?: boolean;
+    // 子要素の中身と付随する対象のうち、使用中のため削除対象から外したものの件数（size / fileCount には含めない）。
+    inUseParts?: number;
+    // 本体が既に無く、付随する一時物だけが残っている子要素。
+    orphan?: boolean;
 }
 
 // クリーンアップ候補ディレクトリ/ファイル
@@ -93,6 +103,8 @@ export interface CleanupCandidate {
     // expandable のときの子要素の種類。'dir'=サブディレクトリ、'file'=ファイル。
     childKind?: 'dir' | 'file';
     children?: CleanupChild[];
+    // すべての子要素の大きさを取得できない候補（画面にはサイズを表示しない）。
+    sizeUnknown?: boolean;
 }
 
 // クリーンアップの環境ごとのレポート
@@ -229,8 +241,16 @@ export interface PluginEntry {
     // 提供元マーケットプレイス名（個別リポジトリ導入などで不明なら null）。
     marketplace: string | null;
     enabled: boolean;
-    // インストールスコープ（claude のみ。user / project / local）。
+    // インストールスコープ（claude のみ。user / synced）。
     scope?: string;
+    // false のとき CLI でアンインストールできない（マーケットプレイス以外の由来など）。省略時は可能。
+    uninstallable?: boolean;
+    // false のとき有効/無効を切り替えられない（CLI が設定を参照しないリモート提供など）。省略時は可能。
+    toggleable?: boolean;
+    // 行に添える注記の i18n キー（画面から変更できない理由など）。指定時は切り替え・削除を無効にした理由としても示す。
+    noteKey?: string;
+    // アンインストールで一緒に削除される、同じリポジトリから導入された他のプラグイン名（grok のみ）。
+    sameRepoPlugins?: string[];
 }
 
 // マーケットプレイスの由来。
@@ -279,6 +299,8 @@ export interface PluginEnvReport {
     capabilities: PluginCapabilities;
     // 一覧取得自体が失敗した場合の CLI エラー出力（詳細表示用）
     error?: string;
+    // 一覧は取得できたが、知らせることがある場合の警告の i18n キー（管理用のファイルを読めず一部を表示できないなど）
+    warningKey?: string;
 }
 
 // カタログ取得の結果
@@ -309,6 +331,8 @@ export interface PluginCapabilities {
     marketplaceManagement: boolean;
     // 直接インストール元として npm パッケージ名を受け付けるか（OpenCode）。
     packageSource: boolean;
+    // 直接インストール画面の説明文の i18n キー。省略時は共通の説明（@ref / #subdir 指定に対応する書式）。
+    sourceHelpKey?: string;
 }
 
 // ============================================================
@@ -347,15 +371,21 @@ export interface SettingsFieldSpec {
     enumChoices?: SettingsEnumChoice[]; // type='enum' のとき: 型付き候補の一覧
     envKey?: string; // type='envFlag' のとき: env オブジェクト内の対象キー
     onValue?: string; // type='envFlag' のとき: ON 時に設定する値（既定 '1'）
-    min?: number; // type='number' のとき: 最小値（クランプに使用）
-    max?: number; // type='number' のとき: 最大値（クランプに使用）
-    integer?: boolean; // type='number' のとき: 整数へ丸める
+    // type='number' のとき: 受け付ける最小値。min / max / exclusiveMin / integer に合わない値は丸めずに保存を拒否する。
+    min?: number;
+    // type='number' のとき: min を範囲に含めない（min より大きい値だけを受け付ける）。
+    exclusiveMin?: boolean;
+    max?: number; // type='number' のとき: 受け付ける最大値
+    integer?: boolean; // type='number' のとき: 整数だけを受け付ける
     // type='boolean' のとき: 未設定時に agent が実際に採用する既定値。
     // UI で「未設定（既定: 有効/無効）」と表示するために使う。未確定なら省略する。
     defaultOn?: boolean;
     // type='string' / 'number' のとき: 未設定時に agent が採用する公式の固定既定値。
     // UI で「未設定（既定: <値>）」と表示するために使う。環境依存・未確定なら省略する。
     defaultValue?: string | number;
+    // type='string' のとき: 受け付ける値の形式（RegExp のパターン文字列。u フラグで評価する）。
+    // 一致しない値は保存しない。
+    pattern?: string;
 }
 
 // 設定項目 1 件の現在値（読み取り結果）。
@@ -376,6 +406,10 @@ export interface SettingsReadResult {
     fields: SettingsFieldSpec[];
     // 直接編集用: 設定ファイルの生テキスト全体（JSON / TOML）。存在しなければ null。
     raw: string | null;
+    // 項目ごとの注記（key -> i18n キー。<agentId>.settings. からの相対）。値の下に表示する。
+    notices?: Record<string, string>;
+    // 設定ファイル全体への注記（i18n キー。<agentId>.settings. からの相対）。表の上に表示する。
+    fileNotice?: string;
 }
 
 // テーブル編集による設定保存の入力（変更した key -> 値）。
@@ -385,5 +419,5 @@ export type SettingsValues = Record<string, SettingsFieldValue>;
 // 設定保存の結果。
 export interface SettingsWriteResult {
     ok: boolean;
-    message?: string; // エラー詳細（'unavailable' / 'invalid-json' / 'invalid-toml' / 'write-failed' など）
+    message?: string; // エラー詳細（'unavailable' / 'invalid-json' / 'invalid-toml' / 'invalid-value' / 'write-failed' など）
 }

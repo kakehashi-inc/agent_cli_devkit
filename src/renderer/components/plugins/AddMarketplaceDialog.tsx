@@ -12,6 +12,7 @@ import {
     Typography,
 } from '@mui/material';
 import type { AgentEnvironment, PluginCapabilities } from '@shared/agents/types';
+import { formatPluginMessage } from './pluginMessage';
 import type { PluginManagerApi, PluginNotify } from './types';
 
 interface Props {
@@ -38,11 +39,20 @@ export function sourceFormatsText(
     return formats.join(' / ');
 }
 
-/** 入力ソースの簡易検証（空・引用符・制御文字を拒否。詳細な検証は CLI 側が行う）。 */
+/**
+ * 入力ソースの簡易検証（空・引用符・制御文字と、CLI のオプションとして解釈される - 始まりを拒否。
+ * 詳細な検証は CLI 側が行う）。
+ */
 export function isValidSource(source: string): boolean {
     const s = source.trim();
-    // eslint-disable-next-line no-control-regex -- コマンド引数に渡せない制御文字の混入を入力時点で拒否する
-    return s.length > 0 && s.length <= 2048 && !s.includes('"') && !/[\x00-\x1f\x7f]/.test(s);
+    return (
+        s.length > 0 &&
+        s.length <= 2048 &&
+        !s.startsWith('-') &&
+        !s.includes('"') &&
+        // eslint-disable-next-line no-control-regex -- コマンド引数に渡せない制御文字の混入を入力時点で拒否する
+        !/[\x00-\x1f\x7f]/.test(s)
+    );
 }
 
 /**
@@ -64,11 +74,11 @@ export const AddMarketplaceDialog: React.FC<Props> = ({ api, env, capabilities, 
                 onNotify(t('pluginManager.addMarketSuccess'), 'success');
                 onClose(true);
             } else {
-                setErrorDetail(result.message ?? '');
+                setErrorDetail(formatPluginMessage(t, result.message));
                 onNotify(t('pluginManager.addMarketError'), 'error');
             }
         } catch (error) {
-            setErrorDetail(String(error));
+            setErrorDetail(formatPluginMessage(t, String(error)));
             onNotify(t('pluginManager.addMarketError'), 'error');
         } finally {
             setBusy(false);

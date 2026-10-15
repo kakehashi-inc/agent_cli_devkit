@@ -1,5 +1,6 @@
 import {
     CLAUDE_DIR,
+    CLAUDE_PROJECTS_CLEANUP_KEY,
     CLAUDE_WSL_CLI_TEST,
     CLEANUP_CANDIDATES,
     OTHER_CLEANUP_ITEMS,
@@ -7,6 +8,7 @@ import {
 import {
     ClaudeEnvironment,
     CleanupCandidate,
+    CleanupCandidateSpec,
     CleanupChild,
     CleanupEnvReport,
     CleanupSelection,
@@ -15,18 +17,29 @@ import {
     OtherCleanupReport,
     OtherCleanupSelection,
 } from '../../../shared/agents/claude/types';
+import { createCleanupProbe, type CleanupProbe } from '../common/cleanup/CleanupProbe';
+import { deleteResolvedChildren, resolveChildren, toResolvedCandidate } from '../common/cleanup/resolvedCleanup';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { clearYamlList, countYamlListEntries, needsYamlListNormalize } from '../../utils/yamlPreserve';
+import { claudeTempResolvers, deleteClaudeProjects, resolveClaudeProjects } from './claudeTempCleanup';
 
 const VALID_KEYS = new Set(CLEANUP_CANDIDATES.map(c => c.key));
 const OTHER_VALID_KEYS = new Set(OTHER_CLEANUP_ITEMS.map(i => i.key));
 
 /**
- * Claude Code (CLI) のデータディレクトリ（~/.claude 配下）のクリーンアップを行う。
+ * Claude Code (CLI) のデータディレクトリ（~/.claude 配下）と、~/.claude 外の一時物のクリーンアップを行う。
  * - 対象は履歴／キャッシュ／一時／ログのみ（CLEANUP_CANDIDATES）。
- * - expandable 候補（projects=サブディレクトリ単位 / plans=ファイル単位）は個別 + 全体の両方を削除可能。
- * - それ以外はディレクトリごと削除（Claude Code が必要時に自動再作成する）。
+ * - projects はプロジェクト単位の子要素に、同じプロジェクトの一時物（OS の一時フォルダのセッション作業フォルダ・
+ *   bash-edit-diff、MCP ログのキャッシュ）を含めて扱う。会話履歴が無く一時物だけが残ったプロジェクトも子要素にする。
+ * - claudeTempResolvers に登録した候補（bundled-skills・プロジェクトに紐づかない bash-edit-diff）は、
+ *   リゾルバが使用中でないと判定した子要素だけを扱い、削除の直前に再判定する。
+ * - 使用中かどうかは、~/.claude/sessions に実行中として登録されたセッション（登録した環境は問わない）と、
+ *   会話記録が直近に更新されたセッションで判定し、プロセスは調べない。
+ *   実行中のセッションがあるプロジェクトは、そのセッションの会話記録・memory/・一時物を残して削除する。
+ *   登録を読めない場合は、実行中のセッションが分からないため、会話記録とセッション単位の一時物を削除しない。
+ * - リンク（シンボリックリンク・ジャンクション）の候補ディレクトリは、配下が管理対象の外にあり得るため扱わない。
+ * - plans はファイル単位で個別 + 全体の両方を削除可能。それ以外はディレクトリごと削除（Claude Code が必要時に自動再作成する）。
  * - native とすべての Claude 入り WSL distro を環境として扱う。
  */
 export class ClaudeCleanupManager {
@@ -62,17 +75,57 @@ export class ClaudeCleanupManager {
         return result;
     }
 
+    /** WSL 環境のときの Windows 側（そこに登録されたセッションも実行中として扱う）。 */
+    private hostProbeFor(env: ClaudeEnvironment): CleanupProbe | null {
+        return env.kind === 'wsl' && process.platform === 'win32'
+            ? createCleanupProbe({ kind: 'native' }, this.detector)
+            : null;
+    }
+
+    /** projects 候補（プロジェクト単位の子要素。サイズ・件数は削除できるものの合計）。 */
+    private async scanProjects(
+        spec: CleanupCandidateSpec,
+        probe: CleanupProbe,
+        hostProbe: CleanupProbe | null,
+        env: ClaudeEnvironment
+    ): Promise<CleanupCandidate> {
+        const children = await resolveClaudeProjects(probe, hostProbe, env);
+        return {
+            key: spec.key,
+            exists: children.length > 0,
+            size: children.reduce((sum, child) => sum + child.size, 0),
+            fileCount: children.reduce((sum, child) => sum + child.fileCount, 0),
+            defaultChecked: spec.defaultChecked,
+            expandable: spec.expandable,
+            childKind: spec.childKind,
+            children,
+        };
+    }
+
     /**
      * 環境ごとのクリーンアップ候補をスキャンする（各ディレクトリの存在・サイズ・ファイル数）。
      */
     async scan(env: ClaudeEnvironment): Promise<CleanupEnvReport> {
         const fs = this.fsFor(env);
+        const probe = createCleanupProbe(env, this.detector);
+        const hostProbe = this.hostProbeFor(env);
+        const resolvers = claudeTempResolvers(hostProbe);
         const label = env.kind === 'wsl' ? (env.distro ?? 'WSL') : this.nativeLabel();
         const candidates: CleanupCandidate[] = [];
 
         for (const spec of CLEANUP_CANDIDATES) {
+            if (spec.key === CLAUDE_PROJECTS_CLEANUP_KEY) {
+                candidates.push(await this.scanProjects(spec, probe, hostProbe, env));
+                continue;
+            }
+            const resolver = resolvers[spec.key];
+            if (resolver) {
+                candidates.push(toResolvedCandidate(spec, await resolveChildren(resolver, probe, spec.key, env)));
+                continue;
+            }
             const relPath = this.rel(spec.path ?? spec.key);
-            const exists = await fs.exists(relPath);
+            // リンクのディレクトリは配下が管理対象の外にあり得るため、候補にしない（削除もしない）。
+            const exists = (await fs.exists(relPath)) && (spec.kind === 'file' || !(await fs.isLink(relPath)));
             const stats = exists
                 ? spec.kind === 'file'
                     ? await fs.fileStats(relPath)
@@ -89,7 +142,7 @@ export class ClaudeCleanupManager {
                 childKind: spec.childKind,
             };
 
-            // expandable 候補は子要素（projects=サブディレクトリ / plans=ファイル）を個別選択できるよう展開する。
+            // expandable 候補は子要素（plans=ファイル）を個別選択できるよう展開する。
             if (spec.expandable && spec.childKind && exists) {
                 const children: CleanupChild[] = [];
                 if (spec.childKind === 'dir') {
@@ -116,11 +169,14 @@ export class ClaudeCleanupManager {
     }
 
     /**
-     * 選択されたディレクトリ／子要素（projects のサブディレクトリ、plans のファイル）を削除し、
-     * 再スキャン結果を返す。
+     * 選択されたディレクトリ／子要素（projects のプロジェクトと紐づく一時物、plans のファイル、
+     * 一時物の候補の子要素）を削除し、再スキャン結果を返す。
      */
     async deleteSelected(env: ClaudeEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport> {
         const fs = this.fsFor(env);
+        const probe = createCleanupProbe(env, this.detector);
+        const hostProbe = this.hostProbeFor(env);
+        const resolvers = claudeTempResolvers(hostProbe);
         // 使用中（ロック）などで完全に削除できなかった対象。例外は投げずにここへ集約して報告する。
         const skipped: string[] = [];
 
@@ -129,6 +185,15 @@ export class ClaudeCleanupManager {
         // ロック残存はスキップとして報告する（例外は投げない）。不正キーは無視。
         for (const key of selection.dirs) {
             if (!VALID_KEYS.has(key) || this.isUnsafeName(key)) {
+                continue;
+            }
+            if (key === CLAUDE_PROJECTS_CLEANUP_KEY) {
+                skipped.push(...(await deleteClaudeProjects(probe, hostProbe, key, env, 'all')));
+                continue;
+            }
+            const resolver = resolvers[key];
+            if (resolver) {
+                skipped.push(...(await deleteResolvedChildren(resolver, probe, key, env, 'all')));
                 continue;
             }
             const spec = CLEANUP_CANDIDATES.find(c => c.key === key);
@@ -152,7 +217,7 @@ export class ClaudeCleanupManager {
             }
         }
 
-        // expandable 候補（projects=サブディレクトリ / plans=ファイル）の個別削除。
+        // expandable 候補（projects=プロジェクト / plans=ファイル / 一時物の候補）の個別削除。
         // 当該候補が dirs に含まれている（＝全体削除指定）場合はスキップする。
         const childSelections = selection.childSelections ?? {};
         for (const spec of CLEANUP_CANDIDATES) {
@@ -166,9 +231,22 @@ export class ClaudeCleanupManager {
             if (!names || names.length === 0) {
                 continue;
             }
-            const baseRel = this.rel(spec.key);
+            if (spec.key === CLAUDE_PROJECTS_CLEANUP_KEY) {
+                skipped.push(...(await deleteClaudeProjects(probe, hostProbe, spec.key, env, names)));
+                continue;
+            }
+            const resolver = resolvers[spec.key];
+            if (resolver) {
+                skipped.push(...(await deleteResolvedChildren(resolver, probe, spec.key, env, names)));
+                continue;
+            }
+            const baseRel = this.rel(spec.path ?? spec.key);
             const existing = new Set(
-                spec.childKind === 'file' ? await fs.listFiles(baseRel) : await fs.listDirs(baseRel)
+                (await fs.isLink(baseRel))
+                    ? []
+                    : spec.childKind === 'file'
+                      ? await fs.listFiles(baseRel)
+                      : await fs.listDirs(baseRel)
             );
             for (const name of names) {
                 if (this.isUnsafeName(name) || !existing.has(name)) {
@@ -240,8 +318,8 @@ export class ClaudeCleanupManager {
 
             if (item.action === 'dir-delete') {
                 const stats = await fs.dirStats(item.targetPath);
-                // クリーンアップ対象が無い（ファイル 0 件）項目は表示しない
-                if (stats.fileCount === 0) {
+                // クリーンアップ対象が無い（ファイル 0 件）項目と、削除しないリンクのディレクトリは表示しない
+                if (stats.fileCount === 0 || (await fs.isLink(item.targetPath))) {
                     continue;
                 }
                 items.push({

@@ -3,13 +3,15 @@
 import type { AgentEnvironment, PluginCatalogReport, PluginEnvReport, PluginOpResult } from '@shared/agents/types';
 
 export interface PluginManagerApi {
-    getEnvironments(): Promise<{ env: AgentEnvironment; label: string }[]>;
+    // refresh=true は、検出結果のキャッシュを破棄して検出し直す要求（キャッシュを持たない agent は無視する）。
+    getEnvironments(refresh?: boolean): Promise<{ env: AgentEnvironment; label: string }[]>;
     list(env: AgentEnvironment): Promise<PluginEnvReport>;
     catalog(env: AgentEnvironment): Promise<PluginCatalogReport>;
     install(env: AgentEnvironment, id: string): Promise<PluginOpResult>;
     // 個別リポジトリ / ローカルパスからの直接インストール（capabilities.directInstall=true の agent のみ）
     installFromSource?(env: AgentEnvironment, source: string): Promise<PluginOpResult>;
-    uninstall(env: AgentEnvironment, id: string): Promise<PluginOpResult>;
+    // confirmedNames は一緒に削除されることを利用者が確認した、同じリポジトリの他のプラグイン名（使わない agent は無視する）
+    uninstall(env: AgentEnvironment, id: string, confirmedNames?: string[]): Promise<PluginOpResult>;
     setEnabled(env: AgentEnvironment, id: string, enabled: boolean): Promise<PluginOpResult>;
     addMarketplace(env: AgentEnvironment, source: string): Promise<PluginOpResult>;
     removeMarketplace(env: AgentEnvironment, name: string): Promise<PluginOpResult>;

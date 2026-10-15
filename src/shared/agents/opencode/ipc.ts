@@ -15,9 +15,10 @@ import type {
     SettingsWriteResult,
 } from './types';
 
+// getEnvironments の refresh=true は、CLI と WSL distro の検出結果を破棄して検出し直す要求。
 export interface OpenCodeIpcApi {
     mcp: {
-        getEnvironments(): Promise<OpenCodeMcpEnvInfo[]>;
+        getEnvironments(refresh?: boolean): Promise<OpenCodeMcpEnvInfo[]>;
         getMCPServers(env: OpenCodeEnvironment): Promise<MCPServers>;
         enableMCPServer(env: OpenCodeEnvironment, serverName: string): Promise<MCPServers>;
         disableMCPServer(env: OpenCodeEnvironment, serverName: string): Promise<MCPServers>;
@@ -25,7 +26,7 @@ export interface OpenCodeIpcApi {
         reorderDisabledMCPServers(env: OpenCodeEnvironment, serverNames: string[]): Promise<MCPServers>;
     };
     asset: {
-        getEnvironments(): Promise<{ env: OpenCodeEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: OpenCodeEnvironment; label: string }[]>;
         list(env: OpenCodeEnvironment, kind: AssetKind): Promise<AssetListReport>;
         readEntry(env: OpenCodeEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
         revealEntry(env: OpenCodeEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
@@ -41,18 +42,18 @@ export interface OpenCodeIpcApi {
         deleteSelected(env: OpenCodeEnvironment, kind: AssetKind, relPaths: string[]): Promise<AssetOpResult>;
     };
     cleanup: {
-        getEnvironments(): Promise<{ env: OpenCodeEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: OpenCodeEnvironment; label: string }[]>;
         scan(env: OpenCodeEnvironment): Promise<CleanupEnvReport>;
         delete(env: OpenCodeEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport>;
     };
     settings: {
-        getEnvironments(): Promise<{ env: OpenCodeEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: OpenCodeEnvironment; label: string }[]>;
         read(env: OpenCodeEnvironment): Promise<SettingsReadResult>;
         write(env: OpenCodeEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
         writeRaw(env: OpenCodeEnvironment, raw: string): Promise<SettingsWriteResult>;
     };
     plugin: {
-        getEnvironments(): Promise<{ env: OpenCodeEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: OpenCodeEnvironment; label: string }[]>;
         list(env: OpenCodeEnvironment): Promise<PluginEnvReport>;
         catalog(env: OpenCodeEnvironment): Promise<PluginCatalogReport>;
         install(env: OpenCodeEnvironment, id: string): Promise<PluginOpResult>;

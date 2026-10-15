@@ -70,9 +70,9 @@ export type ClaudeIpcApi = {
         write(env: ClaudeEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
         writeRaw(env: ClaudeEnvironment, rawJson: string): Promise<SettingsWriteResult>;
     };
-    // Claude Code プラグイン管理
+    // Claude Code プラグイン管理（getEnvironments の refresh=true は CLI と WSL distro を検出し直す要求）
     plugin: {
-        getEnvironments(): Promise<{ env: ClaudeEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: ClaudeEnvironment; label: string }[]>;
         list(env: ClaudeEnvironment): Promise<PluginEnvReport>;
         catalog(env: ClaudeEnvironment): Promise<PluginCatalogReport>;
         install(env: ClaudeEnvironment, id: string): Promise<PluginOpResult>;

@@ -11,6 +11,7 @@ import {
     TableHead,
     TableRow,
     Checkbox,
+    Chip,
     IconButton,
     Collapse,
     Button,
@@ -29,10 +30,12 @@ import {
 import type {
     ClaudeEnvironment,
     CleanupCandidate,
+    CleanupChild,
     CleanupEnvReport,
     OtherCleanupReport,
 } from '@shared/agents/claude/types';
 import { formatBytes, formatCount } from '../../utils/format';
+import { cleanupWholeCount } from '../../components/agent/CleanupManagerView';
 
 interface Props {
     env: ClaudeEnvironment;
@@ -44,6 +47,62 @@ interface Props {
 function camelKey(key: string): string {
     return key.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
 }
+
+/**
+ * 展開可能な候補の子要素 1 行（チェックボックス・名前・状態・ファイル数・サイズ）。
+ * 使用中の子要素は選択できない。会話履歴が無く一時物だけが残ったプロジェクトと、
+ * 使用中の可能性があるため残すもの（会話記録・一時物）があるプロジェクトは、名前の横にその旨を表示する。
+ */
+const ClaudeCleanupChildRow: React.FC<{
+    child: CleanupChild;
+    checked: boolean;
+    disabled: boolean;
+    onToggle: () => void;
+}> = ({ child, checked, disabled, onToggle }) => {
+    const { t } = useTranslation();
+    const inUse = child.inUse === true;
+    return (
+        <TableRow>
+            <TableCell padding='checkbox' sx={{ border: 0 }}>
+                <Checkbox size='small' checked={checked && !inUse} disabled={disabled || inUse} onChange={onToggle} />
+            </TableCell>
+            <TableCell sx={{ border: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                    <Typography
+                        variant='body2'
+                        color={inUse ? 'text.disabled' : undefined}
+                        sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
+                    >
+                        {child.name}
+                    </Typography>
+                    {child.orphan && <Chip size='small' variant='outlined' label={t('claude.cleanup.childOrphan')} />}
+                    {inUse ? (
+                        <Chip size='small' variant='outlined' color='warning' label={t('common.cleanupChildInUse')} />
+                    ) : (
+                        (child.inUseParts ?? 0) > 0 && (
+                            <Chip
+                                size='small'
+                                variant='outlined'
+                                color='warning'
+                                label={t('claude.cleanup.childInUseParts', { count: child.inUseParts })}
+                            />
+                        )
+                    )}
+                </Box>
+            </TableCell>
+            <TableCell align='right' sx={{ border: 0 }}>
+                <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
+                    {formatCount(child.fileCount)}
+                </Typography>
+            </TableCell>
+            <TableCell align='right' sx={{ border: 0 }}>
+                <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
+                    {formatBytes(child.size)}
+                </Typography>
+            </TableCell>
+        </TableRow>
+    );
+};
 
 /**
  * 1 つのプラットフォーム（Windows / macOS / Linux / WSL distro）のクリーンアップセクション。
@@ -171,13 +230,15 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
         return { dirs, childSelections };
     }, [candidates, checkedDirs, checkedChildren]);
 
-    // 選択件数（Claude Code ＋ その他ツール）
-    const selectedCount = useMemo(() => {
+    // 削除する件数（Claude Code ＋ その他ツール）と、全体を選んだ展開可能な候補の表示名
+    const { selectedCount, wholeLabels } = useMemo(() => {
         let count = 0;
+        const labels: string[] = [];
         for (const c of candidates) {
             if (c.expandable) {
                 if (checkedDirs.has(c.key)) {
-                    count += 1;
+                    count += cleanupWholeCount(c);
+                    labels.push(t(`claude.cleanup.dir.${camelKey(c.key)}`));
                 } else {
                     const sel = checkedChildren[c.key];
                     for (const child of c.children ?? []) {
@@ -191,8 +252,8 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
             }
         }
         count += checkedOther.size;
-        return count;
-    }, [candidates, checkedDirs, checkedChildren, checkedOther]);
+        return { selectedCount: count, wholeLabels: labels };
+    }, [candidates, checkedDirs, checkedChildren, checkedOther, t]);
 
     const canDelete = selectedCount > 0;
 
@@ -241,8 +302,8 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
 
     const hasAnyTarget = candidates.length > 0 || otherItems.length > 0;
 
-    // projects（サブディレクトリ単位）/ plans（ファイル単位）など expandable 候補の行。
-    // 全体チェックと、展開時の子要素（サブディレクトリ・ファイル）の個別チェックを扱う。
+    // projects（プロジェクト単位）/ plans（ファイル単位）/ 一時物の候補など expandable 候補の行。
+    // 全体チェックと、展開時の子要素の個別チェックを扱う。
     const renderExpandableRow = (c: CleanupCandidate) => {
         const allChecked = checkedDirs.has(c.key);
         const childSel = checkedChildren[c.key];
@@ -297,34 +358,13 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                                     <Table size='small'>
                                         <TableBody>
                                             {children.map(child => (
-                                                <TableRow key={child.name}>
-                                                    <TableCell padding='checkbox' sx={{ border: 0 }}>
-                                                        <Checkbox
-                                                            size='small'
-                                                            checked={allChecked || !!childSel?.has(child.name)}
-                                                            disabled={allChecked}
-                                                            onChange={() => toggleChild(c.key, child.name)}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell sx={{ border: 0 }}>
-                                                        <Typography
-                                                            variant='body2'
-                                                            sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
-                                                        >
-                                                            {child.name}
-                                                        </Typography>
-                                                    </TableCell>
-                                                    <TableCell align='right' sx={{ border: 0 }}>
-                                                        <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                                            {formatCount(child.fileCount)}
-                                                        </Typography>
-                                                    </TableCell>
-                                                    <TableCell align='right' sx={{ border: 0 }}>
-                                                        <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                                            {formatBytes(child.size)}
-                                                        </Typography>
-                                                    </TableCell>
-                                                </TableRow>
+                                                <ClaudeCleanupChildRow
+                                                    key={child.name}
+                                                    child={child}
+                                                    checked={allChecked || !!childSel?.has(child.name)}
+                                                    disabled={allChecked}
+                                                    onToggle={() => toggleChild(c.key, child.name)}
+                                                />
                                             ))}
                                         </TableBody>
                                     </Table>
@@ -485,8 +525,13 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                 <DialogTitle>{t('claude.cleanup.confirmTitle')}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>{t('claude.cleanup.confirmBody', { count: selectedCount })}</DialogContentText>
-                    <Alert severity='warning' sx={{ mt: 2 }}>
-                        {t('claude.cleanup.inUseWarning')}
+                    {wholeLabels.length > 0 && (
+                        <DialogContentText sx={{ mt: 1 }}>
+                            {t('common.cleanupConfirmWhole', { names: wholeLabels.join(', ') })}
+                        </DialogContentText>
+                    )}
+                    <Alert severity='info' sx={{ mt: 2 }}>
+                        {t('claude.cleanup.inUseNotice')}
                     </Alert>
                 </DialogContent>
                 <DialogActions>

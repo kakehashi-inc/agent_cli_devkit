@@ -13,8 +13,10 @@ import {
     SettingsValues,
     SettingsWriteResult,
 } from '../../../shared/agents/claude/types';
+import { settingsValueProblem } from '../../../shared/agents/settingsValue';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
+import { stripBom } from '../common/json/stripBom';
 import { deleteJsoncProperty, parseJsonc, setJsoncProperty } from '../../utils/jsoncEdit';
 import {
     deepEqualLoose,
@@ -74,7 +76,7 @@ export class ClaudeSettingsManager {
     }
 
     /**
-     * 指定環境の settings.json を読み、登録項目の現在値と生 JSON を返す。
+     * 指定環境の settings.json を読み、登録項目の現在値と生 JSON（先頭の BOM は除く）を返す。
      * ファイルが無い場合は exists=false・values は型既定（envMap={}, それ以外 undefined）・raw=null。
      */
     async read(env: ClaudeEnvironment): Promise<SettingsReadResult> {
@@ -82,7 +84,7 @@ export class ClaudeSettingsManager {
         const fs = this.fsFor(env);
         const rel = this.settingsRel();
 
-        const raw = await fs.readText(rel);
+        const raw = stripBom(await fs.readText(rel));
         const exists = raw !== null;
 
         let parsed: Record<string, unknown> = {};
@@ -152,7 +154,7 @@ export class ClaudeSettingsManager {
         const rel = this.settingsRel();
 
         // 既存ファイルを読み込む（壊れている場合は安全のため上書きを拒否する）。
-        const raw = await fs.readText(rel);
+        const raw = stripBom(await fs.readText(rel));
         let text = raw ?? '';
         const expected: Record<string, unknown> = {};
         if (text.trim().length > 0) {
@@ -170,10 +172,14 @@ export class ClaudeSettingsManager {
             text = '{}\n';
         }
 
-        // 登録項目だけをテキストと期待モデルの両方へ反映する。
+        // 登録項目だけをテキストと期待モデルの両方へ反映する。受け付けない値があれば何も書かない。
         for (const field of SETTINGS_FIELDS) {
             if (!Object.prototype.hasOwnProperty.call(values, field.key)) continue;
-            text = this.applyField(text, expected, field, values[field.key]);
+            const result = this.applyField(text, expected, field, values[field.key]);
+            if (result === null) {
+                return { ok: false, message: 'invalid-value' };
+            }
+            text = result;
         }
 
         // 検証: 編集後テキストが期待モデルと一致しなければ書き込まない。
@@ -200,13 +206,14 @@ export class ClaudeSettingsManager {
     /**
      * 1 項目をテキストと期待モデルの両方へ反映し、更新後テキストを返す。
      * 値の設定/削除は path（ドット区切り、envFlag は末尾に envKey を連結）への操作に正規化する。
+     * registry の制約を満たさない数値（範囲の外・数値として読めない値・整数項目の小数）は反映せず null を返す。
      */
     private applyField(
         text: string,
         model: Record<string, unknown>,
         field: SettingsFieldSpec,
         value: SettingsFieldValue
-    ): string {
+    ): string | null {
         if (field.type === 'directEdit') {
             return text;
         }
@@ -237,17 +244,12 @@ export class ClaudeSettingsManager {
                     ? value
                     : undefined;
         } else if (field.type === 'number') {
-            // 未設定（undefined / 非数）はキー削除。数値は min/max でクランプして設定する。
-            if (typeof value === 'number' && Number.isFinite(value)) {
-                let n = value;
-                if (typeof field.min === 'number' && n < field.min) {
-                    n = field.min;
+            // 数値以外（未設定）はキー削除。数値は registry の制約（範囲・整数）を満たすものだけをそのまま設定する。
+            if (typeof value === 'number') {
+                if (settingsValueProblem(field, value) !== null) {
+                    return null;
                 }
-                if (typeof field.max === 'number' && n > field.max) {
-                    n = field.max;
-                }
-                if (field.integer) n = Math.trunc(n);
-                resolved = n;
+                resolved = value;
             } else {
                 resolved = undefined;
             }
@@ -265,10 +267,11 @@ export class ClaudeSettingsManager {
     }
 
     /**
-     * 直接編集の保存。生 JSON テキストを構文チェックしてそのまま書き込む。
+     * 直接編集の保存。生 JSON テキスト（先頭の BOM は除く）を構文チェックしてそのまま書き込む。
      * 内容の妥当性（登録外項目の整合など）はユーザー責任とし、構文だけ検証する。
      */
-    async writeRaw(env: ClaudeEnvironment, raw: string): Promise<SettingsWriteResult> {
+    async writeRaw(env: ClaudeEnvironment, input: string): Promise<SettingsWriteResult> {
+        const raw = stripBom(input);
         let parsed: unknown;
         try {
             parsed = JSON.parse(raw);

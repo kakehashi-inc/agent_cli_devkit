@@ -11,7 +11,7 @@ import type { AgyEnvironment, AssetKind, CleanupSelection, SettingsValues } from
 
 export const agyApi: AgyIpcApi = {
     mcp: {
-        getEnvironments: () => ipcRenderer.invoke(AGY_MCP_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: refresh => ipcRenderer.invoke(AGY_MCP_CHANNELS.GET_ENVIRONMENTS, refresh),
         getMCPServers: env => ipcRenderer.invoke(AGY_MCP_CHANNELS.GET_MCP_SERVERS, env),
         enableMCPServer: (env, name) => ipcRenderer.invoke(AGY_MCP_CHANNELS.ENABLE, env, name),
         disableMCPServer: (env, name) => ipcRenderer.invoke(AGY_MCP_CHANNELS.DISABLE, env, name),
@@ -19,7 +19,7 @@ export const agyApi: AgyIpcApi = {
         reorderDisabledMCPServers: (env, names) => ipcRenderer.invoke(AGY_MCP_CHANNELS.REORDER_DISABLED, env, names),
     },
     asset: {
-        getEnvironments: () => ipcRenderer.invoke(AGY_ASSET_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: refresh => ipcRenderer.invoke(AGY_ASSET_CHANNELS.GET_ENVIRONMENTS, refresh),
         list: (env: AgyEnvironment, kind: AssetKind) => ipcRenderer.invoke(AGY_ASSET_CHANNELS.LIST, env, kind),
         readEntry: (env, kind, rel) => ipcRenderer.invoke(AGY_ASSET_CHANNELS.READ_ENTRY, env, kind, rel),
         revealEntry: (env, kind, rel) => ipcRenderer.invoke(AGY_ASSET_CHANNELS.REVEAL_ENTRY, env, kind, rel),
@@ -32,20 +32,20 @@ export const agyApi: AgyIpcApi = {
         deleteSelected: (env, kind, rels) => ipcRenderer.invoke(AGY_ASSET_CHANNELS.DELETE, env, kind, rels),
     },
     cleanup: {
-        getEnvironments: () => ipcRenderer.invoke(AGY_CLEANUP_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: refresh => ipcRenderer.invoke(AGY_CLEANUP_CHANNELS.GET_ENVIRONMENTS, refresh),
         scan: env => ipcRenderer.invoke(AGY_CLEANUP_CHANNELS.SCAN, env),
         delete: (env: AgyEnvironment, selection: CleanupSelection) =>
             ipcRenderer.invoke(AGY_CLEANUP_CHANNELS.DELETE, env, selection),
     },
     settings: {
-        getEnvironments: () => ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: refresh => ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.GET_ENVIRONMENTS, refresh),
         read: env => ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.READ, env),
         write: (env: AgyEnvironment, values: SettingsValues) =>
             ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.WRITE, env, values),
         writeRaw: (env, raw) => ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.WRITE_RAW, env, raw),
     },
     plugin: {
-        getEnvironments: () => ipcRenderer.invoke(AGY_PLUGIN_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: refresh => ipcRenderer.invoke(AGY_PLUGIN_CHANNELS.GET_ENVIRONMENTS, refresh),
         list: env => ipcRenderer.invoke(AGY_PLUGIN_CHANNELS.LIST, env),
         catalog: env => ipcRenderer.invoke(AGY_PLUGIN_CHANNELS.CATALOG, env),
         install: (env, id) => ipcRenderer.invoke(AGY_PLUGIN_CHANNELS.INSTALL, env, id),

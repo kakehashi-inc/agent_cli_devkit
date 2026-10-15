@@ -26,6 +26,7 @@ import type { AssetEntry, AssetKind, AssetListReport, CodexEnvironment } from '@
 import { AssetSearchField } from '../../components/assets/AssetSearchField';
 import { filterAssetEntries } from '../../utils/assetSearch';
 import { AssetEntriesTable, computeFitWidth, type FmColumn } from './AssetEntriesTable';
+import type { DetailKey } from '../../components/assets/assetColumns';
 
 // セクションのタブ値: エージェント / スキル（AssetKind）に加え、設定タブを持つ。
 type SectionTab = AssetKind;
@@ -37,15 +38,21 @@ interface Props {
     onNotify: (message: string, severity: 'success' | 'error' | 'warning') => void;
 }
 
+// エージェント一覧の説明列の下に補足表示する TOML キー（記載順）。features は無効化した機能の一覧。
+const AGENT_DETAIL_KEYS = ['features'];
+
+// スキル一覧の説明列の下に補足表示するキー（agents/openai.yaml の呼び出しポリシー）。
+const SKILL_DETAIL_KEYS: DetailKey[] = [{ key: 'policy.allow_implicit_invocation', defaultValue: 'true' }];
+
 const FRONTMATTER_COLUMNS: Record<AssetKind, FmColumn[]> = {
     agents: [
         { key: 'name', fit: true, maxWidthPct: 0.3 },
-        { key: 'model', width: 120 },
-        { key: 'description', flex: true },
+        { key: 'model', width: 120, effortKey: 'model_reasoning_effort' },
+        { key: 'description', flex: true, detailKeys: AGENT_DETAIL_KEYS },
     ],
     skills: [
         { key: 'name', fit: true, maxWidthPct: 0.3 },
-        { key: 'description', flex: true },
+        { key: 'description', flex: true, detailKeys: SKILL_DETAIL_KEYS },
     ],
 };
 

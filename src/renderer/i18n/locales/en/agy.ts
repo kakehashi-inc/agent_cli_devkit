@@ -6,6 +6,8 @@ export default {
         settings: 'Agy CLI Settings',
         cleanup: 'Agy CLI Cleanup',
     },
+    noEnvironment:
+        'Agy CLI was not found. Install Antigravity CLI so that the agy command is available on Windows or in WSL, then press Refresh. If it is not found right after installing, you may need to restart the app.',
     dashboard: {
         mcpDesc: 'Enable/disable/reorder the global MCP servers used by Agy CLI.',
         assetsDesc: 'Manage Agy CLI custom agents and its global skills directory.',
@@ -40,6 +42,7 @@ export default {
         col: {
             name: 'Name',
             description: 'Description',
+            model: 'Model',
         },
         columnFiles: 'Files',
         columnLastModified: 'Last modified',
@@ -84,6 +87,10 @@ export default {
         title: 'Agy CLI Plugin Manager',
         description:
             'Manage plugins in the Gemini-shared ~/.gemini/config/plugins directory with the official agy plugin commands.',
+        sourceHelp:
+            'Installs with agy plugin install from a plugin name (for example name@antigravity-plugins-official from the official marketplace), a GitHub repository URL, or a local directory.',
+        invalidNameNote:
+            'The plugin name (the name in plugin.json, or the folder name if it has none) starts with "-" or contains characters that cannot be passed to the CLI, so it cannot be enabled, disabled, or removed here.',
     },
     settings: {
         title: 'Agy CLI Settings',
@@ -115,7 +122,7 @@ export default {
             appearance: 'Appearance',
             behavior: 'Behavior',
             security: 'Security',
-            data: 'Data',
+            data: 'Account & data',
             advanced: 'Direct edit',
         },
         field: {
@@ -124,24 +131,53 @@ export default {
                 label: 'Alternate screen mode (altScreenMode)',
                 desc: 'Controls whether the TUI uses the terminal alternate screen.',
             },
-            notifications: { label: 'Notifications (notifications)', desc: 'Enables terminal notifications.' },
-            showTips: { label: 'Show tips (showTips)', desc: 'Shows usage tips in the CLI.' },
+            notifications: {
+                label: 'Notifications (notifications)',
+                desc: 'Sends a desktop notification and a terminal bell when a task completes or needs your attention.',
+            },
+            showTips: {
+                label: 'Show tips (showTips)',
+                desc: 'Shows usage tips while the agent is generating responses.',
+            },
             showFeedbackSurvey: {
                 label: 'Feedback survey (showFeedbackSurvey)',
-                desc: 'Allows the CLI to display feedback survey prompts.',
+                desc: 'Shows brief feedback surveys after tasks complete.',
             },
-            verbosity: { label: 'Verbosity (verbosity)', desc: 'Controls the amount of CLI status detail.' },
+            verbosity: {
+                label: 'Verbosity (verbosity)',
+                desc: 'Conversation detail level: high shows every tool call and thought, medium groups related steps into summaries, and low shows only minimal progress.',
+            },
             runningLightSpeed: {
                 label: 'Running light speed (runningLightSpeed)',
                 desc: 'Controls the activity indicator speed, or turns it off.',
             },
             editor: {
                 label: 'Editor (editor)',
-                desc: 'Editor integration used by the CLI. Custom editor values are accepted.',
+                desc: 'External editor used to view artifacts and to compose prompts with Ctrl+G. auto follows $EDITOR.',
+            },
+            editorMode: {
+                label: 'Editor mode (editorMode)',
+                desc: 'Editing model of the prompt box. vim enables modal editing with Normal, Insert, and Visual modes.',
+            },
+            vimInsertFirst: {
+                label: 'Start in Insert mode (vimInsertFirst)',
+                desc: 'Starts each prompt in Vim Insert mode, where a bare Enter submits. Takes effect when editorMode is vim.',
+            },
+            copyOnSelect: {
+                label: 'Copy on select (copyOnSelect)',
+                desc: 'Copies mouse-selected text to the clipboard when the selection is released in alternate screen mode.',
+            },
+            queuedMessages: {
+                label: 'Messages sent while working (queuedMessages)',
+                desc: 'How messages sent while the agent is working are handled: send-immediately delivers them right away; when unset they wait until the current turn ends.',
             },
             toolPermission: {
                 label: 'Tool permission (toolPermission)',
                 desc: 'Default permission policy for tool execution.',
+            },
+            agentMode: {
+                label: 'Execution mode (agentMode)',
+                desc: 'Execution mode at startup: accept-edits auto-approves file edits, and plan outlines the steps before changing code.',
             },
             artifactReviewPolicy: {
                 label: 'Artifact review policy (artifactReviewPolicy)',
@@ -153,12 +189,19 @@ export default {
             },
             enableTerminalSandbox: {
                 label: 'Terminal sandbox (enableTerminalSandbox)',
-                desc: 'Runs terminal operations inside the Agy CLI sandbox.',
+                desc: 'Restricts terminal commands run by the agent to an OS-level sandbox.',
             },
-            enableTelemetry: { label: 'Telemetry (enableTelemetry)', desc: 'Allows Agy CLI telemetry collection.' },
+            modelProvider: {
+                label: 'Model provider (modelProvider)',
+                desc: 'Set to gemini to call the Gemini API directly with the key in the GEMINI_API_KEY environment variable instead of signing in.',
+            },
+            enableTelemetry: {
+                label: 'Telemetry (enableTelemetry)',
+                desc: 'Sends anonymous usage statistics and crash reports to Google.',
+            },
             useG1Credits: {
-                label: 'G1 credits (useG1Credits)',
-                desc: 'Enables G1 credit usage where the account supports it.',
+                label: 'Use AI credits (useG1Credits)',
+                desc: 'Uses your personal AI credits for model calls once the plan quota is exhausted.',
             },
             permissions: {
                 label: 'Permissions (permissions)',
@@ -178,9 +221,9 @@ export default {
     cleanup: {
         title: 'Agy CLI Cleanup',
         description:
-            'Delete selected cache, log, crash, history, and conversation data under ~/.gemini/antigravity-cli. Settings, skills, binaries, built-ins, MCP runtime files, and shared Gemini configuration are excluded.',
+            'Delete selected cache, log, crash, history, and conversation data under ~/.gemini/antigravity-cli, plus old agy executables moved aside by auto-update. Settings, keybindings, skills, the current executable, built-ins, MCP runtime files, plugin data, knowledge, credentials, and shared Gemini configuration are excluded.',
         wslSection: 'WSL: {{distro}}',
-        inUseWarning: 'Close running Agy CLI sessions before cleanup. Open files may be skipped.',
+        inUseNotice: 'Close running Agy CLI sessions before cleanup. Open files may be skipped.',
         noCandidates: 'No cleanup targets found',
         name: 'Item',
         descriptionColumn: 'Description',
@@ -194,13 +237,32 @@ export default {
         deletePartial: 'Some files were in use and were skipped',
         deleteError: 'Cleanup failed',
         item: {
-            cache: { label: 'cache', desc: 'Temporary Agy CLI cache.' },
-            log: { label: 'log', desc: 'Agy CLI log directory.' },
+            cache: {
+                label: 'cache',
+                desc: 'Agy CLI cache (latest conversation per workspace, project mappings, changelog, and more).',
+            },
+            log: { label: 'log', desc: 'Agy CLI logs, including the latest log that cli.log points to.' },
             crashes: { label: 'crashes', desc: 'Crash reports produced by Agy CLI.' },
-            'cli-log': { label: 'cli.log', desc: 'Top-level CLI log file.' },
-            conversations: { label: 'conversations', desc: 'Saved conversation data; expandable by conversation.' },
-            brain: { label: 'brain', desc: 'Conversation working data; expandable by entry.' },
-            'conversation-summaries': { label: 'conversation_summaries.db', desc: 'Conversation summary database.' },
+            conversations: {
+                label: 'conversations',
+                desc: 'Saved conversations (one SQLite file per conversation); expandable by file.',
+            },
+            brain: {
+                label: 'brain',
+                desc: 'Per-conversation artifacts and working data, including transcripts; expandable by conversation.',
+            },
+            scratch: {
+                label: 'scratch',
+                desc: 'Agent scratch workspace, including generated output such as images; expandable by entry.',
+            },
+            worktrees: {
+                label: 'worktrees',
+                desc: 'Git worktrees used by subagents; uncommitted changes in them are deleted too. Expandable by entry.',
+            },
+            'conversation-summaries': {
+                label: 'conversation_summaries.db',
+                desc: 'Conversation summary database used by the conversation list (/resume).',
+            },
             'conversation-summaries-wal': {
                 label: 'conversation_summaries.db-wal',
                 desc: 'Conversation summary database write-ahead log.',
@@ -209,8 +271,15 @@ export default {
                 label: 'conversation_summaries.db-shm',
                 desc: 'Conversation summary database shared-memory file.',
             },
-            history: { label: 'history.jsonl', desc: 'Prompt and command history.' },
-            'update-lock': { label: 'updater/update.lock', desc: 'Updater lock file left by a stopped update.' },
+            history: { label: 'history.jsonl', desc: 'Prompt and command input history.' },
+            'update-lock': {
+                label: 'updater/update.lock',
+                desc: 'Updater lock file left by a stopped update. It is hidden and never deleted while the auto-updater holds the lock.',
+            },
+            'old-binaries': {
+                label: 'Old agy executables (*.old)',
+                desc: 'Old executables moved aside by auto-update (agy*.<number>.old in %LOCALAPPDATA%\\agy\\bin on Windows, ~/.local/bin on Linux). Only those moved aside 15 minutes or more ago are targeted; nothing is deleted while an auto-update is running, and executables in use (cannot be opened for writing) are never deleted. The current agy is excluded.',
+            },
         },
     },
 };

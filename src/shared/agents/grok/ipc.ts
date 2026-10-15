@@ -39,9 +39,6 @@ export type GrokIpcApi = {
         upload(env: GrokEnvironment, kind: AssetKind, zipPath: string, overwrite: boolean): Promise<AssetOpResult>;
         uploadMd(env: GrokEnvironment, kind: AssetKind, mdPath: string, overwrite: boolean): Promise<AssetOpResult>;
         deleteSelected(env: GrokEnvironment, kind: AssetKind, relPaths: string[]): Promise<AssetOpResult>;
-        isGitAvailable(): Promise<boolean>;
-        listOfficialSkills(): Promise<AssetOpResult>;
-        importOfficialSkills(env: GrokEnvironment, relPaths: string[]): Promise<AssetOpResult>;
     };
     // Grok クリーンアップ
     cleanup: {
@@ -59,15 +56,16 @@ export type GrokIpcApi = {
         write(env: GrokEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
         writeRaw(env: GrokEnvironment, rawToml: string): Promise<SettingsWriteResult>;
     };
-    // Grok プラグイン管理
+    // Grok プラグイン管理（getEnvironments の refresh=true は CLI と WSL distro を検出し直す要求）
     plugin: {
-        getEnvironments(): Promise<{ env: GrokEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: GrokEnvironment; label: string }[]>;
         list(env: GrokEnvironment): Promise<PluginEnvReport>;
         catalog(env: GrokEnvironment): Promise<PluginCatalogReport>;
         install(env: GrokEnvironment, id: string): Promise<PluginOpResult>;
         // 個別リポジトリ / ローカルパスからの直接インストール（grok のみ）
         installFromSource(env: GrokEnvironment, source: string): Promise<PluginOpResult>;
-        uninstall(env: GrokEnvironment, id: string): Promise<PluginOpResult>;
+        // confirmedNames は一緒に削除されることを確認した同じリポジトリのプラグイン名（省略時は確認したものなし）
+        uninstall(env: GrokEnvironment, id: string, confirmedNames?: string[]): Promise<PluginOpResult>;
         setEnabled(env: GrokEnvironment, id: string, enabled: boolean): Promise<PluginOpResult>;
         addMarketplace(env: GrokEnvironment, source: string): Promise<PluginOpResult>;
         removeMarketplace(env: GrokEnvironment, name: string): Promise<PluginOpResult>;

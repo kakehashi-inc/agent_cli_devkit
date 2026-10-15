@@ -47,10 +47,6 @@ export const grokApi: GrokIpcApi = {
             ipcRenderer.invoke(GROK_ASSET_CHANNELS.UPLOAD_MD, env, kind, mdPath, overwrite),
         deleteSelected: (env: GrokEnvironment, kind: AssetKind, relPaths: string[]) =>
             ipcRenderer.invoke(GROK_ASSET_CHANNELS.DELETE, env, kind, relPaths),
-        isGitAvailable: () => ipcRenderer.invoke(GROK_ASSET_CHANNELS.IS_GIT_AVAILABLE),
-        listOfficialSkills: () => ipcRenderer.invoke(GROK_ASSET_CHANNELS.LIST_OFFICIAL_SKILLS),
-        importOfficialSkills: (env: GrokEnvironment, relPaths: string[]) =>
-            ipcRenderer.invoke(GROK_ASSET_CHANNELS.IMPORT_OFFICIAL_SKILLS, env, relPaths),
     },
     cleanup: {
         getEnvironments: () => ipcRenderer.invoke(GROK_CLEANUP_CHANNELS.GET_ENVIRONMENTS),
@@ -71,13 +67,14 @@ export const grokApi: GrokIpcApi = {
             ipcRenderer.invoke(GROK_CONFIG_CHANNELS.WRITE_RAW, env, rawToml),
     },
     plugin: {
-        getEnvironments: () => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.GET_ENVIRONMENTS, refresh),
         list: (env: GrokEnvironment) => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.LIST, env),
         catalog: (env: GrokEnvironment) => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.CATALOG, env),
         install: (env: GrokEnvironment, id: string) => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.INSTALL, env, id),
         installFromSource: (env: GrokEnvironment, source: string) =>
             ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.INSTALL_FROM_SOURCE, env, source),
-        uninstall: (env: GrokEnvironment, id: string) => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.UNINSTALL, env, id),
+        uninstall: (env: GrokEnvironment, id: string, confirmedNames?: string[]) =>
+            ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.UNINSTALL, env, id, confirmedNames),
         setEnabled: (env: GrokEnvironment, id: string, enabled: boolean) =>
             ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.SET_ENABLED, env, id, enabled),
         addMarketplace: (env: GrokEnvironment, source: string) =>

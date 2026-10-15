@@ -41,13 +41,31 @@ export default {
         noSearchResults: '検索条件に一致するデータはありません',
         revealInFileManager: 'ファイルマネージャーで表示',
         revealInFileManagerError: 'ファイルマネージャーでの表示に失敗しました',
+        cleanupChildInUse: '使用中のため対象外',
+        cleanupConfirmWhole: '次の項目は、使用中のものを除いて中身をすべて削除します: {{names}}',
+        settingsInvalidValue: '「{{field}}」の値の形式が正しくありません。保存を中止しました。',
+        settingsValueNotNumber: '「{{field}}」には数値を入力してください。保存を中止しました。',
+        settingsValueNotInteger: '「{{field}}」には整数を入力してください。保存を中止しました。',
+        settingsValueOutOfRange: '「{{field}}」の値が受け付ける範囲（{{range}}）の外です。保存を中止しました。',
+        // 数値の設定項目が受け付ける範囲の表記
+        settingsRange: {
+            min: '{{min}} 以上',
+            minExclusive: '{{min}} より大きい値',
+            max: '{{max}} 以下',
+            minMax: '{{min}} 以上 {{max}} 以下',
+            minExclusiveMax: '{{min}} より大きく {{max}} 以下',
+        },
     },
     // プラグイン管理（agent 非依存の共通 UI 文言。タイトル等の agent 固有文言は各 agent ファイル）
     pluginManager: {
         wslSection: 'WSL: {{distro}}',
         tabPlugins: 'インストール済み',
         tabMarketplaces: 'マーケットプレイス',
-        cliNotFound: 'この環境では CLI コマンドが見つからないため、プラグイン管理を利用できません。',
+        cliNotFound:
+            'この環境では CLI コマンドが見つからないため、プラグイン管理を利用できません。導入した直後の場合は「再取得」を押してください。それでも見つからない場合は、アプリの再起動が必要なことがあります。',
+        noEnvironment:
+            '対象の CLI を使える環境が見つかりません。CLI を導入してから「再取得」を押してください。導入した直後に見つからない場合は、アプリの再起動が必要なことがあります。',
+        environmentsError: '環境の一覧を取得できませんでした。「再取得」を押してやり直してください。',
         cliVersion: 'CLI: {{version}}',
         listError: '一覧の取得に失敗しました',
         colName: '名前',
@@ -77,8 +95,12 @@ export default {
         externalTooltip: '他のツールの設定から読み込まれたもので、ここからは削除できません',
         uninstallConfirmTitle: 'プラグインを削除しますか？',
         uninstallConfirmBody: '「{{name}}」をアンインストールします。よろしいですか？',
+        uninstallSameRepo: '同じリポジトリから導入された次の {{count}} 件も一緒に削除されます。',
         uninstallSuccess: 'プラグインを削除しました',
         uninstallError: 'プラグインの削除に失敗しました',
+        notUninstallable:
+            'マーケットプレイス以外から導入されたプラグインは CLI ではアンインストールできません（無効化はできます）',
+        notToggleable: 'この提供元のプラグインは CLI 側が有効/無効の設定を参照しないため、切り替えられません',
         removeMarketConfirmTitle: 'マーケットプレイスを削除しますか？',
         removeMarketConfirmBody:
             '「{{name}}」を削除します。このマーケットプレイスからインストールしたプラグインも削除されます。よろしいですか？',
@@ -90,6 +112,8 @@ export default {
         allMarketplaces: 'すべてのマーケットプレイス',
         searchPlaceholder: '名前・説明で絞り込み',
         catalogEmpty: 'インストール可能なプラグインが見つかりません',
+        showMore: 'さらに {{count}} 件表示',
+        shownCount: '{{total}} 件中 {{shown}} 件を表示',
         catalogError: 'カタログの取得に失敗しました',
         install: 'インストール',
         installSuccess: 'プラグインをインストールしました',
@@ -117,6 +141,30 @@ export default {
         working: '実行中…（初回はリポジトリの取得に時間がかかることがあります）',
         cancel: 'キャンセル',
         close: '閉じる',
+        outputTruncated: '…（中略: {{count}} 文字）…',
+        // 操作の失敗理由（main 側が返すコード）の文言
+        errorCode: {
+            'not-found': '指定したプラグインまたはファイルが見つかりません。',
+            'invalid-plugin-source':
+                'プラグインとして導入できないソースです。.ts / .js ファイル、package.json か index・server・tui の .ts / .js を含むフォルダー、または npm・Git のパッケージ指定を指定してください。',
+            'cli-unavailable': 'この環境では CLI コマンドが見つかりません。',
+            'already-exists': '同じ名前のプラグインが既にあるか、導入元が導入先そのものです。',
+            'source-overlaps':
+                '導入元と導入先のフォルダーが重なっているため導入できません（導入元が plugins フォルダーを含むか、その内側にあります）。',
+            unavailable: 'この環境のファイルにアクセスできないため操作できません（WSL のパスに到達できません）。',
+            'invalid-id': 'プラグインの指定が正しくありません。',
+            unsupported: 'この操作には対応していません。',
+            'invalid-disabled-file':
+                '無効化したプラグインの退避ファイル（opencode-disabled-plugins.json）の形式が正しくないため、操作を中止しました。ファイルを修正するか削除してから、やり直してください。',
+            'read-only': 'このプラグインはこの画面からは変更できません。',
+            'in-use': '使用中のファイルがあるため、一部を削除できませんでした。',
+            'move-in-use':
+                '使用中のファイルがあるか、アクセスが拒否されたため、プラグインのファイルを移動できませんでした（プラグインは変更されていません）。プラグインを使用しているプログラムを終了してから、やり直してください。',
+            'needs-reconfirm':
+                '確認した後に、同じリポジトリから導入されたプラグインが増えたため、削除を中止しました。一覧を更新したので、一緒に削除されるプラグインを確認してから、もう一度削除してください。',
+            'invalid-argument-percent':
+                'この環境の CLI はコマンドプロンプト（cmd.exe）を経由して実行されるため、「%」を含む値は指定できません。',
+        },
     },
     updater: {
         confirm: '新しいバージョン v{{version}} が利用可能です。アップデートしますか？',

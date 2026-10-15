@@ -10,9 +10,30 @@ import { CleanupManagerView } from '../../components/agent/CleanupManagerView';
 import { McpManagerView } from '../../components/agent/McpManagerView';
 import { SettingsManagerView } from '../../components/agent/SettingsManagerView';
 import { PluginManagerView } from '../../components/plugins/PluginManagerView';
+import type { AssetKind } from '@shared/agents/types';
+import type { FmColumn } from '../../components/assets/assetColumns';
 import type { AgentModule } from '../types';
 
 const api = window.agentCliDevkit.agy;
+
+// エージェント一覧の列構成。モデル列（inherit / flash / pro。推論レベルの指定は無い）を持ち、
+// 説明列の下に使えるツール・コマンド自動実行ポリシー・呼び出され方を補足表示する。
+const ASSET_COLUMNS: Partial<Record<AssetKind, FmColumn[]>> = {
+    agents: [
+        { key: 'name', fit: true, maxWidthPct: 0.3 },
+        { key: 'model', width: 90 },
+        {
+            key: 'description',
+            flex: true,
+            detailKeys: [
+                'tools',
+                { key: 'commandExecutionPolicy', defaultValue: 'sandbox' },
+                { key: 'mainAgent', defaultValue: 'true' },
+                { key: 'subagent', defaultValue: 'true' },
+            ],
+        },
+    ],
+};
 
 export const agyModule: AgentModule = {
     id: 'agy',
@@ -35,7 +56,7 @@ export const agyModule: AgentModule = {
             descKey: 'agy.dashboard.assetsDesc',
             Icon: AssetIcon,
             color: '#d98a3a',
-            element: <AssetManagerView agentId='agy' api={api.asset} />,
+            element: <AssetManagerView agentId='agy' api={api.asset} columns={ASSET_COLUMNS} />,
         },
         {
             path: '/agy/plugins',

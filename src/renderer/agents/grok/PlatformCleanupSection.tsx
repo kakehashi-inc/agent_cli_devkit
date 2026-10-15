@@ -33,6 +33,7 @@ import type {
     OtherCleanupReport,
 } from '@shared/agents/grok/types';
 import { formatBytes, formatCount } from '../../utils/format';
+import { CleanupChildRow } from '../../components/agent/CleanupManagerView';
 
 interface Props {
     env: GrokEnvironment;
@@ -284,34 +285,13 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                                     <Table size='small'>
                                         <TableBody>
                                             {children.map(child => (
-                                                <TableRow key={child.name}>
-                                                    <TableCell padding='checkbox' sx={{ border: 0 }}>
-                                                        <Checkbox
-                                                            size='small'
-                                                            checked={allChecked || !!childSel?.has(child.name)}
-                                                            disabled={allChecked}
-                                                            onChange={() => toggleChild(c.key, child.name)}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell sx={{ border: 0 }}>
-                                                        <Typography
-                                                            variant='body2'
-                                                            sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
-                                                        >
-                                                            {child.name}
-                                                        </Typography>
-                                                    </TableCell>
-                                                    <TableCell align='right' sx={{ border: 0 }}>
-                                                        <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                                            {formatCount(child.fileCount)}
-                                                        </Typography>
-                                                    </TableCell>
-                                                    <TableCell align='right' sx={{ border: 0 }}>
-                                                        <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                                            {formatBytes(child.size)}
-                                                        </Typography>
-                                                    </TableCell>
-                                                </TableRow>
+                                                <CleanupChildRow
+                                                    key={child.name}
+                                                    child={child}
+                                                    checked={allChecked || !!childSel?.has(child.name)}
+                                                    disabled={allChecked}
+                                                    onToggle={() => toggleChild(c.key, child.name)}
+                                                />
                                             ))}
                                         </TableBody>
                                     </Table>
@@ -472,8 +452,8 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                 <DialogTitle>{t('grok.cleanup.confirmTitle')}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>{t('grok.cleanup.confirmBody', { count: selectedCount })}</DialogContentText>
-                    <Alert severity='warning' sx={{ mt: 2 }}>
-                        {t('grok.cleanup.inUseWarning')}
+                    <Alert severity='info' sx={{ mt: 2 }}>
+                        {t('grok.cleanup.inUseNotice')}
                     </Alert>
                 </DialogContent>
                 <DialogActions>

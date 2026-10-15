@@ -5,6 +5,7 @@ import {
     Box,
     Button,
     Checkbox,
+    Chip,
     Collapse,
     Dialog,
     DialogActions,
@@ -29,7 +30,13 @@ import {
     KeyboardArrowRight as CollapseIcon,
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import type { AgentEnvironment, CleanupCandidate, CleanupEnvReport, CleanupSelection } from '@shared/agents/types';
+import type {
+    AgentEnvironment,
+    CleanupCandidate,
+    CleanupChild,
+    CleanupEnvReport,
+    CleanupSelection,
+} from '@shared/agents/types';
 import { envId, formatBytes, formatCount } from '../../utils/format';
 import type { CleanupApi, Notify } from './types';
 
@@ -37,6 +44,59 @@ interface Props {
     agentId: string;
     api: CleanupApi;
 }
+
+/**
+ * 展開可能な候補の全体を選んだときに削除する件数（使用中ではない子要素の数）。
+ * 数えられる子要素が無い場合（子要素の一覧に含まれない中身だけの場合など）は 1 件とする。
+ */
+export function cleanupWholeCount(candidate: CleanupCandidate): number {
+    return Math.max(1, (candidate.children ?? []).filter(child => !child.inUse).length);
+}
+
+/**
+ * 展開可能なクリーンアップ候補の子要素 1 行（チェックボックス・名前・ファイル数・サイズ）。
+ * 使用中の子要素は選択できず、名前の横に使用中である旨を表示する。
+ */
+export const CleanupChildRow: React.FC<{
+    child: CleanupChild;
+    checked: boolean;
+    disabled: boolean;
+    onToggle: () => void;
+}> = ({ child, checked, disabled, onToggle }) => {
+    const { t } = useTranslation();
+    const inUse = child.inUse === true;
+    return (
+        <TableRow>
+            <TableCell padding='checkbox' sx={{ border: 0 }}>
+                <Checkbox size='small' checked={checked && !inUse} disabled={disabled || inUse} onChange={onToggle} />
+            </TableCell>
+            <TableCell sx={{ border: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                    <Typography
+                        variant='body2'
+                        color={inUse ? 'text.disabled' : undefined}
+                        sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
+                    >
+                        {child.name}
+                    </Typography>
+                    {inUse && (
+                        <Chip size='small' variant='outlined' color='warning' label={t('common.cleanupChildInUse')} />
+                    )}
+                </Box>
+            </TableCell>
+            <TableCell align='right' sx={{ border: 0 }}>
+                <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
+                    {formatCount(child.fileCount)}
+                </Typography>
+            </TableCell>
+            <TableCell align='right' sx={{ border: 0 }}>
+                <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
+                    {child.sizeUnknown ? '-' : formatBytes(child.size)}
+                </Typography>
+            </TableCell>
+        </TableRow>
+    );
+};
 
 const CleanupSection: React.FC<{
     agentId: string;
@@ -74,9 +134,8 @@ const CleanupSection: React.FC<{
         void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */
     }, []);
 
-    const candidates = (report?.candidates ?? []).filter(
-        candidate => candidate.exists && candidate.fileCount > 0
-    );
+    // 削除できるものがある候補だけを表示する。
+    const candidates = (report?.candidates ?? []).filter(candidate => candidate.exists && candidate.fileCount > 0);
 
     const toggleDir = (key: string) => {
         setDirs(current => {
@@ -115,20 +174,25 @@ const CleanupSection: React.FC<{
         return { dirs: selectedDirs, childSelections };
     }, [candidates, children, dirs]);
 
-    const selectedCount = useMemo(() => {
+    // 削除する件数と、全体を選んだ展開可能な候補の表示名
+    const { selectedCount, wholeLabels } = useMemo(() => {
         let count = 0;
+        const labels: string[] = [];
         for (const candidate of candidates) {
             if (candidate.expandable && !dirs.has(candidate.key)) {
                 const selected = children[candidate.key];
                 for (const child of candidate.children ?? []) {
                     if (selected?.has(child.name)) count += 1;
                 }
+            } else if (candidate.expandable) {
+                count += cleanupWholeCount(candidate);
+                labels.push(t(`${agentId}.cleanup.item.${candidate.key}.label`));
             } else if (dirs.has(candidate.key)) {
                 count += 1;
             }
         }
-        return count;
-    }, [candidates, children, dirs]);
+        return { selectedCount: count, wholeLabels: labels };
+    }, [agentId, candidates, children, dirs, t]);
 
     const remove = async () => {
         setConfirmOpen(false);
@@ -151,11 +215,37 @@ const CleanupSection: React.FC<{
         }
     };
 
+    /** 展開した行の中身（子要素の一覧）。 */
+    const renderChildList = (candidate: CleanupCandidate, allChecked: boolean) => {
+        const childSel = children[candidate.key];
+        const childList = candidate.children ?? [];
+        if (childList.length === 0)
+            return (
+                <Typography variant='body2' color='text.secondary'>
+                    {t(`${agentId}.cleanup.noCandidates`)}
+                </Typography>
+            );
+        return (
+            <Table size='small'>
+                <TableBody>
+                    {childList.map(child => (
+                        <CleanupChildRow
+                            key={child.name}
+                            child={child}
+                            checked={allChecked || !!childSel?.has(child.name)}
+                            disabled={allChecked}
+                            onToggle={() => toggleChild(candidate.key, child.name)}
+                        />
+                    ))}
+                </TableBody>
+            </Table>
+        );
+    };
+
     const renderExpandableRow = (candidate: CleanupCandidate) => {
         const allChecked = dirs.has(candidate.key);
         const childSel = children[candidate.key];
         const indeterminate = !allChecked && !!childSel && childSel.size > 0;
-        const childList = candidate.children ?? [];
         const isExpanded = expandedKeys[candidate.key] ?? false;
         return (
             <React.Fragment key={candidate.key}>
@@ -189,55 +279,14 @@ const CleanupSection: React.FC<{
                     </TableCell>
                     <TableCell align='right'>
                         <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                            {formatBytes(candidate.size)}
+                            {candidate.sizeUnknown ? '-' : formatBytes(candidate.size)}
                         </Typography>
                     </TableCell>
                 </TableRow>
                 <TableRow>
                     <TableCell sx={{ py: 0, border: 0 }} colSpan={5}>
                         <Collapse in={isExpanded} timeout='auto' unmountOnExit>
-                            <Box sx={{ pl: 6, py: 1 }}>
-                                {childList.length === 0 ? (
-                                    <Typography variant='body2' color='text.secondary'>
-                                        {t(`${agentId}.cleanup.noCandidates`)}
-                                    </Typography>
-                                ) : (
-                                    <Table size='small'>
-                                        <TableBody>
-                                            {childList.map(child => (
-                                                <TableRow key={child.name}>
-                                                    <TableCell padding='checkbox' sx={{ border: 0 }}>
-                                                        <Checkbox
-                                                            size='small'
-                                                            checked={allChecked || !!childSel?.has(child.name)}
-                                                            disabled={allChecked}
-                                                            onChange={() => toggleChild(candidate.key, child.name)}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell sx={{ border: 0 }}>
-                                                        <Typography
-                                                            variant='body2'
-                                                            sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
-                                                        >
-                                                            {child.name}
-                                                        </Typography>
-                                                    </TableCell>
-                                                    <TableCell align='right' sx={{ border: 0 }}>
-                                                        <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                                            {formatCount(child.fileCount)}
-                                                        </Typography>
-                                                    </TableCell>
-                                                    <TableCell align='right' sx={{ border: 0 }}>
-                                                        <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                                                            {formatBytes(child.size)}
-                                                        </Typography>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                )}
-                            </Box>
+                            <Box sx={{ pl: 6, py: 1 }}>{renderChildList(candidate, allChecked)}</Box>
                         </Collapse>
                     </TableCell>
                 </TableRow>
@@ -267,7 +316,7 @@ const CleanupSection: React.FC<{
             </TableCell>
             <TableCell align='right'>
                 <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                    {formatBytes(candidate.size)}
+                    {candidate.sizeUnknown ? '-' : formatBytes(candidate.size)}
                 </Typography>
             </TableCell>
         </TableRow>
@@ -329,8 +378,13 @@ const CleanupSection: React.FC<{
                     <DialogContentText>
                         {t(`${agentId}.cleanup.confirmBody`, { count: selectedCount })}
                     </DialogContentText>
-                    <Alert severity='warning' sx={{ mt: 2 }}>
-                        {t(`${agentId}.cleanup.inUseWarning`)}
+                    {wholeLabels.length > 0 && (
+                        <DialogContentText sx={{ mt: 1 }}>
+                            {t('common.cleanupConfirmWhole', { names: wholeLabels.join(', ') })}
+                        </DialogContentText>
+                    )}
+                    <Alert severity='info' sx={{ mt: 2 }}>
+                        {t(`${agentId}.cleanup.inUseNotice`)}
                     </Alert>
                 </DialogContent>
                 <DialogActions>
@@ -356,10 +410,10 @@ export const CleanupManagerView: React.FC<Props> = ({ agentId, api }) => {
         message: string;
         severity: 'success' | 'error' | 'warning';
     }>({ open: false, message: '', severity: 'success' });
-    const load = async () => {
+    const load = async (refresh = false) => {
         setLoading(true);
         try {
-            setEnvironments(await api.getEnvironments());
+            setEnvironments(await api.getEnvironments(refresh));
             setReload(value => value + 1);
         } finally {
             setLoading(false);
@@ -391,12 +445,17 @@ export const CleanupManagerView: React.FC<Props> = ({ agentId, api }) => {
                 <Button
                     variant='outlined'
                     startIcon={<RefreshIcon />}
-                    onClick={load}
+                    onClick={() => void load(true)}
                     sx={{ textTransform: 'none', flexShrink: 0 }}
                 >
                     {t('common.refresh')}
                 </Button>
             </Box>
+            {environments.length === 0 && (
+                <Alert severity='info' sx={{ mb: 2 }}>
+                    {t(`${agentId}.noEnvironment`)}
+                </Alert>
+            )}
             {native.map(item => (
                 <Box key={`${envId(item.env)}-${reload}`}>
                     <Typography variant='h6' sx={{ mb: 1 }}>

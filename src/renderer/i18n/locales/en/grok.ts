@@ -19,7 +19,7 @@ export default {
     cleanup: {
         title: 'Grok Cleanup',
         description:
-            'Delete history, memory, logs, plans, and old executable versions under ~/.grok. Frees disk space and improves responsiveness. Config files, credentials, agents, skills, plugins, and hooks are excluded.',
+            'Delete history, memory, logs, diagnostic data, caches, and old executable versions under ~/.grok, plus Grok temporary files left in the OS temp folder (%TEMP% or /tmp). Frees disk space and improves responsiveness. Config files, credentials, agents, skills, plugins, hooks, bundled assets, and session worktrees are excluded.',
         wslSection: 'WSL: {{distro}}',
         deleteSelected: 'Delete selected',
         cancel: 'Cancel',
@@ -27,7 +27,7 @@ export default {
         confirmBody: 'Delete the {{count}} selected item(s). This cannot be undone. Continue?',
         reclaimable: '{{count}} selected, reclaimable {{size}}',
         noCandidates: 'No cleanup targets found',
-        inUseWarning:
+        inUseNotice:
             'If a Grok session is running, some directories may fail to delete. Please close sessions before deleting.',
         deleteSuccess: 'Cleanup completed',
         deletePartial: 'Some files were in use and were skipped',
@@ -38,22 +38,51 @@ export default {
         columnSize: 'Size',
         dir: {
             sessions: 'sessions',
-            memory: 'memory',
+            sandboxEvents: 'sessions/sandbox-events.jsonl',
+            logs: 'logs',
             debug: 'debug',
-            plans: 'plans',
+            leaderLog: 'leader.log',
+            leaderLogRotated: 'leader.log.1',
+            memtrace: 'memtrace',
+            crash: 'crash',
+            traceExports: 'trace-exports',
+            marketplaceCache: 'marketplace-cache',
             docs: 'docs',
-            sandboxEvents: 'sandbox-events.jsonl',
+            memory: 'memory',
+            memoryV2: 'memory-v2',
+            plans: 'plans',
             binOldVersions: 'bin (old versions)',
+            tempGoalScratch: 'Temp folder: grok-goal-*',
+            tempSnapshotIndex: 'Temp folder: grok-snapshot-index-*',
+            tempVideoFrames: 'Temp folder: grok-video-*',
+            tempEditorFiles: 'Temp folder: grok-prompt-* / grok-transcript-*',
         },
         desc: {
-            sessions: 'Recorded past sessions (conversation logs). Expand to delete individually.',
-            memory: 'Cross-session memory data.',
-            debug: 'Debug logs.',
-            plans: 'Plan files created in plan mode.',
-            docs: 'Cache of the built-in user guide (regenerated when needed).',
+            sessions:
+                'Recorded past sessions (conversation logs and plans). Expand to delete per project. Tool approvals saved for each project are deleted too.',
             sandboxEvents: 'Sandbox event log.',
+            logs: 'Diagnostic logs such as the unified log and MCP server stderr output.',
+            debug: 'Debug logs (written when GROK_DEBUG_LOG is set).',
+            leaderLog: 'Log of the leader process.',
+            leaderLogRotated: 'Previous leader process log, rotated out at its size limit.',
+            memtrace: 'Process memory usage records (diagnostics).',
+            crash: 'Crash reports from abnormal terminations.',
+            traceExports: 'Trace bundles written by grok trace export.',
+            marketplaceCache: 'Git cache of plugin marketplaces (fetched again when needed).',
+            docs: 'Cache of the built-in user guide (regenerated at launch).',
+            memory: 'Cross-session memory data. Deleting it loses the accumulated memory.',
+            memoryV2: 'Memory v2 data (topics and observations). Deleting it loses the accumulated memory.',
+            plans: 'Plan files created by older versions (current versions store plans inside each session).',
             binOldVersions:
-                'Old executable versions left behind by updates (about 130 MB each). The current version and launcher files are protected.',
+                'Old executable versions left behind by updates and executables moved aside during updates (*.old), about 130 MB each. The current version and launcher files are protected.',
+            tempGoalScratch:
+                'Goal mode verification work folders in the OS temp folder. They are matched against the goal state saved in each session: folders of goals that finished (complete or budget limit reached) or that have no matching goal are deleted once not modified for 1 hour or more, and all others once not modified for 7 days or more. Newer items that may still be in use are never deleted.',
+            tempSnapshotIndex:
+                'Temporary Git indexes (including .lock files) used to snapshot worktrees, in the OS temp folder. Only those created and last modified 24 hours or more ago are deleted. Newer items that may still be in use are never deleted.',
+            tempVideoFrames:
+                'Temporary folders for extracting frames from attached videos, in the OS temp folder. Only those created and last modified 24 hours or more ago are deleted. Newer items that may still be in use are never deleted.',
+            tempEditorFiles:
+                'Temporary files for editing prompts in an external editor and viewing transcripts, in the OS temp folder. Only files not modified for 7 days or more are deleted. Newer items that may still be in use are never deleted.',
         },
         other: {
             sectionTitle: 'Other tools',
@@ -119,16 +148,6 @@ export default {
         overwriteConfirmTitle: 'Overwrite items with the same name?',
         overwriteConfirmBody:
             'The following {{count}} item(s) already exist and will be deleted and replaced: {{names}}. Continue?',
-        importOfficial: 'Import official skills',
-        importOfficialTitle: 'Import official skills',
-        importOfficialDesc:
-            'Skills from the official xAI repository (xai-org/plugin-marketplace). Select the skills to import. Existing skills with the same name will be replaced.',
-        import: 'Import',
-        gitRequired: 'This feature requires git to be installed',
-        officialImportSuccess: 'Imported {{count}} official skill(s)',
-        officialImportError: 'Failed to import official skills',
-        officialListError: 'Failed to fetch official skills',
-        repoUpdating: 'Updating the official repository...',
         mdNoName: 'Could not read the name from SKILL.md',
         kindWarnTitle: 'The type may not match',
         kindWarnContinue: 'Import anyway',
@@ -177,8 +196,11 @@ export default {
         group: {
             model: 'Model',
             security: 'Security & Behavior',
+            memory: 'Memory',
             cli: 'Display & CLI',
             features: 'Features',
+            extensions: 'Extensions & Compatibility',
+            telemetry: 'Telemetry & Diagnostics',
         },
         field: {
             modelsDefault: {
@@ -231,43 +253,11 @@ export default {
             },
             memoryEnabled: {
                 label: 'Cross-session memory (memory.enabled)',
-                desc: 'Enables memory across sessions.',
-            },
-            memorySessionSaveOnEnd: {
-                label: 'Save memory on session end (memory.session.save_on_end)',
-                desc: 'Writes a meta-summary to memory when a session ends. Default: on.',
-            },
-            memoryWatcherEnabled: {
-                label: 'Memory watcher (memory.watcher.enabled)',
-                desc: 'Watches memory files for external edits. Default: on.',
-            },
-            memorySearchMaxResults: {
-                label: 'Memory search results (memory.search.max_results)',
-                desc: 'Default number of results returned by memory search. Default: 6.',
-            },
-            memorySearchMinScore: {
-                label: 'Memory search min score (memory.search.min_score)',
-                desc: 'Minimum relevance score for a memory search hit. Default: 0.35.',
-            },
-            memoryInitialInjectionEnabled: {
-                label: 'Initial memory injection (memory.initial_injection.enabled)',
-                desc: 'Automatically injects memory on the first turn. Default: on.',
-            },
-            memoryInitialInjectionMinScore: {
-                label: 'Initial injection min score (memory.initial_injection.min_score)',
-                desc: 'Score threshold used for initial injection. Default: 0.',
-            },
-            memoryEmbeddingModel: {
-                label: 'Embedding model (memory.embedding.model)',
-                desc: 'Model name used for memory embeddings.',
-            },
-            memoryEmbeddingDimensions: {
-                label: 'Embedding dimensions (memory.embedding.dimensions)',
-                desc: 'Vector dimensionality for memory embeddings. Default: 1024.',
+                desc: 'Enables memory across sessions. memory_v2.enabled takes precedence when set. Default: off.',
             },
             subagentsEnabled: {
                 label: 'Subagents (subagents.enabled)',
-                desc: 'Master switch for the subagents feature.',
+                desc: 'Master switch for the subagents (task tool) feature. Default: on.',
             },
             cliAutoUpdate: {
                 label: 'Auto update (cli.auto_update)',
@@ -275,7 +265,7 @@ export default {
             },
             cliChannel: {
                 label: 'Release channel (cli.channel)',
-                desc: 'Release channel. "stable" is steadier; "alpha" is early access.',
+                desc: 'Release channel. "stable" is steadier, "alpha" is early access, and "enterprise" is for organizations. Other names follow the stable update rules.',
             },
             cliShowTips: {
                 label: 'Startup tips (cli.show_tips)',
@@ -320,10 +310,6 @@ export default {
             featuresWriteFile: {
                 label: 'write tool (features.write_file)',
                 desc: 'Enables the file write tool.',
-            },
-            featuresToolSearch: {
-                label: 'MCP tool search (features.tool_search)',
-                desc: 'Enables searching (on-demand loading) of MCP tools.',
             },
             modelsImageDescription: {
                 label: 'Image description model (models.image_description)',
@@ -385,10 +371,6 @@ export default {
                 label: 'Screen mode (ui.screen_mode)',
                 desc: 'fullscreen uses the standard full-screen TUI; minimal leaves finalized output in native terminal scrollback.',
             },
-            uiShowTimestamps: {
-                label: 'Show timestamps (ui.show_timestamps)',
-                desc: 'Shows timestamps on conversation and tool events. Default: on.',
-            },
             uiShowTimeline: {
                 label: 'Show timeline (ui.show_timeline)',
                 desc: 'Shows session progress as a chronological timeline.',
@@ -416,14 +398,6 @@ export default {
             uiPromptSuggestions: {
                 label: 'Prompt suggestions (ui.prompt_suggestions)',
                 desc: 'Shows contextual prompt suggestions in the input box.',
-            },
-            uiGroupToolVerbs: {
-                label: 'Group tool actions (ui.group_tool_verbs)',
-                desc: 'Groups consecutive similar tool operations into a single action display. Default: on.',
-            },
-            uiCollapsedEditBlocks: {
-                label: 'Collapse edit blocks (ui.collapsed_edit_blocks)',
-                desc: 'Shows file edit results collapsed by default. Default: off.',
             },
             uiScrollSpeed: {
                 label: 'Scroll speed (ui.scroll_speed)',
@@ -483,7 +457,7 @@ export default {
             },
             uiHunkTrackerMode: {
                 label: 'Hunk tracker mode (ui.hunk_tracker_mode)',
-                desc: 'Change-hunk tracking mode. Default: agent_only.',
+                desc: "Scope of file-change hunk tracking: agent_only tracks only the agent's edits, all_dirty tracks every uncommitted change, and off disables tracking. Default: off.",
             },
             uiVoiceCaptureMode: {
                 label: 'Voice capture mode (ui.voice_capture_mode)',
@@ -539,7 +513,13 @@ export default {
             },
             featuresTelemetry: {
                 label: 'Telemetry (features.telemetry)',
-                desc: 'Master switch for product-analytics telemetry. Default: off.',
+                desc: 'Product-analytics telemetry mode. Besides on and off, session_metrics sends only session metrics.',
+                choice: {
+                    enabled: 'Enabled (true)',
+                    sessionMetrics: 'Session metrics only (session_metrics)',
+                    disabled: 'Disabled (false)',
+                    off: 'Off (off)',
+                },
             },
             featuresFeedback: {
                 label: 'Feedback (features.feedback)',
@@ -547,11 +527,11 @@ export default {
             },
             featuresCodebaseIndexing: {
                 label: 'Codebase indexing (features.codebase_indexing)',
-                desc: 'Builds the code-graph index. Default: on.',
+                desc: 'Builds the code-graph index. true indexes Git repositories; an array of include / exclude globs narrows the scope.',
             },
             featuresTwoPassCompaction: {
                 label: 'Two-pass compaction (features.two_pass_compaction)',
-                desc: 'Enables two-pass conversation compaction (opt-in). Default: off.',
+                desc: 'Summarizes the earlier part of a long conversation in the background before compaction. Default: on.',
             },
             workflowsEnabled: {
                 label: 'Workflows (workflows.enabled)',
@@ -697,18 +677,6 @@ export default {
                 label: 'Scan-ignore paths (skills.ignore)',
                 desc: 'Paths excluded from skill discovery.',
             },
-            compatCursorSessions: {
-                label: 'Detect Cursor sessions (compat.cursor.sessions)',
-                desc: 'Scans Cursor sessions. Default: on.',
-            },
-            compatClaudeSessions: {
-                label: 'Detect Claude sessions (compat.claude.sessions)',
-                desc: 'Scans Claude Code sessions. Default: on.',
-            },
-            compatCodexSessions: {
-                label: 'Detect Codex sessions (compat.codex.sessions)',
-                desc: 'Scans Codex sessions. Default: on.',
-            },
             pluginsPaths: {
                 label: 'Additional plugin paths (plugins.paths)',
                 desc: 'Additional plugin directories scanned by Grok Build.',
@@ -720,6 +688,570 @@ export default {
             pluginsEnabled: {
                 label: 'Enabled plugins (plugins.enabled)',
                 desc: 'Plugin names explicitly enabled, including project plugins that may default to off.',
+            },
+            modelsPromptSuggestion: {
+                label: 'Prompt suggestion model (models.prompt_suggestion)',
+                desc: 'Model ID used to generate next-prompt suggestions (ghost text). When unset, the remote setting and then the session model are used.',
+            },
+            modelsAgentType: {
+                label: 'Default agent type (models.agent_type)',
+                desc: 'Agent definition type used for models that do not set their own agent_type.',
+            },
+            modelsRateLimitRetryThreshold: {
+                label: 'Rate-limit attempt ceiling (models.rate_limit_retry_threshold)',
+                desc: 'Global ceiling on total attempts for rate-limited requests, capped by max_retries. When set, the separate subagent 429 wait loop is not used.',
+            },
+            modelsSubagentRateLimitMaxAttempts: {
+                label: 'Subagent 429 wait attempts (models.subagent_rate_limit_max_attempts)',
+                desc: 'Maximum times a subagent waits and retries on a 429 response when rate_limit_retry_threshold is unset (0-32; 0 disables waiting). Default: 8.',
+            },
+            modelProviders: {
+                label: 'Custom provider definitions (model_providers.<name>)',
+                desc: 'Defines named model providers referenced by model_provider in [model.<id>].',
+            },
+            agentName: {
+                label: 'Agent definition name (agent.name)',
+                desc: 'Name of the built-in or discovered agent definition the session runs.',
+            },
+            agentDefinition: {
+                label: 'Agent definition file (agent.definition)',
+                desc: 'Path to an agent definition Markdown file with YAML frontmatter; the session runs with that definition.',
+            },
+            agentSystemPromptLabel: {
+                label: 'System prompt identity (agent.system_prompt_label)',
+                desc: 'Global identity label used in the system prompt. A per-model label takes precedence.',
+            },
+            promptSuggestionsMaxOutputTokens: {
+                label: 'Suggestion output tokens (prompt_suggestions.max_output_tokens)',
+                desc: 'Visible output tokens for generating prompt suggestions (16-256).',
+            },
+            promptSuggestionsTemperature: {
+                label: 'Suggestion temperature (prompt_suggestions.temperature)',
+                desc: 'Sampling temperature for generating prompt suggestions.',
+            },
+            promptSuggestionsReasoningEffort: {
+                label: 'Suggestion reasoning effort (prompt_suggestions.reasoning_effort)',
+                desc: 'Reasoning effort for generating prompt suggestions. none or unset disables reasoning.',
+            },
+            longReasoningReminderEnabled: {
+                label: 'Long-reasoning reminder (long_reasoning_reminder.enabled)',
+                desc: 'Injects a mid-turn reminder to reason briefly after a model call with long hidden reasoning. Default: off.',
+            },
+            longReasoningReminderTokens: {
+                label: 'Long-reasoning threshold (long_reasoning_reminder.tokens)',
+                desc: 'Reasoning tokens in one model call that count as long (100-200000). Default: 1000.',
+            },
+            longReasoningReminderDelay: {
+                label: 'Reminder delay (long_reasoning_reminder.delay)',
+                desc: 'Model calls to wait after the long call before injecting the reminder (0-10). Default: 1.',
+            },
+            toolsetBashLoginShellCapture: {
+                label: 'Capture login shell environment (toolset.bash.login_shell_capture)',
+                desc: "Runs bash with the login shell's environment. When off, aliases and functions from .bashrc / .zshrc, and possibly their PATH and exports, are not applied.",
+            },
+            toolsetImageGenBaseUrl: {
+                label: 'Image generation endpoint (toolset.image_gen.base_url)',
+                desc: 'Image API URL used by image_gen / image_edit with a custom model endpoint. When unset, these tools stay off.',
+            },
+            toolsetImageGenEnvKey: {
+                label: 'Image generation credential variables (toolset.image_gen.env_key)',
+                desc: 'Environment variable name(s) (string or array) holding the bearer token for toolset.image_gen.base_url. The first one that is set wins.',
+            },
+            toolsetVideoGenBaseUrl: {
+                label: 'Video generation endpoint (toolset.video_gen.base_url)',
+                desc: 'Video API URL used by the video tools with a custom model endpoint. When unset, the video tools stay off.',
+            },
+            toolsetVideoGenEnvKey: {
+                label: 'Video generation credential variables (toolset.video_gen.env_key)',
+                desc: 'Environment variable name(s) (string or array) holding the bearer token for toolset.video_gen.base_url. The first one that is set wins.',
+            },
+            toolsMediaGenMaxParallelImageGenCalls: {
+                label: 'Parallel image generation calls (tools.media_gen.max_parallel_image_gen_calls)',
+                desc: 'Maximum image_gen / image_edit calls run in parallel in one model step.',
+            },
+            toolsMediaGenMaxParallelVideoGenCalls: {
+                label: 'Parallel video generation calls (tools.media_gen.max_parallel_video_gen_calls)',
+                desc: 'Maximum video_gen calls run in parallel in one model step.',
+            },
+            disableWebSearch: {
+                label: 'Remove web search tool (disable_web_search)',
+                desc: 'Removes the web_search tool from the tools available to the model.',
+            },
+            storageCleanupTtlDays: {
+                label: 'Session cleanup days (storage.cleanup_ttl_days)',
+                desc: 'Deletes session folders idle for this many days and prunes older media and terminal logs from live sessions. Unset or 0 disables cleanup.',
+            },
+            autoModeEnabled: {
+                label: 'Auto permission mode (auto_mode.enabled)',
+                desc: 'Makes the Auto permission mode, which decides tool approvals automatically, available.',
+            },
+            defaultAutoMode: {
+                label: 'Start in Auto mode (default_auto_mode)',
+                desc: 'Starts new sessions in Auto permission mode when no per-session override is set.',
+            },
+            doomLoopRecoveryEnabled: {
+                label: 'Tool-call loop recovery (doom_loop_recovery.enabled)',
+                desc: 'Resamples when the model repeats the same tool call in a loop. When off, no recovery is attempted.',
+            },
+            pathNotFoundHints: {
+                label: 'Path-not-found hints (path_not_found_hints)',
+                desc: 'Adds working-directory reminders and similar-name suggestions to path-not-found errors.',
+            },
+            harnessDisableWorkspaceTeleport: {
+                label: 'Stop per-turn snapshots (harness.disable_workspace_teleport)',
+                desc: 'Stops taking a workspace snapshot on every turn.',
+            },
+            subagentsLimitBehavior: {
+                label: 'Behavior at concurrency cap (subagents.limit_behavior)',
+                desc: 'Whether to queue (queue) or fail (fail) when the concurrent subagent cap is reached.',
+            },
+            subagentsMaxConcurrent: {
+                label: 'Concurrent subagents (subagents.max_concurrent)',
+                desc: 'Maximum number of subagents running at the same time.',
+            },
+            subagentsMaxDepth: {
+                label: 'Subagent nesting depth (subagents.max_depth)',
+                desc: 'Maximum depth to which subagents can start further subagents (1 or more).',
+            },
+            mcpMaxOutputBytes: {
+                label: 'MCP output size cap (mcp.max_output_bytes)',
+                desc: 'Limits MCP tool output to this many bytes.',
+            },
+            shellEnvPolicyInherit: {
+                label: 'Inherited environment (shell_environment_policy.inherit)',
+                desc: 'Which parent environment variables tool subprocesses inherit: all keeps everything, core keeps a minimal set such as PATH and HOME, and none starts empty. Default: all.',
+            },
+            shellEnvPolicyIgnoreDefaultExcludes: {
+                label: 'Ignore default excludes (shell_environment_policy.ignore_default_excludes)',
+                desc: 'Skips the built-in rule that drops variables whose names contain KEY / SECRET / TOKEN from subprocesses. Default: off.',
+            },
+            shellEnvPolicyExclude: {
+                label: 'Excluded variables (shell_environment_policy.exclude)',
+                desc: 'Array of environment variable name patterns removed from tool subprocesses.',
+            },
+            shellEnvPolicyIncludeOnly: {
+                label: 'Allowed variables (shell_environment_policy.include_only)',
+                desc: 'When set, tool subprocesses receive only the environment variables matching these patterns.',
+            },
+            shellEnvPolicySet: {
+                label: 'Forced variables (shell_environment_policy.set)',
+                desc: 'Map of environment variable values set for tool subprocesses.',
+            },
+            toolsetWebSearchAllowedDomains: {
+                label: 'Web search allowed domains (toolset.web_search.allowed_domains)',
+                desc: 'Array of domains included in web_search results.',
+            },
+            toolsetWebSearchExcludedDomains: {
+                label: 'Web search excluded domains (toolset.web_search.excluded_domains)',
+                desc: 'Array of domains excluded from web_search results.',
+            },
+            disabledMcpServers: {
+                label: 'Disabled MCP servers (disabled_mcp_servers)',
+                desc: 'Array of MCP server names to skip while keeping their [mcp_servers] definitions.',
+            },
+            disabledMcpTools: {
+                label: 'Disabled MCP tools (disabled_mcp_tools)',
+                desc: 'Map of MCP server names to the tool names that must not be used.',
+            },
+            hooks: {
+                label: 'Hook definitions (hooks.<event>)',
+                desc: 'Defines matchers and commands to run for lifecycle events such as PreToolUse or Stop.',
+            },
+            memoryV2Enabled: {
+                label: 'Memory v2 (memory_v2.enabled)',
+                desc: 'Turns memory (v2) on or off. When set, it takes precedence over memory.enabled. Default: off.',
+            },
+            memoryV2CompactIndexEnabled: {
+                label: 'Compact memory index (memory_v2.compact_index_enabled)',
+                desc: 'Injects a titles-only memory index into the system prompt so more topics fit.',
+            },
+            memoryV2BatchDreamEnabled: {
+                label: 'Batch Dream (memory_v2.batch_dream_enabled)',
+                desc: 'Runs memory consolidation (Dream) as batch Dream, folding notes into topics in batches with the full topic catalog.',
+            },
+            memoryV2BatchDreamMaxRunSecs: {
+                label: 'Batch Dream max run time (memory_v2.batch_dream_max_run_secs)',
+                desc: 'Caps one batch Dream run in seconds (60-3600). Unfinished notes stay for the next run.',
+            },
+            memoryV2BatchDreamMaxCallsPerBatch: {
+                label: 'Model calls per batch (memory_v2.batch_dream_max_calls_per_batch)',
+                desc: 'Caps model calls in one batch Dream batch (2-16).',
+            },
+            memoryV2BatchDreamMaxBatchNoteBytes: {
+                label: 'Note bytes per batch (memory_v2.batch_dream_max_batch_note_bytes)',
+                desc: 'Caps note bytes handled in one batch Dream batch (16384-262144).',
+            },
+            memoryV2ArchivedRetentionDays: {
+                label: 'Archive retention days (memory_v2.archived_retention_days)',
+                desc: 'Days to keep archived memory observation files. Default: 30.',
+            },
+            memoryV2JobRetentionDays: {
+                label: 'Capture job retention days (memory_v2.job_retention_days)',
+                desc: 'Days to keep finished memory capture-job metadata. Default: 14.',
+            },
+            memoryV2DailyTokenCap: {
+                label: 'Daily memory token cap (memory_v2.daily_token_cap)',
+                desc: 'Model tokens memory processing may spend in a rolling 24 hours (1000000 or more). Capture pauses when exceeded.',
+            },
+            cliNpmRegistry: {
+                label: 'npm registry (cli.npm_registry)',
+                desc: 'npm registry URL used by the auto-updater.',
+            },
+            cliWorktreeType: {
+                label: 'Worktree creation mode (cli.worktree_type)',
+                desc: 'How worktrees are created (linked / standalone / git). Spellings such as grove / copy are treated as the worktree Grove setting.',
+            },
+            cliSessionPickerGrouped: {
+                label: 'Group sessions by repository (cli.session_picker_grouped)',
+                desc: 'Groups sessions by repository in the session picker and CLI listings.',
+            },
+            cliSessionRegistry: {
+                label: 'Join session registry (cli.session_registry)',
+                desc: 'Participates in the cross-process session registry.',
+            },
+            cliGrove: {
+                label: 'Enable Grove everywhere (cli.grove)',
+                desc: 'Uses Grove for both grok clone and session (-w) worktrees. Takes a boolean or a Grove type name.',
+            },
+            cliGroveWorktree: {
+                label: 'Worktree Grove (cli.grove_worktree)',
+                desc: 'Whether session (-w) worktrees use Grove or a copy, given as a boolean or a Grove type name.',
+            },
+            dashboardEnabled: {
+                label: 'Agent dashboard (dashboard.enabled)',
+                desc: 'Shows the agent dashboard.',
+            },
+            dashboardGrouping: {
+                label: 'Dashboard grouping (dashboard.grouping)',
+                desc: 'Whether dashboard rows are grouped by state (state) or directory (directory).',
+            },
+            uiTimestamps: {
+                label: 'Timestamps (ui.timestamps)',
+                desc: "Which rows show the clock time: off shows none, minimal shows only your prompts and each turn's duration line, and on shows every message.",
+            },
+            uiToolCallDensity: {
+                label: 'Tool call density (ui.tool_call_density)',
+                desc: 'How much of each tool call the transcript shows: detailed shows edit diffs and shell output, and the compact levels fold more into summary rows.',
+            },
+            uiConfirmBeforeRewind: {
+                label: 'Confirm before rewind (ui.confirm_before_rewind)',
+                desc: 'Asks before rewinding conversation history. Default: on.',
+            },
+            uiDashboardPreview: {
+                label: 'Dashboard preview (ui.dashboard_preview)',
+                desc: "Shows the selected session's preview and reply panel on the dashboard. Default: on.",
+            },
+            uiFollowUpBehavior: {
+                label: 'Mid-turn follow-ups (ui.follow_up_behavior)',
+                desc: 'Whether follow-ups sent during a turn are queued (queue) or injected at the next safe point (steer). Default: queue.',
+            },
+            uiStatusLineType: {
+                label: 'Status line (ui.status_line.type)',
+                desc: 'Shows a status-line row above the shortcuts bar. command shows the output of ui.status_line.command. Default: disabled.',
+            },
+            uiStatusLineCommand: {
+                label: 'Status line command (ui.status_line.command)',
+                desc: 'Script whose output is shown in the status line.',
+            },
+            voiceLanguage: {
+                label: 'Voice input language (voice.language)',
+                desc: 'Speech-to-text language code or auto. ui.voice_stt_language takes precedence when set.',
+            },
+            voiceApiBase: {
+                label: 'Voice input API (voice.api_base)',
+                desc: 'HTTPS API root for speech-to-text. When unset, the xAI API base URL is used.',
+            },
+            voiceSampleRate: {
+                label: 'Voice sample rate (voice.sample_rate)',
+                desc: 'Capture sample rate for voice input in Hz.',
+            },
+            worktreeAutoGc: {
+                label: 'Worktree auto cleanup (worktree.auto_gc)',
+                desc: 'Defines when session worktrees are cleaned up automatically.',
+            },
+            versionOverrides: {
+                label: 'Per-version settings (version_overrides)',
+                desc: 'Defines setting patches applied for specific CLI versions.',
+            },
+            featuresAskUserQuestion: {
+                label: 'Question tool (features.ask_user_question)',
+                desc: 'Lets the model ask you questions with the ask_user_question tool. Default: on.',
+            },
+            featuresBackendTools: {
+                label: 'Server-side search (features.backend_tools)',
+                desc: 'Runs web_search and x_search on the server side. Default: on.',
+            },
+            featuresImageGenModelOverride: {
+                label: 'Image generation model (features.image_gen_model_override)',
+                desc: 'Imagine model ID used by image_gen. When unset, the remotely configured default is used.',
+            },
+            featuresImageEditModelOverride: {
+                label: 'Image editing model (features.image_edit_model_override)',
+                desc: 'Imagine model ID used by image_edit.',
+            },
+            featuresVoiceMode: {
+                label: 'Voice input (features.voice_mode)',
+                desc: 'Enables voice dictation (speech to text). Default: on.',
+            },
+            featuresFeedbackTraceCard: {
+                label: 'Trace consent on feedback (features.feedback_trace_card)',
+                desc: 'Asks for consent to upload a trace after /feedback. Default: off.',
+            },
+            featuresCompactionMode: {
+                label: 'Compaction mode (features.compaction_mode)',
+                desc: 'Conversation compaction strategy (summary / transcript / segments).',
+            },
+            featuresCompactionDetail: {
+                label: 'Compaction detail (features.compaction_detail)',
+                desc: 'How much verbatim content segments compaction keeps (none / minimal / balanced / verbose).',
+            },
+            featuresCompactionToolChoice: {
+                label: 'Compaction tool choice (features.compaction_tool_choice)',
+                desc: 'Tool-choice hint used for the compaction model call.',
+            },
+            featuresCompactionVerbatimInput: {
+                label: 'Summarize verbatim input (features.compaction_verbatim_input)',
+                desc: 'Summarizes the verbatim conversation rather than a shortened copy. Default: on.',
+            },
+            featuresSessionRecap: {
+                label: 'Session recap (features.session_recap)',
+                desc: 'Enables /recap and the automatic recap when you return. Default: on.',
+            },
+            featuresSessionSearch: {
+                label: 'Session search (features.session_search)',
+                desc: 'Enables the SQLite session-search index. Default: on.',
+            },
+            featuresTurnSummary: {
+                label: 'Turn summary (features.turn_summary)',
+                desc: 'Shows a per-turn summary on the agent dashboard. Default: on.',
+            },
+            featuresTitleRefresh: {
+                label: 'Title refresh (features.title_refresh)',
+                desc: 'Refreshes the session title automatically early in the session.',
+            },
+            featuresCancelRewind: {
+                label: 'Restore prompt on cancel (features.cancel_rewind)',
+                desc: "Pressing Ctrl+C before a turn's first activity restores the prompt. Default: on.",
+            },
+            featuresAutoWake: {
+                label: 'Auto wake (features.auto_wake)',
+                desc: 'Continues the conversation as soon as a background task or subagent finishes. Default: on.',
+            },
+            featuresActiveAgentMessages: {
+                label: 'Messages to running agents (features.active_agent_messages)',
+                desc: 'Lets the model send follow-up instructions to a running descendant agent. Default: off.',
+            },
+            featuresSubagentBundle: {
+                label: 'Skill bundle loading (features.subagent_bundle)',
+                desc: "Loads the daemon route's built-in skills from the versioned skill bundle. Read at launch. Default: on.",
+            },
+            featuresSubagentModelInheritance: {
+                label: 'Subagent model inheritance (features.subagent_model_inheritance)',
+                desc: "Hides the subagent model argument when every model you can pick is an xAI model, so subagents inherit the parent's model. Read when a session starts. Default: off.",
+            },
+            featuresSubagentWorktreeSnapshot: {
+                label: 'Save subagent work (features.subagent_worktree_snapshot)',
+                desc: "Saves a finished subagent's working copy into the repository as a git ref and restores it on resume. Default: off.",
+            },
+            featuresWorkflowConversion: {
+                label: 'Workflow conversion (features.workflow_conversion)',
+                desc: 'On the daemon route, running a legacy .rhai workflow by name asks the model to convert it to a JavaScript module and then runs it. Default: on.',
+            },
+            featuresSupportPermission: {
+                label: 'Permission requests (features.support_permission)',
+                desc: 'Allows the agent to ask permission for tool executions.',
+            },
+            featuresRememberMode: {
+                label: 'Remember permission mode (features.remember_mode)',
+                desc: 'Remembers the last permission mode across sessions. Default: off.',
+            },
+            featuresNonGitWarning: {
+                label: 'Non-Git warning (features.non_git_warning)',
+                desc: 'Shows a blocking warning when Grok starts outside a Git repository.',
+            },
+            featuresMcpAutoRestart: {
+                label: 'MCP auto restart (features.mcp_auto_restart)',
+                desc: 'Restarts stdio MCP servers automatically after a transport failure. Default: on.',
+            },
+            featuresMcpLivenessWatchers: {
+                label: 'MCP liveness watchers (features.mcp_liveness_watchers)',
+                desc: 'Polls MCP transports and reports server status changes.',
+            },
+            featuresMcpPushServerStatus: {
+                label: 'MCP status push (features.mcp_push_server_status)',
+                desc: 'The TUI subscribes to MCP server status change notifications.',
+            },
+            featuresMcpRecursiveConfigWatch: {
+                label: 'Project MCP config watch (features.mcp_recursive_config_watch)',
+                desc: 'Watches the working directory and its .grok directory for MCP config edits (subdirectories are not watched).',
+            },
+            featuresDock: {
+                label: 'Panel dock (features.dock)',
+                desc: 'Shows a consolidated panel of subagents, tasks, watchers, and queued prompts above the prompt. Default: off.',
+            },
+            featuresTerminalTheme: {
+                label: 'terminal theme (features.terminal_theme)',
+                desc: "Makes the terminal color theme, which uses your terminal's own colors, selectable. Default: off.",
+            },
+            featuresFileAcceleration: {
+                label: 'File accelerator (features.file_acceleration)',
+                desc: "Hands local sessions' file systems to an installed file accelerator. Default: off.",
+            },
+            fileAccelerationRoutes: {
+                label: 'File accelerator routes (file_acceleration.routes)',
+                desc: 'Route override passed unchanged to the installed file accelerator.',
+            },
+            featuresCampaigns: {
+                label: 'Apply campaigns (features.campaigns)',
+                desc: 'Applies remotely published campaign setting patches.',
+            },
+            goalEnabled: {
+                label: '/goal (goal.enabled)',
+                desc: 'Enables the /goal command. Default: on.',
+            },
+            relayEnabled: {
+                label: 'Session relay sync (relay.enabled)',
+                desc: 'Enables session relay synchronization.',
+            },
+            compatCodexSkills: {
+                label: 'Detect Codex skills (compat.codex.skills)',
+                desc: 'Scans Codex skill directories and makes them available in Grok Build. Default: on.',
+            },
+            compatCodexHooks: {
+                label: 'Detect Codex hooks (compat.codex.hooks)',
+                desc: 'Scans Codex hook settings and loads them as compatible hooks. Default: on.',
+            },
+            marketplaceRequireSha: {
+                label: 'Require pinned commit SHA (marketplace.require_sha)',
+                desc: 'Requires remote plugin installs and updates to pin a full commit SHA. If another setting or the environment turns it on, this setting cannot turn it off.',
+            },
+            marketplaceSources: {
+                label: 'Marketplace sources (marketplace.sources)',
+                desc: 'Git repositories or local directories registered as plugin marketplaces.',
+            },
+            pathsExtraRuleDirs: {
+                label: 'Extra rule directories (paths.extra_rule_dirs)',
+                desc: 'Array of rule directories (each containing *.md files) loaded after the home rules.',
+            },
+            cursorWorkerAutoStart: {
+                label: 'Start Cursor worker (cursor_worker.auto_start)',
+                desc: 'Registers the leader as a Cursor private worker at startup so Cursor Cloud Agents can run on this machine. Default: off.',
+            },
+            cursorWorkerName: {
+                label: 'Cursor worker name (cursor_worker.name)',
+                desc: 'Worker name shown in Cursor. When unset, the machine hostname is used.',
+            },
+            cursorWorkerWorkerDirs: {
+                label: 'Cursor worker directories (cursor_worker.worker_dirs)',
+                desc: 'Absolute paths of repository directories offered to Cursor Cloud Agents. The first one is registered as the working directory.',
+            },
+            cursorWorkerMaxAgents: {
+                label: 'Cursor worker concurrency (cursor_worker.max_agents)',
+                desc: 'Maximum Cloud Agents accepted at once; requests beyond it fail instead of waiting. Unset means no cap.',
+            },
+            cursorWorkerAnyRepo: {
+                label: 'Accept any repository (cursor_worker.any_repo)',
+                desc: 'Also registers an entry point that clones whatever repository a Cloud Agent brings. Default: off.',
+            },
+            cursorWorkerHubUrl: {
+                label: 'Computer Hub URL (cursor_worker.hub_url)',
+                desc: "Computer Hub base URL used to obtain the Cursor session. When unset, it is derived from the leader's hub URL.",
+            },
+            cursorWorkerRewriteShellOutput: {
+                label: 'Rewrite shell output paths (cursor_worker.rewrite_shell_output)',
+                desc: 'Rewrites worktree and snapshot paths in shell output back to the registered directory. Default: on.',
+            },
+            telemetryOtelLogsEndpoint: {
+                label: 'OTLP logs endpoint (telemetry.otel_logs_endpoint)',
+                desc: 'OTLP endpoint that receives logs (used verbatim).',
+            },
+            telemetryOtelMetricsEndpoint: {
+                label: 'OTLP metrics endpoint (telemetry.otel_metrics_endpoint)',
+                desc: 'OTLP endpoint that receives metrics (used verbatim).',
+            },
+            telemetryOtelLogsProtocol: {
+                label: 'OTLP logs protocol (telemetry.otel_logs_protocol)',
+                desc: 'OTLP transport protocol used for logs.',
+            },
+            telemetryOtelMetricsProtocol: {
+                label: 'OTLP metrics protocol (telemetry.otel_metrics_protocol)',
+                desc: 'OTLP transport protocol used for metrics.',
+            },
+            telemetryOtelTimeout: {
+                label: 'OTLP export timeout (telemetry.otel_timeout)',
+                desc: 'Export timeout for external OpenTelemetry in milliseconds.',
+            },
+            telemetryOtelMetricExportInterval: {
+                label: 'Metric export interval (telemetry.otel_metric_export_interval)',
+                desc: 'Interval between metric exports in milliseconds.',
+            },
+            telemetryOtelMetricsIncludeSessionId: {
+                label: 'Session ID on metrics (telemetry.otel_metrics_include_session_id)',
+                desc: 'Attaches the session ID attribute to metrics.',
+            },
+            telemetryOtelLogAssistantResponses: {
+                label: 'Send response text (telemetry.otel_log_assistant_responses)',
+                desc: 'Includes assistant response text in external OpenTelemetry data. When unset, it follows the prompt text setting.',
+            },
+            telemetryOtelLogToolContent: {
+                label: 'Send tool input and output (telemetry.otel_log_tool_content)',
+                desc: 'Includes tool inputs, outputs, full commands, and error messages in external OpenTelemetry data. Default: off.',
+            },
+            telemetryOtelCertificate: {
+                label: 'OTLP CA certificate (telemetry.otel_certificate)',
+                desc: 'Path to extra CA certificates (PEM) used to verify the collector.',
+            },
+            telemetryOtelLogsCertificate: {
+                label: 'OTLP logs CA certificate (telemetry.otel_logs_certificate)',
+                desc: 'Path to the CA certificate (PEM) used to verify the logs endpoint.',
+            },
+            telemetryOtelMetricsCertificate: {
+                label: 'OTLP metrics CA certificate (telemetry.otel_metrics_certificate)',
+                desc: 'Path to the CA certificate (PEM) used to verify the metrics endpoint.',
+            },
+            telemetryOtelClientCertificate: {
+                label: 'OTLP client certificate (telemetry.otel_client_certificate)',
+                desc: 'Path to the mTLS client certificate (PEM).',
+            },
+            telemetryOtelClientKey: {
+                label: 'OTLP client key (telemetry.otel_client_key)',
+                desc: 'Path to the mTLS client private key (PEM).',
+            },
+            telemetryOtelLogsClientCertificate: {
+                label: 'OTLP logs client certificate (telemetry.otel_logs_client_certificate)',
+                desc: 'Path to the mTLS client certificate (PEM) used for logs.',
+            },
+            telemetryOtelLogsClientKey: {
+                label: 'OTLP logs client key (telemetry.otel_logs_client_key)',
+                desc: 'Path to the mTLS client private key (PEM) used for logs.',
+            },
+            telemetryOtelMetricsClientCertificate: {
+                label: 'OTLP metrics client certificate (telemetry.otel_metrics_client_certificate)',
+                desc: 'Path to the mTLS client certificate (PEM) used for metrics.',
+            },
+            telemetryOtelMetricsClientKey: {
+                label: 'OTLP metrics client key (telemetry.otel_metrics_client_key)',
+                desc: 'Path to the mTLS client private key (PEM) used for metrics.',
+            },
+            diagnosticsCrashHandler: {
+                label: 'Crash reports (diagnostics.crash_handler)',
+                desc: 'Writes a crash report under ~/.grok/crash when Grok terminates abnormally.',
+            },
+            harnessWaitForUploads: {
+                label: 'Wait for trace uploads (harness.wait_for_uploads)',
+                desc: 'Waits for turn-end trace uploads to finish before returning the prompt response. Default: off.',
+            },
+            feedbackUserCommand: {
+                label: 'Feedback author command (feedback.user.command)',
+                desc: 'Shell command that prints the name and email as JSON for feedback submissions.',
+            },
+            feedbackUserEmail: {
+                label: 'Feedback author email (feedback.user.email)',
+                desc: 'Array of sources for the feedback author email (git_email or a literal value).',
+            },
+            feedbackUserName: {
+                label: 'Feedback author name (feedback.user.name)',
+                desc: 'Array of sources for the feedback author name (os_user or a literal value).',
             },
         },
     },

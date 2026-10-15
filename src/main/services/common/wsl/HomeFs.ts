@@ -1,10 +1,21 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync, rmSync, mkdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync, mkdirSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { join, dirname } from 'path';
 import { AgentEnvironment } from '../../../../shared/agents/types';
 import { recursiveDirStats, type DirStats } from '../../../utils/fsSize';
-import { applyMtime } from '../../../utils/fileTime';
+import { isLinkOrUnknown, removeTreeBestEffort } from '../fs/removeTreeBestEffort';
+import { stripBom } from '../json/stripBom';
 import { WslDetector } from './WslDetector';
+
+// distro 内で 1 つのパス（変数 p）を削除するスクリプト。起点がシンボリックリンクなら何もしない。
+// rm は配下のシンボリックリンクを辿らない。--one-file-system（GNU coreutils）があれば別のファイルシステムへも降りない。
+// 出力は R（削除済み・もともと無い）か K（残っている）。
+const WSL_REMOVE_TREE_SCRIPT = [
+    'if [ ! -L "$p" ] && [ -e "$p" ]; then',
+    '    if rm --help 2>&1 | grep -q -- --one-file-system; then rm -rf --one-file-system -- "$p" 2>/dev/null; else rm -rf -- "$p" 2>/dev/null; fi',
+    'fi',
+    'if [ -e "$p" ] || [ -L "$p" ]; then echo K; else echo R; fi',
+].join('\n');
 
 /**
  * AgentEnvironment（native / wsl）に対するファイル操作を抽象化する。
@@ -144,7 +155,7 @@ export class HomeFs {
                     return null;
                 }
                 const content = readFileSync(abs, 'utf-8');
-                return JSON.parse(content) as T;
+                return JSON.parse(stripBom(content)) as T;
             }
             // コマンドモード
             const lp = await this.linuxPath(relPath);
@@ -153,7 +164,7 @@ export class HomeFs {
             if (!content.trim()) {
                 return null;
             }
-            return JSON.parse(content) as T;
+            return JSON.parse(stripBom(content)) as T;
         } catch (error) {
             console.error(`Failed to read JSON from ${relPath} (${JSON.stringify(this.env)}):`, error);
             return null;
@@ -216,32 +227,6 @@ export class HomeFs {
             this.distro,
             `mkdir -p ${this.shellQuote(this.dirnamePosix(lp))} && printf %s ${this.shellQuote(b64)} | base64 -d > ${this.shellQuote(lp)}`
         );
-    }
-
-    /**
-     * ファイルの更新日時（mtime）を設定する。取り込み元の日時を引き継ぐために使う。
-     * 日時の引き継ぎは付加的な処理のため、失敗しても例外は投げない。
-     */
-    async setMtime(relPath: string, mtimeMs: number): Promise<void> {
-        if (!Number.isFinite(mtimeMs) || mtimeMs <= 0) {
-            return;
-        }
-        const abs = await this.resolveAbs(relPath);
-        if (abs !== null) {
-            applyMtime(abs, mtimeMs);
-            return;
-        }
-        // コマンドモード: touch -d @<エポック秒> で設定する（GNU coreutils）。
-        const lp = await this.linuxPath(relPath);
-        const epoch = (mtimeMs / 1000).toFixed(3);
-        try {
-            await this.detector.runInDistro(
-                this.distro,
-                `touch -m -d @${this.shellQuote(epoch)} ${this.shellQuote(lp)}`
-            );
-        } catch (error) {
-            console.warn(`Failed to set mtime of ${lp}:`, error);
-        }
     }
 
     async deleteFile(relPath: string): Promise<void> {
@@ -388,76 +373,48 @@ export class HomeFs {
         }
     }
 
-    /** ディレクトリを丸ごと削除する（再帰）。 */
-    async removeDir(relPath: string): Promise<void> {
+    /**
+     * relPath がリンク（シンボリックリンク・ジャンクション）か、種別を判定できないものか。存在しない場合は false。
+     * リンクの先は管理対象の外にあり得るため、配下を一覧・削除しない判断に使う。
+     */
+    async isLink(relPath: string): Promise<boolean> {
         const abs = await this.resolveAbs(relPath);
         if (abs !== null) {
-            rmSync(abs, { recursive: true, force: true });
-            return;
+            return isLinkOrUnknown(abs);
         }
-        const lp = await this.linuxPath(relPath);
-        await this.detector.runInDistro(this.distro, `rm -rf ${this.shellQuote(lp)}`);
+        // コマンドモード
+        try {
+            const lp = await this.linuxPath(relPath);
+            const out = await this.detector.runInDistro(
+                this.distro,
+                `if [ -L ${this.shellQuote(lp)} ]; then echo L; else echo N; fi`
+            );
+            return out.toString('utf8').trim() !== 'N';
+        } catch {
+            return true;
+        }
     }
 
     /**
      * ディレクトリをベストエフォートで削除する。
      * 使用中（ロック）などで一部が消せなくても、削除できたものは削除し、全削除できたかを返す。
-     * 稼働中のツール（例: Serena）がログを掴んでいるケースで「消せた分は消す」を実現する。
+     * 配下のリンクはリンク自体だけを外す。起点自体がリンクの場合は何も削除しない（removedAll は false）。
      */
     async removeDirBestEffort(relPath: string): Promise<{ removedAll: boolean }> {
-        const abs = await this.resolveAbs(relPath);
-        if (abs === null) {
-            // WSL コマンドモード: rm -rf はロックに比較的寛容。成否は存在確認で判定。
-            const lp = await this.linuxPath(relPath);
-            await this.detector.runInDistro(this.distro, `rm -rf ${this.shellQuote(lp)} 2>/dev/null || true`);
-            const stillExists = await this.exists(relPath);
-            return { removedAll: !stillExists };
-        }
-
-        // まず通常の一括削除を試す
-        try {
-            rmSync(abs, { recursive: true, force: true });
-            return { removedAll: true };
-        } catch {
-            // 一部がロックされている → エントリ単位で可能な範囲を削除する
-        }
-        const removedAll = this.removeEntriesBestEffort(abs);
-        return { removedAll };
+        return { removedAll: await this.removeTree(relPath) };
     }
 
-    /** abs 配下を可能な限り削除し、自身も削除できたかを返す（同期・ベストエフォート）。 */
-    private removeEntriesBestEffort(abs: string): boolean {
-        let allRemoved = true;
-        let entries;
-        try {
-            entries = readdirSync(abs, { withFileTypes: true });
-        } catch {
-            return false;
+    /**
+     * relPath を配下ごと削除し、すべて削除できた（もともと無かった場合を含む）かを返す。
+     * WSL は Linux のシンボリックリンク・マウントの扱いを distro に任せるため、UNC ではなく distro 内の rm で削除する。
+     */
+    private async removeTree(relPath: string): Promise<boolean> {
+        if (!this.isWsl) {
+            return removeTreeBestEffort(join(this.nativeBase(), relPath));
         }
-        for (const entry of entries) {
-            // native の絶対パスに対する結合のため、プラットフォーム適切な区切りで join する
-            // （Windows=\、macOS/Linux=/）。
-            const child = join(abs, entry.name);
-            try {
-                if (entry.isDirectory() && !entry.isSymbolicLink()) {
-                    if (!this.removeEntriesBestEffort(child)) {
-                        allRemoved = false;
-                    }
-                } else {
-                    rmSync(child, { force: true });
-                }
-            } catch {
-                allRemoved = false;
-            }
-        }
-        if (allRemoved) {
-            try {
-                rmSync(abs, { recursive: true, force: true });
-            } catch {
-                allRemoved = false;
-            }
-        }
-        return allRemoved;
+        const lp = await this.linuxPath(relPath);
+        const out = await this.detector.runInDistro(this.distro, `p=${this.shellQuote(lp)}\n${WSL_REMOVE_TREE_SCRIPT}`);
+        return out.toString('utf8').trim().split(/\r?\n/).pop() === 'R';
     }
 
     // ---- ヘルパー ----

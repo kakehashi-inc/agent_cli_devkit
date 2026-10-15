@@ -2,7 +2,7 @@
 // Claude 固有の型定義
 // ------------------------------------------------------------
 // agent 非依存の共通型（shared/agents/types.ts）を再エクスポートしつつ、
-// Claude 系コードが従来の名前で参照できるエイリアスと
+// Claude 系コードが Claude 固有の名前（ClaudeEnvironment など）で参照するエイリアスと
 // Claude 固有の型をここに定義する。
 // ============================================================
 import type { AgentEnvironment, AgentEnvKind, MCPServerConfig } from '../types';

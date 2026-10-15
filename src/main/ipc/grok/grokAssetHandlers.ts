@@ -59,19 +59,4 @@ export function registerGrokAssetHandlers(manager: GrokAssetManager, getMainWind
     ipcMain.handle(GROK_ASSET_CHANNELS.DELETE, (_, env: GrokEnvironment, kind: AssetKind, relPaths: string[]) => {
         return manager.deleteSelected(env, kind, relPaths);
     });
-
-    // git が利用可能か（公式スキルインポートボタンの活性判定）
-    ipcMain.handle(GROK_ASSET_CHANNELS.IS_GIT_AVAILABLE, () => {
-        return manager.isGitAvailable();
-    });
-
-    // 公式スキルリポジトリを clone/更新し、スキル一覧を返す
-    ipcMain.handle(GROK_ASSET_CHANNELS.LIST_OFFICIAL_SKILLS, () => {
-        return manager.listOfficialSkills();
-    });
-
-    // 選択した公式スキルを対象環境へ取り込む（公式同士は確認なしで置換）
-    ipcMain.handle(GROK_ASSET_CHANNELS.IMPORT_OFFICIAL_SKILLS, (_, env: GrokEnvironment, relPaths: string[]) => {
-        return manager.importOfficialSkills(env, relPaths);
-    });
 }

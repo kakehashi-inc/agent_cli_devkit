@@ -1,3 +1,4 @@
+import { promises as nodeFs } from 'fs';
 import {
     GROK_DIR,
     GROK_WSL_CLI_TEST,
@@ -16,21 +17,45 @@ import {
     OtherCleanupReport,
     OtherCleanupSelection,
 } from '../../../shared/agents/grok/types';
+import { createCleanupProbe } from '../common/cleanup/CleanupProbe';
+import { deleteResolvedChildren, resolveChildren, toResolvedCandidate } from '../common/cleanup/resolvedCleanup';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { clearYamlList, countYamlListEntries, needsYamlListNormalize } from '../../utils/yamlPreserve';
+import { GROK_TEMP_CLEANUP_RESOLVERS } from './grokTempCleanupResolvers';
 
 const VALID_KEYS = new Set(CLEANUP_CANDIDATES.map(c => c.key));
 const OTHER_VALID_KEYS = new Set(OTHER_CLEANUP_ITEMS.map(i => i.key));
+// ~/.grok/bin の起動用ファイル
+const BIN_LAUNCHERS = ['grok', 'grok.exe'];
+
+/** POSIX シェル向けのシングルクォートエスケープ。 */
+function shellQuote(value: string): string {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** パスの最後の要素（区切りは '/' と '\'）。 */
+function lastSegment(path: string): string {
+    return (
+        path
+            .split(/[\\/]/)
+            .filter(s => s.length > 0)
+            .pop() ?? ''
+    );
+}
 
 /**
- * Grok CLI のデータディレクトリ（~/.grok 配下）のクリーンアップを行う。
- * - 対象は履歴／メモリ／ログ／プラン／旧バイナリのみ（CLEANUP_CANDIDATES）。
- * - expandable 候補（sessions=サブディレクトリ単位）は個別 + 全体の両方を削除可能。
+ * Grok CLI のデータディレクトリ（~/.grok 配下）と、OS の一時フォルダに残った Grok の一時物の
+ * クリーンアップを行う。
+ * - 対象は履歴／メモリ／ログ／診断データ／キャッシュ／旧バイナリ／一時ファイルのみ（CLEANUP_CANDIDATES）。
+ * - expandable 候補（sessions=プロジェクト単位のサブディレクトリ）は個別 + 全体の両方を削除可能。
  * - それ以外はディレクトリ/ファイルごと削除（Grok が必要時に自動再作成する）。
  * - 'bin-old-versions' は特別候補: ~/.grok/bin の grok-<version> 形式ファイルのうち
- *   最新バージョン以外のみを対象とする。起動用の grok / grok.exe と最新バージョンは
- *   常に除外して保護し、「全体削除」を選択しても bin ディレクトリ自体は削除しない。
+ *   最新バージョン以外と、Windows の更新時に退避された実行ファイル（grok.exe.old など
+ *   *.old）だけを対象とする。起動用の grok / grok.exe、それがシンボリックリンクの場合の参照先、
+ *   最新バージョンは常に除外して保護し、「全体削除」を選択しても bin ディレクトリ自体は削除しない。
+ * - GROK_TEMP_CLEANUP_RESOLVERS に登録した候補（一時フォルダの Grok 一時物）は、リゾルバが名前・所有者・
+ *   日時・ゴールの状態で特定した子要素だけを扱い、削除の直前に再判定する。
  * - native とすべての Grok 入り WSL distro を環境として扱う。
  */
 export class GrokCleanupManager {
@@ -69,12 +94,19 @@ export class GrokCleanupManager {
     /** 環境ごとのクリーンアップ候補をスキャンする。 */
     async scan(env: GrokEnvironment): Promise<CleanupEnvReport> {
         const fs = this.fsFor(env);
+        const probe = createCleanupProbe(env, this.detector);
         const label = env.kind === 'wsl' ? (env.distro ?? 'WSL') : this.nativeLabel();
         const candidates: CleanupCandidate[] = [];
 
         for (const spec of CLEANUP_CANDIDATES) {
+            const resolver = GROK_TEMP_CLEANUP_RESOLVERS[spec.key];
+            if (resolver) {
+                candidates.push(toResolvedCandidate(spec, await resolveChildren(resolver, probe, spec.key, env)));
+                continue;
+            }
             const relPath = this.rel(spec.path ?? spec.key);
-            const exists = await fs.exists(relPath);
+            // リンクのディレクトリは配下が管理対象の外にあり得るため、候補にしない（削除もしない）。
+            const exists = (await fs.exists(relPath)) && (spec.kind === 'file' || !(await fs.isLink(relPath)));
             const stats = exists
                 ? spec.kind === 'file'
                     ? await fs.fileStats(relPath)
@@ -100,9 +132,11 @@ export class GrokCleanupManager {
                         children.push({ name, size: childStats.size, fileCount: childStats.fileCount });
                     }
                 } else {
-                    const files = await fs.listFiles(relPath);
-                    // bin 旧バイナリ候補は grok-<version> 形式のうち最新以外のみを対象とする。
-                    const targets = spec.key === CLEANUP_BIN_OLD_KEY ? this.filterBinOldChildren(files) : files;
+                    // bin 旧バイナリ候補は grok-<version> 形式のうち保護対象以外のみを対象とする。
+                    const targets =
+                        spec.key === CLEANUP_BIN_OLD_KEY
+                            ? await this.binOldChildren(env, fs, relPath)
+                            : await fs.listFiles(relPath);
                     for (const name of targets) {
                         const childStats = await fs.fileStats(`${relPath}/${name}`);
                         children.push({ name, size: childStats.size, fileCount: childStats.fileCount });
@@ -130,19 +164,25 @@ export class GrokCleanupManager {
      */
     async deleteSelected(env: GrokEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport> {
         const fs = this.fsFor(env);
+        const probe = createCleanupProbe(env, this.detector);
         const skipped: string[] = [];
 
         for (const key of selection.dirs) {
             if (!VALID_KEYS.has(key) || this.isUnsafeName(key)) {
                 continue;
             }
+            const resolver = GROK_TEMP_CLEANUP_RESOLVERS[key];
+            if (resolver) {
+                skipped.push(...(await deleteResolvedChildren(resolver, probe, key, env, 'all')));
+                continue;
+            }
             const spec = CLEANUP_CANDIDATES.find(c => c.key === key);
             const relPath = this.rel(spec?.path ?? key);
             // bin 旧バイナリは「全体削除」でも bin ディレクトリごとは消さず、
-            // 保護対象（最新バージョン・起動用 grok / grok.exe）を除いた旧バージョン
+            // 保護対象（最新バージョン・起動用 grok / grok.exe とその参照先）を除いた旧バージョン
             // ファイルのみを削除する。
             if (key === CLEANUP_BIN_OLD_KEY) {
-                const targets = this.filterBinOldChildren(await fs.listFiles(relPath));
+                const targets = await this.binOldChildren(env, fs, relPath);
                 for (const name of targets) {
                     const childRel = `${relPath}/${name}`;
                     try {
@@ -175,7 +215,7 @@ export class GrokCleanupManager {
             }
         }
 
-        // expandable 候補（sessions=サブディレクトリ）の個別削除。
+        // expandable 候補の個別削除。
         const childSelections = selection.childSelections ?? {};
         for (const spec of CLEANUP_CANDIDATES) {
             if (!spec.expandable || !spec.childKind) {
@@ -188,15 +228,22 @@ export class GrokCleanupManager {
             if (!names || names.length === 0) {
                 continue;
             }
+            const resolver = GROK_TEMP_CLEANUP_RESOLVERS[spec.key];
+            if (resolver) {
+                skipped.push(...(await deleteResolvedChildren(resolver, probe, spec.key, env, names)));
+                continue;
+            }
             const baseRel = this.rel(spec.path ?? spec.key);
             // bin 旧バイナリ候補は保護対象を除いたフィルタ後の集合のみ削除を許可する
             // （renderer から保護対象の名前が送られてきても無視される）。
             const existing = new Set(
-                spec.childKind === 'file'
-                    ? spec.key === CLEANUP_BIN_OLD_KEY
-                        ? this.filterBinOldChildren(await fs.listFiles(baseRel))
-                        : await fs.listFiles(baseRel)
-                    : await fs.listDirs(baseRel)
+                (await fs.isLink(baseRel))
+                    ? []
+                    : spec.childKind === 'file'
+                      ? spec.key === CLEANUP_BIN_OLD_KEY
+                          ? await this.binOldChildren(env, fs, baseRel)
+                          : await fs.listFiles(baseRel)
+                      : await fs.listDirs(baseRel)
             );
             for (const name of names) {
                 if (this.isUnsafeName(name) || !existing.has(name)) {
@@ -268,25 +315,104 @@ export class GrokCleanupManager {
     }
 
     /**
-     * bin 配下のファイル一覧から削除対象（旧バージョンバイナリ）のみを返す。
+     * Windows の更新時に、実行中で上書きできなかった実行ファイルを退避した名前か
+     * （'grok.exe.old' や 'grok.exe.old.<pid>-<seq>.old' など、grok で始まり .old で終わる）。
+     * Grok は次回の更新時に、使用中でなくなったものを削除する。
+     */
+    private isBinMovedAside(name: string): boolean {
+        return /^grok[^/\\]*\.old$/i.test(name);
+    }
+
+    /**
+     * bin 配下のファイル一覧から削除対象（旧バージョンバイナリと退避された実行ファイル）のみを返す。
+     * - 退避された実行ファイル（*.old）は常に対象。
      * - grok-<version> 形式以外（起動用の grok / grok.exe を含む）は常に除外。
      * - 最新バージョンのファイル群（同一バージョンの .exe 等も含む）は現行実体として保護。
-     * - バージョン付きが 1 種類以下なら削除対象なし。
+     * - バージョン付きが 1 種類以下ならバージョン付きファイルは対象外。
+     * - launcherTargets（起動用ファイルの参照先）に含まれるものは使用中の実体として保護。null（参照先が分からない）の
+     *   場合はバージョン付きファイルをすべて対象外にする。
      */
-    private filterBinOldChildren(names: string[]): string[] {
+    private filterBinOldChildren(names: string[], launcherTargets: Set<string> | null): string[] {
+        const movedAside = names.filter(name => this.isBinMovedAside(name));
         const versioned = names
+            .filter(name => !this.isBinMovedAside(name))
             .map(name => ({ name, ver: this.binVersionOf(name) }))
             .filter((x): x is { name: string; ver: string } => x.ver !== null);
         const versions = [...new Set(versioned.map(x => x.ver))];
-        if (versions.length <= 1) {
+        versions.sort((a, b) => this.compareBinVersions(a, b));
+        const newest = versions.length > 0 ? versions[versions.length - 1] : null;
+        const oldVersions =
+            versions.length > 1 && launcherTargets !== null
+                ? versioned.filter(x => x.ver !== newest).map(x => x.name)
+                : [];
+        return [...oldVersions, ...movedAside].filter(name => !launcherTargets?.has(name)).sort();
+    }
+
+    /** bin（relPath）の削除対象を返す（filterBinOldChildren）。bin 自体がリンクの場合は空配列。 */
+    private async binOldChildren(env: GrokEnvironment, fs: HomeFs, relPath: string): Promise<string[]> {
+        if (await fs.isLink(relPath)) {
             return [];
         }
-        versions.sort((a, b) => this.compareBinVersions(a, b));
-        const newest = versions[versions.length - 1];
-        return versioned
-            .filter(x => x.ver !== newest)
-            .map(x => x.name)
-            .sort();
+        const names = await fs.listFiles(relPath);
+        return this.filterBinOldChildren(names, await this.launcherTargets(env, fs, relPath));
+    }
+
+    /**
+     * 起動用の grok / grok.exe（bin の relPath 直下）がシンボリックリンクの場合の参照先のファイル名
+     * （リンクが指す名前と、リンクをたどりきった実体の名前）。リンクでなければ含めない。参照先を読めない場合は null。
+     * WSL の Linux のシンボリックリンクは UNC 経由で読めないため、distro 内の readlink で読む。
+     */
+    private async launcherTargets(env: GrokEnvironment, fs: HomeFs, relPath: string): Promise<Set<string> | null> {
+        const targets = new Set<string>();
+        if (env.kind === 'wsl') {
+            if (!env.distro) {
+                return null;
+            }
+            const script = [
+                ...BIN_LAUNCHERS.map(
+                    name =>
+                        `p="$HOME"/${shellQuote(`${relPath}/${name}`)}; ` +
+                        `if [ -L "$p" ]; then printf 'L\\t%s\\t%s\\n' "$(readlink -- "$p")" "$(readlink -f -- "$p")"; fi`
+                ),
+                'echo END',
+            ].join('\n');
+            let lines: string[];
+            try {
+                lines = (await this.detector.runInDistro(env.distro, script)).toString('utf8').split(/\r?\n/);
+            } catch (error) {
+                console.error(`Failed to read the Grok launcher (${env.distro}):`, error);
+                return null;
+            }
+            if (!lines.includes('END')) {
+                return null;
+            }
+            for (const line of lines.filter(l => l.startsWith('L\t'))) {
+                for (const target of line.split('\t').slice(1)) {
+                    if (lastSegment(target)) targets.add(lastSegment(target));
+                }
+            }
+            return targets;
+        }
+        for (const name of BIN_LAUNCHERS) {
+            const abs = await fs.resolveRealPath(`${relPath}/${name}`);
+            if (abs === null) {
+                return null;
+            }
+            try {
+                if (!(await nodeFs.lstat(abs)).isSymbolicLink()) continue;
+                targets.add(lastSegment(await nodeFs.readlink(abs)));
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+                console.error(`Failed to read the Grok launcher ${abs}:`, error);
+                return null;
+            }
+            try {
+                targets.add(lastSegment(await nodeFs.realpath(abs)));
+            } catch {
+                // リンク先が無い場合は、リンクが指す名前だけを保護する
+            }
+        }
+        return targets;
     }
 
     // ===== 「その他のツール」クリーンアップ（Serena など、~/.grok 配下ではないもの）=====
@@ -321,7 +447,8 @@ export class GrokCleanupManager {
 
             if (item.action === 'dir-delete') {
                 const stats = await fs.dirStats(item.targetPath);
-                if (stats.fileCount === 0) {
+                // クリーンアップ対象が無い（ファイル 0 件）項目と、削除しないリンクのディレクトリは表示しない
+                if (stats.fileCount === 0 || (await fs.isLink(item.targetPath))) {
                     continue;
                 }
                 items.push({

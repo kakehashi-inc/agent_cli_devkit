@@ -1,17 +1,9 @@
-import { app, BrowserWindow, dialog } from 'electron';
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { basename, dirname, extname, join } from 'path';
+import { BrowserWindow, dialog } from 'electron';
+import { createWriteStream, readFileSync } from 'fs';
+import { basename, extname, join } from 'path';
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
-import {
-    GROK_DIR,
-    OFFICIAL_SKILLS_REPO_BRANCH,
-    OFFICIAL_SKILLS_REPO_DIRNAME,
-    OFFICIAL_SKILLS_REPO_SUBDIR,
-    OFFICIAL_SKILLS_REPO_URL,
-    GROK_WSL_CLI_TEST,
-} from '../../../shared/agents/grok/constants';
+import { GROK_DIR, GROK_WSL_CLI_TEST } from '../../../shared/agents/grok/constants';
 import {
     AssetEntry,
     AssetKind,
@@ -22,12 +14,17 @@ import {
 } from '../../../shared/agents/grok/types';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
-import { GitRunner } from '../common/git/GitRunner';
 import { revealAssetPath } from '../common/assets/revealAssetPath';
 import { assetArchiveFileName } from '../common/assets/archiveFileName';
+import { extractArchiveEntries, installStaged, writeTextFile } from '../common/assets/stagedInstall';
+import {
+    archiveTopLevelDirs,
+    archiveTopLevelNames,
+    isSafePathSegment,
+    normalizedArchiveEntries,
+} from '../common/fs/archiveEntryPath';
 import { parseFrontmatter } from '../../utils/frontmatter';
-import { applyMtime, fileMtimeMs, zipEntryMtimeMs, zipArchiveOptions } from '../../utils/fileTime';
-import { recursiveDirStats } from '../../utils/fsSize';
+import { fileMtimeMs, zipArchiveOptions } from '../../utils/fileTime';
 
 // agents/ サブディレクトリを再帰探索する深さの上限（暴走防止）。
 // Grok はエージェント定義を ~/.grok/agents 直下の .md のみ認識する（サブディレクトリは探索しない）。
@@ -53,11 +50,9 @@ const AGENT_SCAN_MAX_DEPTH = 0;
  */
 export class GrokAssetManager {
     private readonly detector: WslDetector;
-    private readonly git: GitRunner;
 
-    constructor(detector: WslDetector, git: GitRunner = new GitRunner()) {
+    constructor(detector: WslDetector) {
         this.detector = detector;
-        this.git = git;
     }
 
     private nativeLabel(): string {
@@ -76,9 +71,19 @@ export class GrokAssetManager {
         return `${GROK_DIR}/${kind}`;
     }
 
-    /** パストラバーサル対策: 区切り文字や .. を含む名前を拒否する。 */
+    /** パストラバーサル対策: 区切り文字・'.'・'..' を含む名前や、別の場所を指し得る名前を拒否する。 */
     private isUnsafeName(name: string): boolean {
-        return name.includes('/') || name.includes('\\') || name.includes('..') || name.trim().length === 0;
+        return !isSafePathSegment(name);
+    }
+
+    /** parentRel 直下の dirs のいずれかがリンク（シンボリックリンク・ジャンクション）か。 */
+    private async anyLinkedDir(fs: HomeFs, parentRel: string, dirs: string[]): Promise<boolean> {
+        for (const dir of dirs) {
+            if (await fs.isLink(`${parentRel}/${dir}`)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 相対パス（区切りは '/'）が安全か。各セグメントを isUnsafeName で検証する。 */
@@ -134,9 +139,13 @@ export class GrokAssetManager {
                 continue;
             }
             const dirRel = `${parentRel}/${name}`;
+            const md = await fs.readText(`${dirRel}/SKILL.md`);
+            // SKILL.md を持たない隠しディレクトリ（.trash/ など）はスキルではない。
+            if (md === null && name.startsWith('.')) {
+                continue;
+            }
             // skills はファイル数のみ表示する（サイズは取得・保持しない）。
             const stats = await fs.dirStats(dirRel);
-            const md = await fs.readText(`${dirRel}/SKILL.md`);
             const fm = parseFrontmatter(md);
             entries.push({
                 name,
@@ -312,11 +321,8 @@ export class GrokAssetManager {
     }
 
     /**
-     * アップロード前検査: ZIP を選択させ、トップレベルディレクトリ名と既存の衝突を返す。
+     * アップロード前検査: ZIP を選択させ、取り込み対象のうち既にあるもの（衝突）を返す（computeConflicts）。
      * 実際の展開は upload() で行う（renderer が衝突確認後に呼ぶ）。
-     * 衝突判定:
-     * - skills: ZIP のトップレベルディレクトリ名 vs 既存サブディレクトリ。
-     * - agents: ZIP の各エントリの相対パス vs 既存ファイル（同一パスのファイルがあれば衝突）。
      */
     async inspectUpload(env: GrokEnvironment, kind: AssetKind, window: BrowserWindow | null): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
@@ -350,6 +356,10 @@ export class GrokAssetManager {
             zip = new AdmZip(srcPath);
         } catch (error) {
             console.error(`Failed to read archive ${srcPath}:`, error);
+            return { ok: false, message: 'invalid-archive' };
+        }
+        // パストラバーサル対策: 不正なエントリ名を含む ZIP は拒否する。
+        if (normalizedArchiveEntries(zip) === null) {
             return { ok: false, message: 'invalid-archive' };
         }
 
@@ -443,8 +453,9 @@ export class GrokAssetManager {
 
     /**
      * md 単体を取り込む。
-     * - skills: <dir>/SKILL.md（大文字固定）として配置。overwrite 時は <dir> を削除してから書く。
-     * - agents: 元ファイル名のまま .grok/agents 直下へ配置。overwrite 時は既存を削除してから書く。
+     * - skills: <dir>/SKILL.md（大文字固定）として配置。overwrite 時は既存の <dir> を丸ごと置き換える。
+     * - agents: 元ファイル名のまま .grok/agents 直下へ配置。overwrite 時は既存のファイルを置き換える。
+     * 既にある取り込み先は overwrite=true のときだけ置き換える。書き込みに失敗した場合は取り込み前の状態に戻す。
      */
     async uploadMd(env: GrokEnvironment, kind: AssetKind, mdPath: string, overwrite: boolean): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
@@ -469,27 +480,13 @@ export class GrokAssetManager {
 
         // 取り込み元 md の更新日時。配置後のファイルへ引き継ぐ（アップロード日にしない）。
         const srcMtimeMs = fileMtimeMs(mdPath);
+        const item = kind === 'skills' ? target.name : target.relPath;
+        const relPath = target.relPath;
 
         try {
-            if (kind === 'skills') {
-                const dirRel = `${parentRel}/${target.name}`;
-                if (overwrite && (await fs.exists(dirRel))) {
-                    await fs.removeDir(dirRel);
-                }
-                await fs.writeText(`${parentRel}/${target.relPath}`, content);
-                if (srcMtimeMs !== null) {
-                    await fs.setMtime(`${parentRel}/${target.relPath}`, srcMtimeMs);
-                }
-            } else {
-                const fileRel = `${parentRel}/${target.relPath}`;
-                if (overwrite && (await fs.exists(fileRel))) {
-                    await fs.deleteFile(fileRel);
-                }
-                await fs.writeText(fileRel, content);
-                if (srcMtimeMs !== null) {
-                    await fs.setMtime(fileRel, srcMtimeMs);
-                }
-            }
+            installStaged(parentReal, [item], new Set(overwrite ? [item] : []), dir =>
+                writeTextFile(dir, relPath, content, srcMtimeMs)
+            );
             return { ok: true, importedCount: 1 };
         } catch (error) {
             console.error(`Failed to upload md (${JSON.stringify(env)}, ${kind}):`, error);
@@ -499,7 +496,9 @@ export class GrokAssetManager {
 
     /**
      * ZIP を対象フォルダへ展開する。
-     * overwrite=true の場合、衝突する対象（skills=ディレクトリ / agents=ファイル）を削除してから展開する。
+     * 取り込み対象のうち既にあるもの（computeConflicts）は、overwrite=true のときだけ丸ごと置き換え
+     * （skills=トップレベルのディレクトリ / agents=ファイル）、overwrite=false のときは何も変えずに conflict を返す。
+     * 展開は作業用ディレクトリで行い、失敗した場合は取り込み前の状態に戻す。
      */
     async upload(env: GrokEnvironment, kind: AssetKind, zipPath: string, overwrite: boolean): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
@@ -517,9 +516,15 @@ export class GrokAssetManager {
             return { ok: false, message: 'invalid-archive' };
         }
 
-        const allEntries = zip.getEntries();
-        if (allEntries.length === 0) {
+        if (zip.getEntries().length === 0) {
             return { ok: false, message: 'empty-archive' };
+        }
+
+        // パストラバーサル対策: 不正なエントリ名を含む ZIP は拒否する。
+        const entries = normalizedArchiveEntries(zip);
+        if (entries === null) {
+            console.error(`Rejected archive with unsafe entry: ${zipPath}`);
+            return { ok: false, message: 'invalid-archive' };
         }
 
         // 防御的チェック: agents はネスト構成の ZIP を受け付けない（inspectUpload と同条件）。
@@ -527,48 +532,19 @@ export class GrokAssetManager {
             return { ok: false, message: 'invalid-archive' };
         }
 
-        // パストラバーサル対策: 不正なエントリ名を含む ZIP は拒否する。
-        for (const entry of allEntries) {
-            const name = entry.entryName.replace(/\\/g, '/');
-            if (name.includes('..') || name.startsWith('/') || /^[a-zA-Z]:/.test(name)) {
-                console.error(`Rejected archive with unsafe entry: ${entry.entryName}`);
-                return { ok: false, message: 'invalid-archive' };
-            }
-        }
-
         try {
-            // 親ディレクトリが無ければ作成する（agents/ skills/ が未作成のケース）。
-            await fs.writeText(`${parentRel}/.asset-manager-keep`, '');
-            await fs.deleteFile(`${parentRel}/.asset-manager-keep`);
-
-            if (overwrite) {
-                if (kind === 'skills') {
-                    // skills: ZIP に含まれる各トップレベルディレクトリを、既存があれば「ディレクトリごと削除」
-                    // してから展開する。これにより対象スキルは古いファイルが残らないクリーンな置換になる
-                    // （extractAllTo はファイル単位の上書きのため、削除前提のディレクトリ置換にはならない）。
-                    for (const dir of this.zipTopLevelDirsFrom(zip)) {
-                        if (this.isUnsafeName(dir)) {
-                            continue;
-                        }
-                        const target = `${parentRel}/${dir}`;
-                        if (await fs.exists(target)) {
-                            await fs.removeDir(target);
-                        }
-                    }
-                } else {
-                    // agents: ファイル単位の上書き。同一相対パスの既存ファイルを削除してから展開する。
-                    for (const file of this.zipFileEntries(zip)) {
-                        if (this.isUnsafeRelPath(file)) {
-                            continue;
-                        }
-                        if (await fs.exists(`${parentRel}/${file}`)) {
-                            await fs.deleteFile(`${parentRel}/${file}`);
-                        }
-                    }
-                }
+            // リンクのスキルディレクトリには展開しない（リンク先の管理対象外のファイルを書き換えないため）。
+            if (kind === 'skills' && (await this.anyLinkedDir(fs, parentRel, this.zipTopLevelNamesFrom(zip)))) {
+                return { ok: false, message: 'upload-failed' };
             }
 
-            this.extractZipTo(zip, parentReal);
+            const conflicts = await this.computeConflicts(fs, parentRel, zip, kind);
+            if (conflicts.length > 0 && !overwrite) {
+                return { ok: false, message: 'conflict', conflicts };
+            }
+            installStaged(parentReal, this.uploadItems(zip, kind), new Set(conflicts), dir =>
+                extractArchiveEntries(entries, dir)
+            );
             const importedCount =
                 kind === 'skills' ? this.zipTopLevelDirsFrom(zip).length : this.zipFileEntries(zip).length;
             return { ok: true, importedCount };
@@ -576,211 +552,6 @@ export class GrokAssetManager {
             console.error(`Failed to extract archive (${JSON.stringify(env)}, ${kind}):`, error);
             return { ok: false, message: 'upload-failed' };
         }
-    }
-
-    // ============================================================
-    // 公式スキルインポート（xai-org/plugin-marketplace）
-    // ============================================================
-
-    /** 公式リポジトリの clone 先（app userData 配下の repos）。 */
-    private officialReposDir(): string {
-        return join(app.getPath('userData'), 'repos');
-    }
-
-    /** 公式スキルリポジトリの clone 先ディレクトリ（実 OS パス）。 */
-    private officialSkillsRepoDir(): string {
-        return join(this.officialReposDir(), OFFICIAL_SKILLS_REPO_DIRNAME);
-    }
-
-    /** リポジトリ内のスキル格納ディレクトリ（<repo>/skills）。 */
-    private officialSkillsSourceDir(): string {
-        return join(this.officialSkillsRepoDir(), OFFICIAL_SKILLS_REPO_SUBDIR);
-    }
-
-    /** git がインストールされ利用可能か。公式インポートボタンの活性判定に使う。 */
-    async isGitAvailable(): Promise<boolean> {
-        return this.git.isAvailable();
-    }
-
-    /**
-     * 公式スキルリポジトリを clone/更新し、skills/ 配下のスキル一覧を返す。
-     * 一覧の各要素は既存スキル一覧（listSkills）と同形の AssetEntry。
-     * relPath は repo の skills ディレクトリからの相対（例 'apple-design' / 'docx'）。
-     */
-    async listOfficialSkills(): Promise<AssetOpResult> {
-        if (!(await this.git.isAvailable())) {
-            return { ok: false, message: 'git-unavailable' };
-        }
-        const repoDir = this.officialSkillsRepoDir();
-        try {
-            await this.git.cloneOrUpdate(OFFICIAL_SKILLS_REPO_URL, repoDir, OFFICIAL_SKILLS_REPO_BRANCH);
-        } catch (error) {
-            console.error('Failed to clone/update official skills repository:', error);
-            return { ok: false, message: 'repo-update-failed' };
-        }
-
-        const sourceDir = this.officialSkillsSourceDir();
-        if (!existsSync(sourceDir)) {
-            return { ok: false, message: 'repo-update-failed' };
-        }
-
-        try {
-            const entries = this.scanOfficialSkills(sourceDir);
-            entries.sort((a, b) => a.name.localeCompare(b.name));
-            return { ok: true, entries };
-        } catch (error) {
-            console.error('Failed to scan official skills:', error);
-            return { ok: false, message: 'repo-update-failed' };
-        }
-    }
-
-    /**
-     * sourceDir（repo の skills/）配下から SKILL.md を持つスキルディレクトリを収集する。
-     * 公式リポは一部スキルが 1 階層ネスト（例 document-skills/docx）するため、深さ 2 まで探索する。
-     * relPath は sourceDir からの相対パス（'/' 区切り）。
-     */
-    private scanOfficialSkills(sourceDir: string): AssetEntry[] {
-        const entries: AssetEntry[] = [];
-
-        const visit = (relDir: string, depth: number): void => {
-            const absDir = relDir ? join(sourceDir, relDir) : sourceDir;
-            let dirents;
-            try {
-                dirents = readdirSync(absDir, { withFileTypes: true });
-            } catch {
-                return;
-            }
-            const hasSkillMd = dirents.some(d => d.isFile() && d.name.toLowerCase() === 'skill.md');
-            if (hasSkillMd && relDir) {
-                entries.push(this.buildOfficialEntry(sourceDir, relDir));
-                return; // スキルディレクトリ配下はこれ以上潜らない
-            }
-            if (depth >= 2) {
-                return;
-            }
-            for (const d of dirents) {
-                if (!d.isDirectory() || d.isSymbolicLink() || this.isUnsafeName(d.name) || d.name.startsWith('.')) {
-                    continue;
-                }
-                visit(relDir ? `${relDir}/${d.name}` : d.name, depth + 1);
-            }
-        };
-
-        visit('', 0);
-        return entries;
-    }
-
-    /** repo の skills/ 配下の相対パス（skillRel）から 1 件分の AssetEntry を構築する。 */
-    private buildOfficialEntry(sourceDir: string, skillRel: string): AssetEntry {
-        const absDir = join(sourceDir, skillRel);
-        // SKILL.md（大小無視）の実ファイル名を解決して frontmatter を読む。
-        let mdContent: string | null = null;
-        try {
-            const mdName = readdirSync(absDir, { withFileTypes: true }).find(
-                d => d.isFile() && d.name.toLowerCase() === 'skill.md'
-            )?.name;
-            if (mdName) {
-                mdContent = readFileSync(join(absDir, mdName), 'utf-8');
-            }
-        } catch {
-            mdContent = null;
-        }
-        const fm = parseFrontmatter(mdContent);
-        const stats = recursiveDirStats(absDir);
-        // 表示名は frontmatter.name があればそれ、無ければディレクトリ名末尾。
-        const dirName = skillRel.split('/').pop() ?? skillRel;
-        return {
-            name: fm?.fields?.name ?? dirName,
-            relPath: skillRel,
-            isFile: false,
-            fileCount: stats.fileCount,
-            frontmatter: fm?.fields ?? {},
-            frontmatterRaw: fm?.raw ?? null,
-            mtimeMs: stats.mtimeMs,
-        };
-    }
-
-    /**
-     * 選択した公式スキル（relPaths は repo の skills/ からの相対）を対象環境へ取り込む。
-     * 取り込み先のディレクトリ名は relPath の末尾セグメント（= スキルディレクトリ名）。
-     * 公式スキル同士の置換のため、同名は確認なしで削除→展開する。
-     *
-     * native / WSL(UNC) 両対応のため、選択スキルを一時 ZIP に固めてから既存の展開ロジックを通す。
-     * WSL コマンドモード（UNC 不可）では展開不可（unavailable）。
-     */
-    async importOfficialSkills(env: GrokEnvironment, relPaths: string[]): Promise<AssetOpResult> {
-        if (!(await this.git.isAvailable())) {
-            return { ok: false, message: 'git-unavailable' };
-        }
-
-        const fs = this.fsFor(env);
-        const parentRel = this.parentRel('skills');
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
-            return { ok: false, message: 'unavailable' };
-        }
-
-        const sourceDir = this.officialSkillsSourceDir();
-        // 取り込み対象: 安全な relPath かつ実在するスキルディレクトリのみ。
-        const targets = relPaths
-            .filter(p => !this.isUnsafeRelPath(p))
-            .map(p => ({ rel: p, abs: join(sourceDir, p), dirName: p.split('/').pop() ?? p }))
-            .filter(t => !this.isUnsafeName(t.dirName) && existsSync(t.abs));
-        if (targets.length === 0) {
-            return { ok: false, message: 'no-selection' };
-        }
-
-        // 選択スキルを一時 ZIP に固める（ZIP 内はトップレベル <dirName>/... の構成）。
-        const tmpZip = join(tmpdir(), `official-skills-${process.pid}-${targets.length}.zip`);
-        try {
-            await this.zipDirectories(
-                targets.map(t => ({ abs: t.abs, name: t.dirName })),
-                tmpZip
-            );
-
-            const zip = new AdmZip(tmpZip);
-            // 公式同士の置換: 各トップレベルディレクトリを既存があれば削除してから展開する。
-            for (const dir of this.zipTopLevelDirsFrom(zip)) {
-                if (this.isUnsafeName(dir)) {
-                    continue;
-                }
-                const targetRel = `${parentRel}/${dir}`;
-                if (await fs.exists(targetRel)) {
-                    await fs.removeDir(targetRel);
-                }
-            }
-            // 親ディレクトリが無ければ作成する。
-            await fs.writeText(`${parentRel}/.asset-manager-keep`, '');
-            await fs.deleteFile(`${parentRel}/.asset-manager-keep`);
-
-            this.extractZipTo(zip, parentReal);
-            return { ok: true, importedCount: targets.length };
-        } catch (error) {
-            console.error(`Failed to import official skills (${JSON.stringify(env)}):`, error);
-            return { ok: false, message: 'official-import-failed' };
-        } finally {
-            try {
-                rmSync(tmpZip, { force: true });
-            } catch {
-                // 一時ファイルの削除失敗は無視
-            }
-        }
-    }
-
-    /** 複数のディレクトリ（実 OS パス）を ZIP に固める。ZIP 内のトップは指定 name。 */
-    private zipDirectories(dirs: { abs: string; name: string }[], destZip: string): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const output = createWriteStream(destZip);
-            const archive = archiver('zip', zipArchiveOptions());
-            output.on('close', () => resolve());
-            output.on('error', reject);
-            archive.on('error', reject);
-            archive.pipe(output);
-            for (const d of dirs) {
-                archive.directory(d.abs, d.name);
-            }
-            archive.finalize();
-        });
     }
 
     /**
@@ -827,76 +598,45 @@ export class GrokAssetManager {
         return { ok: skipped.length === 0, deletedCount, skipped: skipped.length > 0 ? skipped : undefined };
     }
 
-    /**
-     * ZIP を destDir 配下へ展開する（adm-zip の extractAllTo は使わない）。
-     * adm-zip の extractAllTo は展開後に各ファイルへ chmodSync を呼ぶが、WSL の UNC パス
-     * （\\wsl.localhost\...）では chmod が ENOENT で失敗する。chmod を行わない writeFileSync で
-     * 自前展開することで native / WSL(UNC) の両方で確実に動作させる。
-     * destDir は実 OS パス（native 絶対パス / WSL UNC パス）。
-     */
-    private extractZipTo(zip: AdmZip, destDir: string): void {
-        // ディレクトリの日時はファイル書き込みで変わるため、全ファイル展開後にまとめて適用する。
-        const dirs: { path: string; mtimeMs: number | null }[] = [];
-        for (const entry of zip.getEntries()) {
-            const rel = entry.entryName.replace(/\\/g, '/');
-            // join はプラットフォーム区切りに正規化する（Windows=\ なので UNC パスにも正しく連結される）。
-            const outPath = join(destDir, rel);
-            if (entry.isDirectory) {
-                mkdirSync(outPath, { recursive: true });
-                dirs.push({ path: outPath, mtimeMs: zipEntryMtimeMs(entry) });
-                continue;
-            }
-            mkdirSync(dirname(outPath), { recursive: true });
-            writeFileSync(outPath, entry.getData());
-            // ZIP に記録された更新日時を引き継ぐ（展開日ではなく元の日時を維持する）。
-            applyMtime(outPath, zipEntryMtimeMs(entry));
-        }
-        for (const dir of dirs) {
-            applyMtime(dir.path, dir.mtimeMs);
-        }
+    /** ZIP の取り込み対象（skills=トップレベルの名前 / agents=ファイルの相対パス）。 */
+    private uploadItems(zip: AdmZip, kind: AssetKind): string[] {
+        return kind === 'skills' ? this.zipTopLevelNamesFrom(zip) : this.zipFileEntries(zip);
     }
 
-    /** ZIP と既存内容から衝突一覧を計算する（表示用）。 */
+    /**
+     * 取り込み対象のうち、取り込み先に既にあるもの（上書きの確認対象で、上書き時に置き換えるもの）を返す。
+     * 既にあるかはファイルシステムで判定する（大文字・小文字を区別しないファイルシステムでは、大文字・小文字だけが
+     * 異なる既存の名前も既にあるものになる）。
+     */
     private async computeConflicts(fs: HomeFs, parentRel: string, zip: AdmZip, kind: AssetKind): Promise<string[]> {
-        if (kind === 'skills') {
-            const existing = new Set(await fs.listDirs(parentRel));
-            return this.zipTopLevelDirsFrom(zip).filter(d => existing.has(d));
-        }
         const conflicts: string[] = [];
-        for (const file of this.zipFileEntries(zip)) {
-            if (this.isUnsafeRelPath(file)) {
-                continue;
-            }
-            if (await fs.exists(`${parentRel}/${file}`)) {
-                conflicts.push(file);
+        for (const item of this.uploadItems(zip, kind)) {
+            if (!this.isUnsafeRelPath(item) && (await fs.exists(`${parentRel}/${item}`))) {
+                conflicts.push(item);
             }
         }
         return conflicts;
     }
 
-    /** AdmZip インスタンスからトップレベルディレクトリ名一覧を抽出する（skills 用）。 */
+    /**
+     * AdmZip インスタンスから、正規化したエントリ名のトップレベルディレクトリ名一覧を抽出する（skills 用）。
+     * 不正なエントリ名を含む ZIP は空配列。
+     */
     private zipTopLevelDirsFrom(zip: AdmZip): string[] {
-        const dirs = new Set<string>();
-        for (const entry of zip.getEntries()) {
-            const name = entry.entryName.replace(/\\/g, '/');
-            const top = name.split('/')[0];
-            if (top && top.length > 0) {
-                dirs.add(top);
-            }
-        }
-        return Array.from(dirs);
+        return archiveTopLevelDirs(normalizedArchiveEntries(zip) ?? []);
     }
 
-    /** AdmZip インスタンスからファイルエントリの相対パス一覧を抽出する（agents 用）。 */
+    /** AdmZip インスタンスから、正規化したエントリ名の先頭セグメント（トップレベルのファイルを含む）を抽出する。 */
+    private zipTopLevelNamesFrom(zip: AdmZip): string[] {
+        return archiveTopLevelNames(normalizedArchiveEntries(zip) ?? []);
+    }
+
+    /**
+     * AdmZip インスタンスから、ファイルエントリの正規化した相対パス一覧を抽出する（agents 用）。
+     * 不正なエントリ名を含む ZIP は空配列。
+     */
     private zipFileEntries(zip: AdmZip): string[] {
-        const files: string[] = [];
-        for (const entry of zip.getEntries()) {
-            if (entry.isDirectory) {
-                continue;
-            }
-            files.push(entry.entryName.replace(/\\/g, '/'));
-        }
-        return files;
+        return (normalizedArchiveEntries(zip) ?? []).filter(({ entry }) => !entry.isDirectory).map(({ path }) => path);
     }
 
     // ============================================================

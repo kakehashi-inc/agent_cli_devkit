@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Alert,
@@ -29,10 +29,13 @@ import type {
     PluginMarketplaceEntry,
 } from '@shared/agents/types';
 import { isValidSource, sourceFormatsText } from './AddMarketplaceDialog';
+import { formatPluginMessage } from './pluginMessage';
 import type { PluginManagerApi, PluginNotify } from './types';
 
 type Mode = 'catalog' | 'source';
 const ALL = '__all__';
+// カタログ一覧で一度に追加描画する件数。
+const CATALOG_PAGE_SIZE = 200;
 
 interface Props {
     api: PluginManagerApi;
@@ -60,6 +63,8 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
     const [catalogError, setCatalogError] = useState<string | null>(null);
     const [marketFilter, setMarketFilter] = useState<string>(ALL);
     const [search, setSearch] = useState('');
+    // カタログ一覧で描画する件数（大規模カタログでも描画を軽く保つため段階的に増やす）。
+    const [visibleCount, setVisibleCount] = useState(CATALOG_PAGE_SIZE);
     const [source, setSource] = useState('');
     const [busy, setBusy] = useState(false);
     const [errorDetail, setErrorDetail] = useState<string | null>(null);
@@ -72,21 +77,31 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
     // カタログモードで選択できるマーケットプレイス名（2 段階フローで増えることがある）。
     // インストール元として選択可能（selectable）なもののみ提示する。
     const [marketNames, setMarketNames] = useState<string[]>(marketplaces.filter(m => m.selectable).map(m => m.name));
+    // カタログ読み込みの世代番号。読み込みが重なったときは最後に始めたものの結果だけを反映する。
+    const catalogRequest = useRef(0);
 
     const loadCatalog = async () => {
+        const request = ++catalogRequest.current;
         setCatalogLoading(true);
         setCatalogError(null);
         try {
             const result = await api.catalog(env);
+            if (request !== catalogRequest.current) {
+                return;
+            }
             if (result.ok) {
                 setEntries(result.entries);
             } else {
-                setCatalogError(result.message ?? '');
+                setCatalogError(formatPluginMessage(t, result.message));
             }
         } catch (error) {
-            setCatalogError(String(error));
+            if (request === catalogRequest.current) {
+                setCatalogError(formatPluginMessage(t, String(error)));
+            }
         } finally {
-            setCatalogLoading(false);
+            if (request === catalogRequest.current) {
+                setCatalogLoading(false);
+            }
         }
     };
 
@@ -111,7 +126,24 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
         });
     }, [entries, marketFilter, search]);
 
-    /** カタログからのインストール（信頼確認済み）。 */
+    // 絞り込み条件が変わったら描画件数を先頭ページに戻す。
+    useEffect(() => {
+        setVisibleCount(CATALOG_PAGE_SIZE);
+    }, [marketFilter, search]);
+
+    // 絞り込みの選択肢: 選択可能なマーケットプレイスに、カタログ項目の提供元
+    // （marketplace list に現れない組み込みカタログなど）を加えたもの。
+    const filterNames = useMemo(() => {
+        const names = new Set(marketNames);
+        for (const entry of entries) {
+            if (entry.marketplace) {
+                names.add(entry.marketplace);
+            }
+        }
+        return [...names];
+    }, [entries, marketNames]);
+
+    /** カタログの 1 件をインストールする。 */
     const handleInstall = async (entry: PluginCatalogEntry) => {
         setBusy(true);
         setErrorDetail(null);
@@ -122,18 +154,18 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                 setChanged(true);
                 setEntries(prev => prev.map(e => (e.id === entry.id ? { ...e, installed: true } : e)));
             } else {
-                setErrorDetail(result.message ?? '');
+                setErrorDetail(formatPluginMessage(t, result.message));
                 onNotify(t('pluginManager.installError'), 'error');
             }
         } catch (error) {
-            setErrorDetail(String(error));
+            setErrorDetail(formatPluginMessage(t, String(error)));
             onNotify(t('pluginManager.installError'), 'error');
         } finally {
             setBusy(false);
         }
     };
 
-    /** ソース直接インストール（grok。信頼確認済み）。 */
+    /** 入力したソースから直接インストールする（capabilities.directInstall=true の agent）。 */
     const handleInstallFromSource = async () => {
         if (!api.installFromSource) {
             return;
@@ -146,25 +178,28 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                 onNotify(t('pluginManager.installSuccess'), 'success');
                 onClose(true);
             } else {
-                setErrorDetail(result.message ?? '');
+                setErrorDetail(formatPluginMessage(t, result.message));
                 onNotify(t('pluginManager.installError'), 'error');
             }
         } catch (error) {
-            setErrorDetail(String(error));
+            setErrorDetail(formatPluginMessage(t, String(error)));
             onNotify(t('pluginManager.installError'), 'error');
         } finally {
             setBusy(false);
         }
     };
 
-    /** 2 段階フロー: ソースをマーケットプレイスとして追加し、カタログへ誘導する（claude / codex）。 */
+    /**
+     * 2 段階フロー: ソースをマーケットプレイスとして追加し、カタログへ誘導する
+     * （capabilities.directInstall=false の agent）。
+     */
     const handleAddAsMarketplace = async () => {
         setBusy(true);
         setErrorDetail(null);
         try {
             const result = await api.addMarketplace(env, source.trim());
             if (!result.ok) {
-                setErrorDetail(result.message ?? '');
+                setErrorDetail(formatPluginMessage(t, result.message));
                 onNotify(t('pluginManager.addMarketError'), 'error');
                 return;
             }
@@ -180,7 +215,7 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
             setMode('catalog');
             await loadCatalog();
         } catch (error) {
-            setErrorDetail(String(error));
+            setErrorDetail(formatPluginMessage(t, String(error)));
             onNotify(t('pluginManager.addMarketError'), 'error');
         } finally {
             setBusy(false);
@@ -201,7 +236,7 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
     };
 
     const sourceHelp = capabilities.directInstall
-        ? t('pluginManager.sourceHelpDirect')
+        ? t(capabilities.sourceHelpKey ?? 'pluginManager.sourceHelpDirect')
         : t('pluginManager.sourceHelpTwoStep');
 
     return (
@@ -241,7 +276,7 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                                 sx={{ minWidth: 220 }}
                             >
                                 <MenuItem value={ALL}>{t('pluginManager.allMarketplaces')}</MenuItem>
-                                {marketNames.map(name => (
+                                {filterNames.map(name => (
                                     <MenuItem key={name} value={name}>
                                         {name}
                                     </MenuItem>
@@ -272,7 +307,7 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                             </Typography>
                         ) : (
                             <List dense sx={{ maxHeight: 420, overflowY: 'auto' }}>
-                                {filtered.map(entry => (
+                                {filtered.slice(0, visibleCount).map(entry => (
                                     <ListItem key={entry.id} divider alignItems='flex-start' sx={{ gap: 1.5 }}>
                                         <Box sx={{ flex: 1, minWidth: 0 }}>
                                             <Box
@@ -334,6 +369,24 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                                         </Box>
                                     </ListItem>
                                 ))}
+                                {filtered.length > visibleCount && (
+                                    <ListItem sx={{ justifyContent: 'center', gap: 2 }}>
+                                        <Typography variant='caption' color='text.secondary'>
+                                            {t('pluginManager.shownCount', {
+                                                shown: visibleCount,
+                                                total: filtered.length,
+                                            })}
+                                        </Typography>
+                                        <Button
+                                            size='small'
+                                            onClick={() => setVisibleCount(n => n + CATALOG_PAGE_SIZE)}
+                                        >
+                                            {t('pluginManager.showMore', {
+                                                count: Math.min(CATALOG_PAGE_SIZE, filtered.length - visibleCount),
+                                            })}
+                                        </Button>
+                                    </ListItem>
+                                )}
                             </List>
                         )}
                     </>

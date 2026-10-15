@@ -7,9 +7,9 @@ import { GrokPluginManager } from '../../services/grok/GrokPluginManager';
  * Grok プラグイン管理の IPC ハンドラを登録する。
  */
 export function registerGrokPluginHandlers(manager: GrokPluginManager): void {
-    // 環境一覧（native + Grok 入り WSL distro）を取得
-    ipcMain.handle(GROK_PLUGIN_CHANNELS.GET_ENVIRONMENTS, () => {
-        return manager.getEnvironments();
+    // 環境一覧（native + Grok 入り WSL distro）を取得。refresh=true は CLI と WSL distro を検出し直す。
+    ipcMain.handle(GROK_PLUGIN_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) => {
+        return manager.getEnvironments(refresh === true);
     });
 
     // インストール済みプラグインとマーケットプレイスの一覧
@@ -32,9 +32,12 @@ export function registerGrokPluginHandlers(manager: GrokPluginManager): void {
         return manager.installFromSource(env, source);
     });
 
-    // プラグインのアンインストール
-    ipcMain.handle(GROK_PLUGIN_CHANNELS.UNINSTALL, (_, env: GrokEnvironment, id: string) => {
-        return manager.uninstall(env, id);
+    // プラグインのアンインストール（confirmedNames = 一緒に削除されることを確認した同じリポジトリのプラグイン名）
+    ipcMain.handle(GROK_PLUGIN_CHANNELS.UNINSTALL, (_, env: GrokEnvironment, id: string, confirmedNames: unknown) => {
+        const names = Array.isArray(confirmedNames)
+            ? confirmedNames.filter((name): name is string => typeof name === 'string')
+            : [];
+        return manager.uninstall(env, id, names);
     });
 
     // プラグインの有効/無効切り替え

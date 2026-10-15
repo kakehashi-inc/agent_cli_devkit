@@ -12,8 +12,9 @@ import type {
     SettingsWriteResult,
 } from '@shared/agents/types';
 
+// getEnvironments の refresh=true は、検出結果のキャッシュを破棄して検出し直す要求（キャッシュを持たない agent は無視する）。
 export interface McpApi {
-    getEnvironments(): Promise<McpEnvInfo[]>;
+    getEnvironments(refresh?: boolean): Promise<McpEnvInfo[]>;
     getMCPServers(env: AgentEnvironment): Promise<MCPServers>;
     enableMCPServer(env: AgentEnvironment, name: string): Promise<MCPServers>;
     disableMCPServer(env: AgentEnvironment, name: string): Promise<MCPServers>;
@@ -22,7 +23,7 @@ export interface McpApi {
 }
 
 export interface AssetApi {
-    getEnvironments(): Promise<{ env: AgentEnvironment; label: string }[]>;
+    getEnvironments(refresh?: boolean): Promise<{ env: AgentEnvironment; label: string }[]>;
     list(env: AgentEnvironment, kind: AssetKind): Promise<AssetListReport>;
     readEntry(env: AgentEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
     revealEntry(env: AgentEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
@@ -34,13 +35,13 @@ export interface AssetApi {
 }
 
 export interface CleanupApi {
-    getEnvironments(): Promise<{ env: AgentEnvironment; label: string }[]>;
+    getEnvironments(refresh?: boolean): Promise<{ env: AgentEnvironment; label: string }[]>;
     scan(env: AgentEnvironment): Promise<CleanupEnvReport>;
     delete(env: AgentEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport>;
 }
 
 export interface SettingsApi {
-    getEnvironments(): Promise<{ env: AgentEnvironment; label: string }[]>;
+    getEnvironments(refresh?: boolean): Promise<{ env: AgentEnvironment; label: string }[]>;
     read(env: AgentEnvironment): Promise<SettingsReadResult>;
     write(env: AgentEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
     writeRaw(env: AgentEnvironment, raw: string): Promise<SettingsWriteResult>;

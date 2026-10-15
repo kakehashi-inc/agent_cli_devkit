@@ -41,13 +41,32 @@ export default {
         noSearchResults: 'No data matches the search criteria',
         revealInFileManager: 'Show in file manager',
         revealInFileManagerError: 'Failed to show the item in the file manager',
+        cleanupChildInUse: 'In use (excluded)',
+        cleanupConfirmWhole: 'Everything in the following items will be deleted, except anything in use: {{names}}',
+        settingsInvalidValue: 'The value of "{{field}}" has an invalid format. Saving was aborted.',
+        settingsValueNotNumber: 'Enter a number for "{{field}}". Saving was aborted.',
+        settingsValueNotInteger: 'Enter a whole number for "{{field}}". Saving was aborted.',
+        settingsValueOutOfRange:
+            'The value of "{{field}}" is outside the accepted range ({{range}}). Saving was aborted.',
+        // 数値の設定項目が受け付ける範囲の表記
+        settingsRange: {
+            min: '{{min}} or more',
+            minExclusive: 'greater than {{min}}',
+            max: '{{max}} or less',
+            minMax: '{{min}} to {{max}}',
+            minExclusiveMax: 'greater than {{min}} and up to {{max}}',
+        },
     },
     // プラグイン管理（agent 非依存の共通 UI 文言。タイトル等の agent 固有文言は各 agent ファイル）
     pluginManager: {
         wslSection: 'WSL: {{distro}}',
         tabPlugins: 'Installed',
         tabMarketplaces: 'Marketplaces',
-        cliNotFound: 'Plugin management is unavailable because the CLI command was not found in this environment.',
+        cliNotFound:
+            'Plugin management is unavailable because the CLI command was not found in this environment. If you have just installed it, press Refresh. If it is still not found, you may need to restart the app.',
+        noEnvironment:
+            'No environment with the CLI was found. Install the CLI, then press Refresh. If it is not found right after installing, you may need to restart the app.',
+        environmentsError: 'Failed to load the environments. Press Refresh to try again.',
         cliVersion: 'CLI: {{version}}',
         listError: 'Failed to load the list',
         colName: 'Name',
@@ -77,8 +96,12 @@ export default {
         externalTooltip: "Loaded from another tool's configuration and cannot be removed here",
         uninstallConfirmTitle: 'Uninstall this plugin?',
         uninstallConfirmBody: 'This will uninstall "{{name}}". Continue?',
+        uninstallSameRepo: 'The following {{count}} plugin(s) installed from the same repository will also be removed.',
         uninstallSuccess: 'Plugin uninstalled',
         uninstallError: 'Failed to uninstall the plugin',
+        notUninstallable:
+            'This plugin was not installed from a marketplace, so the CLI cannot uninstall it (you can still disable it)',
+        notToggleable: 'The CLI ignores the enabled setting for plugins from this source, so it cannot be toggled',
         removeMarketConfirmTitle: 'Remove this marketplace?',
         removeMarketConfirmBody:
             'This will remove "{{name}}". Plugins installed from this marketplace will also be uninstalled. Continue?',
@@ -90,6 +113,8 @@ export default {
         allMarketplaces: 'All marketplaces',
         searchPlaceholder: 'Filter by name or description',
         catalogEmpty: 'No installable plugins found',
+        showMore: 'Show {{count}} more',
+        shownCount: 'Showing {{shown}} of {{total}}',
         catalogError: 'Failed to load the catalog',
         install: 'Install',
         installSuccess: 'Plugin installed',
@@ -117,6 +142,30 @@ export default {
         working: 'Working... (fetching the repository may take a while the first time)',
         cancel: 'Cancel',
         close: 'Close',
+        outputTruncated: '... ({{count}} characters omitted) ...',
+        // 操作の失敗理由（main 側が返すコード）の文言
+        errorCode: {
+            'not-found': 'The specified plugin or file was not found.',
+            'invalid-plugin-source':
+                'This source cannot be installed as a plugin. Specify a .ts / .js file, a folder containing package.json or an index, server, or tui .ts / .js file, or an npm or Git package specifier.',
+            'cli-unavailable': 'The CLI command was not found in this environment.',
+            'already-exists': 'A plugin with the same name already exists, or the source is the destination itself.',
+            'source-overlaps':
+                'The source and destination folders overlap (the source contains the plugins folder or is inside it), so it cannot be installed.',
+            unavailable: 'The files of this environment cannot be accessed (the WSL path is unreachable).',
+            'invalid-id': 'The plugin specification is invalid.',
+            unsupported: 'This operation is not supported.',
+            'invalid-disabled-file':
+                'The operation was stopped because the file that keeps disabled plugins (opencode-disabled-plugins.json) is malformed. Fix or delete the file, then try again.',
+            'read-only': 'This plugin cannot be changed from this screen.',
+            'in-use': 'Some files could not be removed because they are in use.',
+            'move-in-use':
+                'The plugin files could not be moved because a file is in use or access was denied (the plugin was not changed). Close any program that is using the plugin, then try again.',
+            'needs-reconfirm':
+                'Uninstall was stopped because more plugins from the same repository were installed after you confirmed. The list has been refreshed; check which plugins will be removed with it, then uninstall again.',
+            'invalid-argument-percent':
+                'In this environment the CLI runs through the Command Prompt (cmd.exe), so values containing "%" cannot be used.',
+        },
     },
     updater: {
         confirm: 'A new version v{{version}} is available. Update now?',

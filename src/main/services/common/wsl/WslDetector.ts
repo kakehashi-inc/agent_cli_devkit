@@ -1,5 +1,9 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { WslDistroInfo } from '../../../../shared/agents/types';
+import { system32Command } from '../../../utils/system32Command';
+
+// wsl.exe は System32 の絶対パスで起動する（PATH や作業ディレクトリにある同名のファイルを起動しない）。
+const WSL_EXE = system32Command('wsl.exe');
 
 /**
  * execFile を Promise 化し、stdout を Buffer で受け取るヘルパー。
@@ -19,8 +23,7 @@ function execFileBuffer(file: string, args: string[]): Promise<{ stdout: Buffer;
 
 /**
  * WSL 出力のデコード。wsl.exe は UTF-16LE、bash 出力は UTF-8 と環境で異なるため、
- * NUL バイトの密度から自動判定する（mcp_server_manager の実績ある実装を踏襲）。
- * AgentCliRunner など WSL 経由でコマンドを実行する共通実装からも使う。
+ * NUL バイトの密度から自動判定する。
  */
 export function decodeWslBuffer(buf: Buffer): string {
     if (!buf || buf.length === 0) {
@@ -41,9 +44,9 @@ export function decodeWslBuffer(buf: Buffer): string {
  * WSL の利用可否と distro を検出する（agent 非依存の共通実装）。
  * - WSL は Windows のみ対象。
  * - 検出結果はキャッシュする（プロセス起動中は再検出しない）。
- * - 「どの CLI が入っている distro を対象とするか」は呼び出し側（各 agent の
- *   サービス）が判定コマンド（testExpr）を渡して決める。判定コマンドは
+ * - 対象の distro は、受け取った判定コマンド（testExpr）が成功するものとする。判定コマンドは
  *   shared/agents/<agent>/constants.ts に定義する（例: CLAUDE_WSL_CLI_TEST）。
+ * - wsl.exe は System32 の絶対パスで起動する。
  */
 export class WslDetector {
     private available: boolean | null = null;
@@ -79,7 +82,7 @@ export class WslDetector {
      * wsl -l -q の出力（UTF-16LE + NUL 埋め）を復号して distro 名一覧を得る。
      */
     private async rawListDistros(): Promise<string[]> {
-        const { stdout } = await execFileBuffer('wsl.exe', ['-l', '-q']);
+        const { stdout } = await execFileBuffer(WSL_EXE, ['-l', '-q']);
         const text = decodeWslBuffer(stdout);
         return text
             .split(/\r?\n/)
@@ -95,7 +98,7 @@ export class WslDetector {
         if (cached) {
             return cached;
         }
-        const { stdout } = await execFileBuffer('wsl.exe', ['-d', distro, '--', 'bash', '-lc', 'echo -n $HOME']);
+        const { stdout } = await execFileBuffer(WSL_EXE, ['-d', distro, '--exec', 'bash', '-lc', 'echo -n $HOME']);
         // bash の出力は基本 UTF-8。NUL 密度判定で安全に復号する。
         const home = decodeWslBuffer(stdout).replace(/\0/g, '').trim();
         this.homeCache.set(distro, home);
@@ -105,7 +108,7 @@ export class WslDetector {
     /** distro 内で判定コマンド（test 式など）が成功するか */
     async testInDistro(distro: string, testExpr: string): Promise<boolean> {
         try {
-            await execFileBuffer('wsl.exe', ['-d', distro, '--', 'bash', '-lc', testExpr]);
+            await execFileBuffer(WSL_EXE, ['-d', distro, '--exec', 'bash', '-lc', testExpr]);
             return true;
         } catch {
             return false;
@@ -187,11 +190,38 @@ export class WslDetector {
 
     /**
      * distro 内で bash コマンドを実行し、stdout を Buffer で返す。
-     * HomeFs のコマンドモードフォールバックから利用する。
+     * `--exec` で既定シェルを介さずに bash を起動するため、command 内の `$` や引用符は bash だけが解釈する。
      */
     async runInDistro(distro: string, command: string): Promise<Buffer> {
-        const { stdout } = await execFileBuffer('wsl.exe', ['-d', distro, '--', 'bash', '-lc', command]);
+        const { stdout } = await execFileBuffer(WSL_EXE, ['-d', distro, '--exec', 'bash', '-lc', command]);
         return stdout;
+    }
+
+    /**
+     * distro 内のログインシェル（bash -l）へ標準入力でスクリプトを渡して実行し、stdout を Buffer で返す。
+     * スクリプトを wsl.exe の引数として渡さないため、変数参照・引用符・長さの制約を受けずにそのまま実行できる。
+     * 終了コードが 0 以外の場合は reject する。
+     */
+    runScriptInDistro(distro: string, script: string): Promise<Buffer> {
+        return new Promise((resolve, reject) => {
+            const child = spawn(WSL_EXE, ['-d', distro, '--exec', 'bash', '-l', '-s'], { windowsHide: true });
+            const stdout: Buffer[] = [];
+            const stderr: Buffer[] = [];
+            child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+            child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+            child.on('error', reject);
+            child.on('close', code => {
+                if (code === 0) {
+                    resolve(Buffer.concat(stdout));
+                    return;
+                }
+                const detail = decodeWslBuffer(Buffer.concat(stderr)).trim();
+                reject(new Error(`WSL script exited with code ${code}${detail ? `: ${detail}` : ''}`));
+            });
+            // 子プロセスが入力を読み切る前に終了した場合の EPIPE は close 側で扱う。
+            child.stdin.on('error', () => undefined);
+            child.stdin.end(script);
+        });
     }
 
     /** キャッシュを破棄して次回再検出させる */

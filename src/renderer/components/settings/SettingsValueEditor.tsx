@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Autocomplete, MenuItem, Select, TextField, Typography } from '@mui/material';
+import { settingsValueProblem } from '@shared/agents/settingsValue';
 import type { SettingsFieldSpec, SettingsFieldValue } from '@shared/agents/types';
 
 interface Props {
@@ -17,6 +18,60 @@ interface Props {
 
 /** enum 候補の値を Select 用の一意な文字列キーへ変換する（型を含めて識別する）。 */
 const enumKey = (value: SettingsFieldValue): string => (value === undefined ? '' : JSON.stringify(value));
+
+// 数値として受け付ける表記（符号・小数点・指数を含む 10 進数）。
+const DECIMAL_TEXT = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+
+/** 数値欄の文字列を値にする。空は未設定、数値として読めない文字列は NaN（形式に合わない値として扱われる）。 */
+const parseNumberText = (text: string): number | undefined => {
+    const trimmed = text.trim();
+    if (trimmed === '') return undefined;
+    return DECIMAL_TEXT.test(trimmed) ? Number(trimmed) : Number.NaN;
+};
+
+/** 値を数値欄の文字列にする。有限の数値以外は空にする。 */
+const formatNumberText = (value: SettingsFieldValue): string =>
+    typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
+
+/**
+ * 数値項目の入力欄。入力中の文字列（「0.」「-」など数値として未完成のものを含む）をそのまま表示し、
+ * 入力のたびに数値へ変換した値を onChange へ渡す。value が別の値に置き換えられたときは、その値の表記を表示する。
+ * フォーカスを外すと、有効な数値は標準の表記にそろえ、受け付けない値（形式・範囲）はエラー表示にする。
+ */
+const NumberValueInput: React.FC<{
+    field: SettingsFieldSpec;
+    value: SettingsFieldValue;
+    onChange: (value: SettingsFieldValue) => void;
+}> = ({ field, value, onChange }) => {
+    const [text, setText] = useState(() => formatNumberText(value));
+    // text が表している値。value がこれと異なれば、外から置き換えられたものとして表示を作り直す。
+    const [textValue, setTextValue] = useState<SettingsFieldValue>(value);
+    const [focused, setFocused] = useState(false);
+    if (!Object.is(value, textValue)) {
+        setTextValue(value);
+        setText(formatNumberText(value));
+    }
+    return (
+        <TextField
+            size='small'
+            value={text}
+            error={!focused && settingsValueProblem(field, value) !== null}
+            onChange={event => {
+                const next = parseNumberText(event.target.value);
+                setText(event.target.value);
+                setTextValue(next);
+                onChange(next);
+            }}
+            onFocus={() => setFocused(true)}
+            onBlur={() => {
+                setFocused(false);
+                if (typeof value === 'number' && Number.isFinite(value)) setText(String(value));
+            }}
+            slotProps={{ htmlInput: { inputMode: field.integer ? 'numeric' : 'decimal' } }}
+            sx={{ minWidth: 240 }}
+        />
+    );
+};
 
 /** Shared value cell for editable scalar settings and direct-edit-only structural settings. */
 export const SettingsValueEditor: React.FC<Props> = ({
@@ -162,23 +217,7 @@ export const SettingsValueEditor: React.FC<Props> = ({
     }
 
     if (field.type === 'number') {
-        return (
-            <TextField
-                size='small'
-                type='number'
-                value={typeof value === 'number' ? String(value) : ''}
-                onChange={event => {
-                    if (event.target.value === '') {
-                        onChange(undefined);
-                        return;
-                    }
-                    const next = Number(event.target.value);
-                    onChange(Number.isFinite(next) ? next : undefined);
-                }}
-                slotProps={{ htmlInput: { min: field.min, max: field.max, step: field.integer ? 1 : 'any' } }}
-                sx={{ minWidth: 240 }}
-            />
-        );
+        return <NumberValueInput field={field} value={value} onChange={onChange} />;
     }
 
     return (

@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, type OpenDialogOptions } from 'electron';
-import { createWriteStream, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { basename, dirname, extname, join } from 'path';
+import { createWriteStream, readFileSync } from 'fs';
+import { basename, extname, join } from 'path';
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
 import type {
@@ -12,15 +12,24 @@ import type {
     OSType,
 } from '../../../../shared/agents/types';
 import { parseFrontmatter } from '../../../utils/frontmatter';
-import { applyMtime, fileMtimeMs, zipEntryMtimeMs, zipArchiveOptions } from '../../../utils/fileTime';
+import { fileMtimeMs, zipArchiveOptions } from '../../../utils/fileTime';
 import { revealAssetPath } from './revealAssetPath';
 import { assetArchiveFileName } from './archiveFileName';
+import { extractArchiveEntries, installStaged, writeTextFile } from './stagedInstall';
+import {
+    archiveTopLevelDirs,
+    isSafePathSegment,
+    normalizedArchiveEntries,
+    type NormalizedArchiveEntry,
+} from '../fs/archiveEntryPath';
 import { HomeFs } from '../wsl/HomeFs';
 import { WslDetector } from '../wsl/WslDetector';
 
 interface Options {
     id: string;
     wslTest: string;
+    // native 環境を一覧に出すかの判定。指定した場合は、true を返すときだけ native 環境を一覧に出す。
+    nativeAvailable?: () => Promise<boolean>;
     parents: Record<AssetKind, string>;
     // Agy custom agents are <name>/agent.md. OpenCode custom agents are <name>.md.
     agentLayout: 'directory' | 'file';
@@ -57,8 +66,9 @@ export class MarkdownAssetManager {
         return kind === 'skills' ? 'SKILL.md' : (this.options.agentEntryFile ?? 'agent.md');
     }
 
+    /** パストラバーサル対策: 区切り文字・'.'・'..' を含む名前や、別の場所を指し得る名前を拒否する。 */
     private unsafeName(name: string): boolean {
-        return name.trim().length === 0 || name.includes('/') || name.includes('\\') || name.includes('..');
+        return !isSafePathSegment(name);
     }
 
     private unsafeRelPath(path: string): boolean {
@@ -69,9 +79,10 @@ export class MarkdownAssetManager {
     }
 
     async getEnvironments(): Promise<{ env: AgentEnvironment; label: string }[]> {
-        const result: { env: AgentEnvironment; label: string }[] = [
-            { env: { kind: 'native' }, label: this.nativeLabel() },
-        ];
+        const result: { env: AgentEnvironment; label: string }[] = [];
+        if (!this.options.nativeAvailable || (await this.options.nativeAvailable())) {
+            result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
+        }
         const distros = await this.detector.getDistrosWithTest(this.options.wslTest);
         for (const distro of distros)
             result.push({ env: { kind: 'wsl', distro: distro.distro }, label: distro.distro });
@@ -213,17 +224,20 @@ export class MarkdownAssetManager {
         }
     }
 
-    private safeZipEntries(zip: AdmZip): string[] | null {
-        const entries = zip.getEntries().map(entry => entry.entryName.replace(/\\/g, '/'));
-        return entries.some(path => this.unsafeRelPath(path)) ? null : entries;
+    /** ZIP のエントリを正規化した相対パスと組にして返す（'./' などは取り除く）。不正な名前を含む ZIP は null。 */
+    private safeZipEntries(zip: AdmZip): NormalizedArchiveEntry[] | null {
+        return normalizedArchiveEntries(zip);
     }
 
+    /** 取り込み対象（ディレクトリ型はトップレベルのディレクトリ名、ファイル型は .md の相対パス）。 */
     private zipTargets(zip: AdmZip, kind: AssetKind): string[] {
-        const names = this.safeZipEntries(zip) ?? [];
+        const entries = this.safeZipEntries(zip) ?? [];
         if (this.isDirectoryAsset(kind)) {
-            return Array.from(new Set(names.map(name => name.split('/')[0]).filter(Boolean)));
+            return archiveTopLevelDirs(entries);
         }
-        return names.filter(name => name.toLowerCase().endsWith('.md') && !name.endsWith('/'));
+        return entries
+            .filter(({ path, entry }) => !entry.isDirectory && path.toLowerCase().endsWith('.md'))
+            .map(({ path }) => path);
     }
 
     async inspectUpload(env: AgentEnvironment, kind: AssetKind, window: BrowserWindow | null): Promise<AssetOpResult> {
@@ -279,6 +293,11 @@ export class MarkdownAssetManager {
         return { name, relPath: `${name}/${this.entryFile(kind)}` };
     }
 
+    /**
+     * md 単体を取り込む（ディレクトリ型は <名前>/<エントリファイル>、ファイル型は元のファイル名で配置する）。
+     * 既にある取り込み先（ディレクトリ型はディレクトリ）は overwrite=true のときだけ丸ごと置き換える。
+     * 書き込みに失敗した場合は取り込み前の状態に戻す。
+     */
     async uploadFile(
         env: AgentEnvironment,
         kind: AssetKind,
@@ -288,14 +307,17 @@ export class MarkdownAssetManager {
         const target = this.fileTarget(kind, source);
         if (!target) return { ok: false, message: 'md-no-name' };
         const fs = this.fsFor(env);
-        const rel = `${this.parent(kind)}/${target.relPath}`;
-        if ((await fs.exists(rel)) && !overwrite) return { ok: false, message: 'conflict' };
+        const parent = await fs.resolveRealPath(this.parent(kind));
+        if (parent === null) return { ok: false, message: 'unavailable' };
+        const item = this.isDirectoryAsset(kind) ? target.name : target.relPath;
+        if ((await fs.exists(`${this.parent(kind)}/${item}`)) && !overwrite) return { ok: false, message: 'conflict' };
         // 取り込み元ファイルの更新日時。配置後のファイルへ引き継ぐ（アップロード日にしない）。
         const srcMtimeMs = fileMtimeMs(source);
         try {
-            if (overwrite && this.isDirectoryAsset(kind)) await fs.removeDir(`${this.parent(kind)}/${target.name}`);
-            await fs.writeText(rel, readFileSync(source, 'utf8'));
-            if (srcMtimeMs !== null) await fs.setMtime(rel, srcMtimeMs);
+            const content = readFileSync(source, 'utf8');
+            installStaged(parent, [item], new Set(overwrite ? [item] : []), dir =>
+                writeTextFile(dir, target.relPath, content, srcMtimeMs)
+            );
             return { ok: true, importedCount: 1 };
         } catch (error) {
             console.error(`Failed to upload markdown asset (${JSON.stringify(env)}, ${kind}):`, error);
@@ -303,6 +325,10 @@ export class MarkdownAssetManager {
         }
     }
 
+    /**
+     * ZIP の取り込み対象（zipTargets）だけを取り込む。既にある取り込み対象は overwrite=true のときだけ丸ごと置き換え、
+     * overwrite=false のときは何も変えずに conflict を返す。展開は作業用ディレクトリで行い、失敗した場合は取り込み前の状態に戻す。
+     */
     async upload(env: AgentEnvironment, kind: AssetKind, source: string, overwrite: boolean): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
         const parentRel = this.parent(kind);
@@ -310,7 +336,8 @@ export class MarkdownAssetManager {
         if (parent === null) return { ok: false, message: 'unavailable' };
         try {
             const zip = new AdmZip(source);
-            if (this.safeZipEntries(zip) === null) return { ok: false, message: 'invalid-archive' };
+            const entries = this.safeZipEntries(zip);
+            if (entries === null) return { ok: false, message: 'invalid-archive' };
             const targets = this.zipTargets(zip, kind);
             if (targets.length === 0) return { ok: false, message: 'invalid-archive' };
             const conflicts: string[] = [];
@@ -318,32 +345,11 @@ export class MarkdownAssetManager {
                 if (await fs.exists(`${parentRel}/${target}`)) conflicts.push(target);
             }
             if (conflicts.length > 0 && !overwrite) return { ok: false, message: 'conflict', conflicts };
-            if (overwrite) {
-                for (const target of conflicts) {
-                    if (this.isDirectoryAsset(kind)) await fs.removeDir(`${parentRel}/${target}`);
-                    else await fs.deleteFile(`${parentRel}/${target}`);
-                }
-            }
-            mkdirSync(parent, { recursive: true });
-            const allowed = new Set(this.zipTargets(zip, kind));
-            // ディレクトリの日時はファイル書き込みで変わるため、全ファイル展開後にまとめて適用する。
-            const dirs: { path: string; mtimeMs: number | null }[] = [];
-            for (const entry of zip.getEntries()) {
-                const rel = entry.entryName.replace(/\\/g, '/');
-                const top = this.isDirectoryAsset(kind) ? rel.split('/')[0] : rel;
-                if (!allowed.has(top)) continue;
-                const output = join(parent, rel);
-                if (entry.isDirectory) {
-                    mkdirSync(output, { recursive: true });
-                    dirs.push({ path: output, mtimeMs: zipEntryMtimeMs(entry) });
-                } else {
-                    mkdirSync(dirname(output), { recursive: true });
-                    writeFileSync(output, entry.getData());
-                    // ZIP に記録された更新日時を引き継ぐ（展開日ではなく元の日時を維持する）。
-                    applyMtime(output, zipEntryMtimeMs(entry));
-                }
-            }
-            for (const dir of dirs) applyMtime(dir.path, dir.mtimeMs);
+            const allowed = new Set(targets);
+            const included = entries.filter(({ path }) =>
+                allowed.has(this.isDirectoryAsset(kind) ? path.split('/')[0] : path)
+            );
+            installStaged(parent, targets, new Set(conflicts), dir => extractArchiveEntries(included, dir));
             return { ok: true, importedCount: targets.length };
         } catch (error) {
             console.error(`Failed to upload asset archive (${JSON.stringify(env)}, ${kind}):`, error);

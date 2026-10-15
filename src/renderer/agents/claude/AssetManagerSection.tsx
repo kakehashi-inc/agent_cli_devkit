@@ -26,6 +26,7 @@ import type { AssetEntry, AssetKind, AssetListReport, ClaudeEnvironment } from '
 import { AssetSearchField } from '../../components/assets/AssetSearchField';
 import { filterAssetEntries } from '../../utils/assetSearch';
 import { AssetEntriesTable, computeFitWidth, type FmColumn } from './AssetEntriesTable';
+import type { DetailKey } from '../../components/assets/assetColumns';
 
 // セクションのタブ値: エージェント / スキル（AssetKind）に加え、設定タブを持つ。
 type SectionTab = AssetKind;
@@ -35,20 +36,45 @@ interface Props {
     onNotify: (message: string, severity: 'success' | 'error' | 'warning') => void;
 }
 
+// エージェント一覧の説明列の下に補足表示する frontmatter キー。使えるツールと権限の扱いに絞る。
+const AGENT_DETAIL_KEYS: DetailKey[] = ['tools', 'disallowedTools', { key: 'permissionMode', defaultValue: 'default' }];
+
+// スキル一覧の説明列の下に補足表示する frontmatter キー。
+// 実行モデル・推論レベル・実行形態（fork）・確認なしで許可するツール・呼び出され方に絞る。
+const SKILL_DETAIL_KEYS: DetailKey[] = [
+    'model',
+    'effort',
+    'context',
+    'allowed-tools',
+    { key: 'disable-model-invocation', defaultValue: 'false' },
+    { key: 'user-invocable', defaultValue: 'true' },
+];
+
 const FRONTMATTER_COLUMNS: Record<AssetKind, FmColumn[]> = {
     agents: [
         { key: 'name', fit: true, maxWidthPct: 0.3 },
-        { key: 'model', width: 90 },
-        { key: 'description', flex: true },
+        { key: 'model', width: 90, effortKey: 'effort' },
+        { key: 'description', flex: true, detailKeys: AGENT_DETAIL_KEYS },
     ],
     skills: [
         { key: 'name', fit: true, maxWidthPct: 0.3 },
-        { key: 'description', flex: true },
+        { key: 'description', flex: true, detailKeys: SKILL_DETAIL_KEYS },
     ],
 };
 
 // 公式スキルダイアログの一覧は skills 列構成（name + description）を使う。
 const OFFICIAL_COLUMNS: FmColumn[] = FRONTMATTER_COLUMNS.skills;
+
+/** アップロード失敗のメッセージコードを表示用の i18n キーに変換する。 */
+function uploadErrorKey(message?: string): string {
+    if (message === 'md-no-name') {
+        return 'claude.assetManager.mdNoName';
+    }
+    if (message === 'synced-reserved') {
+        return 'claude.assetManager.syncedReserved';
+    }
+    return 'claude.assetManager.uploadError';
+}
 
 /**
  * 1 環境分の Agent・Skill 管理セクション。
@@ -254,10 +280,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 if (msg.startsWith('kind-block-')) {
                     onNotify(t(`claude.assetManager.kindBlock.${msg.slice('kind-block-'.length)}`), 'error');
                 } else {
-                    onNotify(
-                        t(msg === 'md-no-name' ? 'claude.assetManager.mdNoName' : 'claude.assetManager.uploadError'),
-                        'error'
-                    );
+                    onNotify(t(uploadErrorKey(msg)), 'error');
                 }
                 return;
             }
@@ -318,10 +341,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
             onNotify(t('claude.assetManager.uploadSuccess', { count: result.importedCount ?? 0 }), 'success');
             await load();
         } else {
-            onNotify(
-                t(result.message === 'md-no-name' ? 'claude.assetManager.mdNoName' : 'claude.assetManager.uploadError'),
-                'error'
-            );
+            onNotify(t(uploadErrorKey(result.message)), 'error');
         }
     };
 

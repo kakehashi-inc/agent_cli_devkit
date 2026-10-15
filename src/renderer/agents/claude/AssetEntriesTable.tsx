@@ -16,18 +16,15 @@ import {
 import { Visibility as ViewIcon, Article as FullViewIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import type { AssetEntry } from '@shared/agents/claude/types';
 import { formatCount, formatDateTime, isRecent, relativeTimeParts } from '../../utils/format';
+import {
+    AssetDetails,
+    ColumnValue,
+    EffortLine,
+    resolveColumnValue,
+    type FmColumn,
+} from '../../components/assets/assetColumns';
 
-// frontmatter 列の表示設定（table-layout: fixed と併用）。
-// - fit:    内容に合わせて伸縮し、maxWidth で上限を制限する（name）。上限超過は省略（…）。
-// - width:  固定幅（tools / model）。
-// - flex:   残り幅をすべて使う伸縮列（description。width:auto で貪欲に確保）。
-export interface FmColumn {
-    key: string;
-    width?: number; // 固定幅（px）
-    maxWidthPct?: number; // fit 列の最大幅（ウィンドウ幅に対する割合 0〜1）
-    fit?: boolean; // 内容フィット（maxWidth 上限）
-    flex?: boolean; // 残り幅を使う伸縮列
-}
+export type { FmColumn };
 
 // name（fit 列）の最小幅と、1 文字あたりの概算 px（幅見積り用）。
 const NAME_MIN_WIDTH = 80;
@@ -73,15 +70,15 @@ interface Props {
     columns: FmColumn[];
     fitWidth: number;
     showFileCount: boolean;
-    // 最終更新日時列を表示するか（エージェント / スキルタブで true、公式ダイアログでは false）。
+    // 最終更新日時列を表示するか。
     showLastModified?: boolean;
     checkedKeys: Set<string>;
     onToggle: (relPath: string) => void;
     onToggleAll: () => void;
     onView: (entry: AssetEntry) => void;
-    // OS 標準のファイルマネージャーで対象を表示。本体一覧でのみ指定する。
+    // OS 標準のファイルマネージャーで対象を表示。未指定なら名前横の表示アイコンを出さない。
     onReveal?: (entry: AssetEntry) => void;
-    // 「全体」参照（ファイル内容全体の表示）。未指定なら「全体」ボタンを表示しない（公式ダイアログ用）。
+    // 「全体」参照（ファイル内容全体の表示）。未指定なら「全体」ボタンを表示しない。
     onViewFull?: (entry: AssetEntry) => void;
 }
 
@@ -90,7 +87,7 @@ const LAST_MODIFIED_WIDTH = 140;
 
 /**
  * Agent・Skill / 公式スキルの一覧テーブル。
- * 本体一覧と公式スキルインポートダイアログの両方で同じレイアウトを使うため共通化している。
+ * チェックボックス選択・frontmatter 列・最終更新日時・ファイル数・参照ボタンを 1 行ずつ表示する。
  */
 export const AssetEntriesTable: React.FC<Props> = ({
     entries,
@@ -168,10 +165,7 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                     />
                                 </TableCell>
                                 {columns.map(col => {
-                                    // name 列はディレクトリ名 / ファイル名を基準に、frontmatter があれば優先。
-                                    // frontmatter が未定義（古い main ビルド等）でも落ちないようガードする。
-                                    const fmValue = entry.frontmatter?.[col.key];
-                                    const value = fmValue ?? (col.key === 'name' ? (entry.name ?? '') : '');
+                                    const { value, effort } = resolveColumnValue(entry, col);
                                     // name 列のみ: 親からの相対サブパス（サブディレクトリ）があれば
                                     // 名前の下に控えめ（ミュート）な色で表示してパスを判別できるようにする。
                                     const subPath = col.key === 'name' ? relSubDir(entry.relPath) : '';
@@ -222,9 +216,7 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                                     </Tooltip>
                                                 </Box>
                                             ) : (
-                                                <Tooltip title={value} disableHoverListener={!value}>
-                                                    <Box sx={valueSx}>{value}</Box>
-                                                </Tooltip>
+                                                <ColumnValue value={value} sx={valueSx} />
                                             )}
                                             {subPath && (
                                                 <Tooltip title={subPath}>
@@ -243,6 +235,10 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                                         {subPath}
                                                     </Box>
                                                 </Tooltip>
+                                            )}
+                                            {effort && <EffortLine effort={effort} />}
+                                            {col.detailKeys && (
+                                                <AssetDetails frontmatter={entry.frontmatter} keys={col.detailKeys} />
                                             )}
                                         </TableCell>
                                     );

@@ -71,7 +71,7 @@ export const codexApi: CodexIpcApi = {
             ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.WRITE_RAW, env, rawToml),
     },
     plugin: {
-        getEnvironments: () => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.GET_ENVIRONMENTS, refresh),
         list: (env: CodexEnvironment) => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.LIST, env),
         catalog: (env: CodexEnvironment) => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.CATALOG, env),
         install: (env: CodexEnvironment, id: string) => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.INSTALL, env, id),

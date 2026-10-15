@@ -64,9 +64,9 @@ export type CodexIpcApi = {
         write(env: CodexEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
         writeRaw(env: CodexEnvironment, rawToml: string): Promise<SettingsWriteResult>;
     };
-    // Codex プラグイン管理
+    // Codex プラグイン管理（getEnvironments の refresh=true は CLI と WSL distro を検出し直す要求）
     plugin: {
-        getEnvironments(): Promise<{ env: CodexEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: CodexEnvironment; label: string }[]>;
         list(env: CodexEnvironment): Promise<PluginEnvReport>;
         catalog(env: CodexEnvironment): Promise<PluginCatalogReport>;
         install(env: CodexEnvironment, id: string): Promise<PluginOpResult>;

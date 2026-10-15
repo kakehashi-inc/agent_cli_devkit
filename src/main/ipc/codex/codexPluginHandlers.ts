@@ -7,9 +7,9 @@ import { CodexPluginManager } from '../../services/codex/CodexPluginManager';
  * Codex プラグイン管理の IPC ハンドラを登録する。
  */
 export function registerCodexPluginHandlers(manager: CodexPluginManager): void {
-    // 環境一覧（native + Codex 入り WSL distro）を取得
-    ipcMain.handle(CODEX_PLUGIN_CHANNELS.GET_ENVIRONMENTS, () => {
-        return manager.getEnvironments();
+    // 環境一覧（native + Codex 入り WSL distro）を取得。refresh=true は CLI と WSL distro を検出し直す。
+    ipcMain.handle(CODEX_PLUGIN_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) => {
+        return manager.getEnvironments(refresh === true);
     });
 
     // インストール済みプラグインとマーケットプレイスの一覧

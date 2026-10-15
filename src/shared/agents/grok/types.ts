@@ -2,7 +2,7 @@
 // Grok 固有の型定義
 // ------------------------------------------------------------
 // agent 非依存の共通型（shared/agents/types.ts）を再エクスポートしつつ、
-// Grok 系コードが従来の命名規則で参照できるエイリアスをここに定義する。
+// Grok 系コードが Grok 固有の名前（GrokEnvironment など）で参照するエイリアスをここに定義する。
 // ============================================================
 import type { AgentEnvironment, AgentEnvKind, McpEnvInfo } from '../types';
 

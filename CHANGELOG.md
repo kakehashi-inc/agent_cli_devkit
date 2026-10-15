@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-16
+
+### Added
+
+- Agent and skill lists show each entry's model and reasoning level, plus key settings such as allowed tools and permissions, below the description.
+- Cleanup can remove temporary files that agents leave outside their own folders: Claude Code project working folders and MCP logs (deleted together with the project, and projects that only have temporary files are listed too), Codex temporary files and Windows sandbox logs, Grok temporary files, and old Agy executables left behind by updates. Items that may still be in use are shown but cannot be selected.
+- OpenCode session history can be deleted per session from Cleanup without touching sign-in information. The row appears only when there are sessions to delete, and sessions that were updated in the last 5 minutes, or whose subagent sessions were, are kept.
+- The OpenCode model setting can be edited in the settings table.
+- Uninstalling a Grok plugin lists the other plugins from the same repository that will be removed with it.
+- Settings editors for every agent were updated to the latest CLI references. Added per agent: Claude +39, Codex +19, Agy +6, Grok +141, OpenCode +24.
+
+### Changed
+
+- The OpenCode screens support OpenCode 2 only and find it by its `opencode2` command.
+- Deleting a Claude Code project in Cleanup removes it together with its memory. A project with a running session is kept as it is, including its memory; a session counts as running when Claude Code has registered it or its conversation was updated in the last 10 minutes.
+- Cleanup covers newer data folders for every agent, including old Codex and Grok versions left behind by updates.
+- Re-enabling an OpenCode plugin puts it back where it was in the plugin list.
+- Refresh on the plugin screens and on the Agy and OpenCode screens finds newly installed CLIs and WSL distributions without restarting the app. On Windows itself, restart the app if an installer added a new folder to PATH.
+- Plugin catalogs show 200 entries at a time with a button to show more, and the marketplace filter also lists built-in catalogs.
+
+### Removed
+
+- Removed the Grok "Import official skills" button, because xAI no longer publishes these skills separately; Grok now installs them itself.
+- Removed settings that the CLIs no longer support or that are now edited as part of their parent setting. Removed per agent: Claude −14, Codex −15, Agy −0, Grok −15, OpenCode −60.
+
+### Fixed
+
+- Skill lists no longer show folders that are not skills, such as the "synced" folder Claude Code uses for skills synced from claude.ai and the hidden folder it keeps for skills removed by that sync. Uploading a skill named "synced" is refused so the synced skills cannot be overwritten.
+- Skill and agent descriptions written over several lines or with quotes and escapes display as intended, instead of showing symbols such as ">" or "|-".
+- A failed agent or skill upload no longer removes the existing entries it was replacing, and ZIP archives containing unsafe file names are refused.
+- Deleting folders in Cleanup and when removing agents, skills, or plugins never follows symbolic links or junctions.
+- Number settings are no longer silently rounded or clamped. Values outside the accepted range are highlighted, and saving is refused with a message that shows the accepted range.
+- Settings, MCP, and plugin files that start with a UTF-8 byte order mark are read and edited instead of being treated as invalid.
+- Plugin managers show the real enabled state of Agy and Grok plugins, list only your own Claude Code plugins, and disable Uninstall or the enable toggle, with an explanation, where the CLI cannot do it.
+- Enabling or disabling a Codex plugin works however its entry is written in the configuration file, and leaves the file unchanged if it cannot be edited safely.
+- Commands run in WSL no longer depend on the distribution's default shell and find CLIs installed with bun or an official installer even when their folder is only added to PATH in .bashrc. Every CLI command runs from your home folder, and a command that times out is stopped together with the processes it started.
+
 ## [0.6.2] - 2026-08-13
 
 ### Changed

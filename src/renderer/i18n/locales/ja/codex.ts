@@ -19,7 +19,7 @@ export default {
     cleanup: {
         title: 'Codex クリーンアップ',
         description:
-            '~/.codex 配下の履歴・キャッシュ・一時ファイル・ログ・セッションを削除します。ディスク容量の回収に加え、動作速度の改善や、一時的な内容が残って挙動が不可解になった状態の解消にも役立ちます。設定ファイル・認証情報・エージェント・スキル・状態DB(sqlite)は対象外です。',
+            '~/.codex 配下の履歴・キャッシュ・一時ファイル・ログ・セッションと、更新で残った旧バージョンの Codex 本体を削除します。ディスク容量の回収に加え、動作速度の改善や、一時的な内容が残って挙動が不可解になった状態の解消にも役立ちます。設定ファイル・認証情報・エージェント・スキル・プラグイン・状態DB(sqlite)は対象外です。',
         wslSection: 'WSL: {{distro}}',
         deleteSelected: '選択済みを削除',
         cancel: 'キャンセル',
@@ -27,7 +27,7 @@ export default {
         confirmBody: '選択した {{count}} 件を削除します。元に戻せません。よろしいですか？',
         reclaimable: '{{count}} 件選択中、回収可能 {{size}}',
         noCandidates: 'クリーンアップ対象が見つかりません',
-        inUseWarning:
+        inUseNotice:
             '実行中の Codex セッションがあると一部ディレクトリの削除に失敗することがあります。削除前にセッションを終了してください。',
         deleteSuccess: 'クリーンアップが完了しました',
         deletePartial: '使用中のファイルがあったため、一部をスキップしました',
@@ -38,21 +38,40 @@ export default {
         columnSize: 'サイズ',
         dir: {
             sessions: 'sessions',
+            archivedSessions: 'archived_sessions',
+            history: 'history.jsonl',
+            shellSnapshots: 'shell_snapshots',
             cache: 'cache',
             generatedImages: 'generated_images',
-            tmp: 'tmp',
+            tmpArg0: 'tmp/arg0',
+            pluginsSyncTemp: '.tmp（プラグイン同期の作業フォルダ）',
             log: 'log',
+            sandboxLogs: 'sandbox.*.log（古いサンドボックスログ）',
             modelsCache: 'models_cache.json',
             sessionIndex: 'session_index.jsonl',
+            sandboxBinOld: '.sandbox-bin（旧バージョン）',
+            standaloneOldReleases: 'packages/standalone/releases（旧バージョン）',
         },
         desc: {
             sessions: '過去セッションの記録（会話ログ・ロールアウト）。年ごとに展開して個別削除できます。',
-            cache: 'ダウンロードや各種データの一時キャッシュ。',
+            archivedSessions: 'アーカイブしたセッションの記録。ファイルごとに展開して個別削除できます。',
+            history: '入力したメッセージの履歴（上キーで呼び出す入力履歴）。',
+            shellSnapshots: 'コマンド実行用に取得したシェル環境のスナップショット。必要に応じて再取得されます。',
+            cache: 'ダウンロードや各種データの一時キャッシュ（プラグインカタログ・アプリ情報など）。',
             generatedImages: 'Codex が生成した画像の保存領域。',
-            tmp: '一時作業ファイル。',
+            tmpArg0:
+                'Codex が起動ごとに作る補助コマンド（apply_patch など）の一時フォルダ。フォルダ内のロックファイル（.lock）が保持されていない、終了したセッションのものだけを削除します。実行中のセッションのものは削除しません。',
+            pluginsSyncTemp:
+                'プラグイン同期の途中で残った作業フォルダ（plugins-backup-* / plugins-clone-*）。同期のロック（plugins.sync.lock）が保持されておらず、10 分以上更新されていないものだけを削除します。同期中は削除しません。',
             log: 'ログ出力ディレクトリ。',
+            sandboxLogs:
+                'Windows サンドボックスの日付別ログ（~/.codex/.sandbox と ~/.codex 直下の sandbox.YYYY-MM-DD.log）。ファイル名の日付（UTC）が 30 日以上前のものだけを削除します。',
             modelsCache: '利用可能なモデル情報のキャッシュ。',
             sessionIndex: 'セッション一覧のインデックス。',
+            sandboxBinOld:
+                'Windows サンドボックス用にコピーされた実行ファイルのうち、最新バージョン以外の codex-command-runner と codex.exe のコピー（必要時に再コピーされます）。実行中のもの（書き込みで開けないもの）と、10 分以内に更新された codex.exe は削除しません。',
+            standaloneOldReleases:
+                '更新で残った旧バージョンの Codex 本体（1 バージョンあたり約 400 MB）。使用中・更新予定・最新のバージョンは対象外です。バージョンごとに展開して個別削除できます。',
         },
         other: {
             sectionTitle: 'その他のツール',
@@ -190,7 +209,7 @@ export default {
             },
             modelReasoningEffort: {
                 label: '推論の労力（model_reasoning_effort）',
-                desc: 'none から ultra までのモデル依存の推論レベル。高いほど深く推論し、時間とトークンも増えます。',
+                desc: '選択中のモデルが提示する推論レベル（low / medium / high / xhigh / max / ultra など）。使えるレベルはモデルに依存し、高いほど深く推論して時間とトークンも増えます。',
             },
             modelReasoningSummary: {
                 label: '推論サマリ（model_reasoning_summary）',
@@ -219,10 +238,6 @@ export default {
             webSearch: {
                 label: 'Web検索（web_search）',
                 desc: 'Web 検索の動作モード。disabled=ツールを外す、cached=OpenAI 提供の索引のみ（既定）、indexed=索引で許可された範囲のみ外部取得、live=制限なしのライブ取得。',
-            },
-            personality: {
-                label: 'パーソナリティ（personality）',
-                desc: '応答のコミュニケーションスタイル。',
             },
             allowLoginShell: {
                 label: 'ログインシェル許可（allow_login_shell）',
@@ -270,7 +285,7 @@ export default {
             },
             planModeReasoningEffort: {
                 label: 'プラン時の推論強度（plan_mode_reasoning_effort）',
-                desc: 'プランモード中だけ使用する推論強度です。未設定時は通常の model_reasoning_effort に従います。',
+                desc: 'プランモード中だけ使用する推論強度です。選択中のモデルが対応するレベルを指定します。未設定時はプランモード組み込みの既定値を使います。',
             },
             modelAutoCompactTokenLimit: {
                 label: '自動圧縮トークン上限（model_auto_compact_token_limit）',
@@ -344,10 +359,6 @@ export default {
                 label: '起動時に更新確認（check_for_update_on_startup）',
                 desc: 'Codex 起動時に新しいバージョンを確認します。既定は有効です。',
             },
-            disablePasteBurst: {
-                label: '大量貼り付け検出を無効化（disable_paste_burst）',
-                desc: 'TUI が短時間の大量入力を貼り付けとして扱う検出を無効にします。既定は無効です。',
-            },
             modelInstructionsFile: {
                 label: '基本指示ファイル（model_instructions_file）',
                 desc: 'Codex の組み込み基本指示を置き換える指示ファイルのパスです。',
@@ -378,7 +389,7 @@ export default {
             },
             cliAuthCredentialsStore: {
                 label: 'ログイン資格情報の保存先（cli_auth_credentials_store）',
-                desc: 'CLI ログイン資格情報をファイル、OSキーチェーン、または自動選択で保存します。既定は file です。',
+                desc: 'CLI ログイン資格情報をファイル、OSキーチェーン、自動選択のいずれかで保存するか、保存せず実行中だけ保持（ephemeral）します。既定は file です。',
             },
             chatgptBaseUrl: {
                 label: 'ChatGPTログインURL（chatgpt_base_url）',
@@ -386,7 +397,7 @@ export default {
             },
             forcedChatgptWorkspaceId: {
                 label: '固定ChatGPTワークスペース（forced_chatgpt_workspace_id）',
-                desc: 'ChatGPT ログインを指定したワークスペース ID に制限します。',
+                desc: 'ChatGPT ログインを指定したワークスペース ID（1 つの文字列、または複数 ID の配列）に制限します。',
             },
             forcedLoginMethod: {
                 label: '固定ログイン方式（forced_login_method）',
@@ -417,8 +428,8 @@ export default {
                 desc: '子プロセスへ継承する環境変数をすべて、基本項目のみ、なしから選びます。',
             },
             shellEnvironmentIgnoreDefaultExcludes: {
-                label: '機密変数の既定除外を無視（shell_environment_policy.ignore_default_excludes）',
-                desc: 'KEY、SECRET、TOKEN を含む変数名の既定除外を無効にします。機密情報の露出に注意してください。',
+                label: '機密変数の自動除外を無視（shell_environment_policy.ignore_default_excludes）',
+                desc: 'KEY、SECRET、TOKEN を含む変数を他のフィルタより前に残します。無効にすると、これらの変数名を自動で除外します。',
             },
             shellEnvironmentExperimentalUseProfile: {
                 label: 'シェルプロファイルを使用（shell_environment_policy.experimental_use_profile）',
@@ -442,7 +453,7 @@ export default {
             },
             agentsDefaultSubagentReasoningEffort: {
                 label: 'サブエージェント既定 effort（agents.default_subagent_reasoning_effort）',
-                desc: 'サブエージェントの既定 reasoning effort です。任意の値も入力できます。',
+                desc: '起動するサブエージェントの既定の推論レベルです。起動時に明示した値が優先されます。',
             },
             featuresGoals: {
                 label: 'ゴール機能（features.goals）',
@@ -488,10 +499,6 @@ export default {
                 label: 'マルチエージェント（features.multi_agent）',
                 desc: 'サブエージェントの生成・指示・待機などのマルチエージェント機能を有効にします。既定は有効です。',
             },
-            featuresPersonality: {
-                label: 'パーソナリティ機能（features.personality）',
-                desc: 'personality 設定とセッション内の応答スタイル切り替えを有効にします。既定は有効です。',
-            },
             featuresRemotePlugin: {
                 label: 'リモートプラグイン（features.remote_plugin）',
                 desc: 'リモート配布される Codex プラグインの取得と利用を有効にします。既定は有効です。',
@@ -506,7 +513,7 @@ export default {
             },
             featuresUnifiedExec: {
                 label: '統合実行セッション（features.unified_exec）',
-                desc: 'コマンド実行と標準入力の継続操作を統合した実行基盤を有効にします。安定機能で既定は無効です。',
+                desc: '標準入力の継続操作を含む再開可能なコマンド実行を使います。安定機能で全プラットフォームで有効になり、無効にする指定は無視されます。',
             },
             featuresApps: {
                 label: 'アプリコネクタ（features.apps）',
@@ -564,10 +571,6 @@ export default {
                 label: '端末タイトル（tui.terminal_title）',
                 desc: '端末ウィンドウまたはタブのタイトルへ表示する項目 ID を順番に指定します。',
             },
-            tuiKeymap: {
-                label: 'TUIキー割り当て（tui.keymap）',
-                desc: 'global、composer、chat などの文脈ごとに TUI 操作のキー割り当てを上書きします。',
-            },
             tuiResumeCwd: {
                 label: '再開時の作業ディレクトリ（tui.resume_cwd）',
                 desc: 'セッションの再開・フォーク時に使う作業ディレクトリ。current=現在のディレクトリ、session=セッションに保存されたディレクトリ。未設定なら食い違ったときに確認します。',
@@ -580,10 +583,6 @@ export default {
                 label: 'プロジェクトルート目印（project_root_markers）',
                 desc: '親ディレクトリを探索してプロジェクトルートを決めるときに使用するファイル名の配列です。',
             },
-            shellEnvironmentExclude: {
-                label: '環境変数除外パターン（shell_environment_policy.exclude）',
-                desc: '子プロセスへ継承する環境変数から除外する、大文字小文字を区別しない glob パターンの配列です。',
-            },
             shellEnvironmentFilters: {
                 label: '環境変数フィルター（shell_environment_policy.filters）',
                 desc: '環境変数名のパターンごとに include（許可リスト化）と exclude を指定するマップです。',
@@ -591,10 +590,6 @@ export default {
             shellEnvironmentSet: {
                 label: '環境変数上書き（shell_environment_policy.set）',
                 desc: '子プロセスへ渡す環境変数を明示的に追加または上書きするキーと値のマップです。',
-            },
-            shellEnvironmentIncludeOnly: {
-                label: '環境変数許可リスト（shell_environment_policy.include_only）',
-                desc: '空でない場合に、子プロセスへ残す環境変数名を限定するパターンの配列です。',
             },
             projects: {
                 label: 'プロジェクト信頼設定（projects）',
@@ -632,13 +627,13 @@ export default {
                 label: 'Web検索ツール（tools.web_search）',
                 desc: 'Web 検索ツールの有効化と、検索コンテキストサイズ・許可ドメイン・おおよその位置情報の設定です。',
             },
-            featuresCodeModeDirectOnlyToolNamespaces: {
-                label: 'コードモード直接呼び出し限定（features.code_mode.direct_only_tool_namespaces）',
-                desc: 'code mode が直接呼び出しのみ許可するツール名前空間の一覧です。',
+            featuresCodeMode: {
+                label: 'コードモード（features.code_mode）',
+                desc: 'MCP ツールをコード経由で呼び出すコードモードの設定です。true / false で有効・無効を指定するか、テーブルで enabled と、除外するツール名前空間（excluded_tool_namespaces）、直接呼び出しに限るツール名前空間（direct_only_tool_namespaces）などを指定します。',
             },
-            featuresCodeModeExcludedToolNamespaces: {
-                label: 'コードモード除外名前空間（features.code_mode.excluded_tool_namespaces）',
-                desc: 'code mode から除外するツール名前空間の一覧です。',
+            featuresRolloutBudget: {
+                label: 'ロールアウト予算（features.rollout_budget）',
+                desc: 'セッションのトークン予算を管理するロールアウト予算機能の設定です。true / false で有効・無効を指定するか、テーブルで enabled と、合計トークン数の上限（limit_tokens、1 以上）、予算計算でトークンに掛ける重み（prefill_token_weight / sampling_token_weight）などを指定します。',
             },
             computerUseWindowsAllowedAppIds: {
                 label: 'Computer Use 許可アプリ（computer_use.windows.always_allowed_app_ids）',
@@ -653,12 +648,8 @@ export default {
                 desc: '自動レビューの挙動を指示する Markdown テキストです。レビュー時の観点やルールを記述します。',
             },
             windowsSandbox: {
-                label: 'Windowsサンドボックス権限（windows.sandbox）',
-                desc: 'Windows のサンドボックス実行を昇格なし（unelevated）または昇格あり（elevated）で行うかを選びます。',
-            },
-            windowsSandboxPrivateDesktop: {
-                label: 'Windowsプライベートデスクトップ（windows.sandbox_private_desktop）',
-                desc: 'Windows サンドボックスを分離したプライベートデスクトップ上で実行します。',
+                label: 'Windowsサンドボックス方式（windows.sandbox）',
+                desc: 'Windows ネイティブサンドボックスの実装を MXC（mxc）、昇格あり（elevated）、昇格なし（unelevated）から選びます。mxc を明示すると、MXC を使えない環境では実行に失敗します。',
             },
             tuiRawOutputMode: {
                 label: 'TUI生出力モード（tui.raw_output_mode）',
@@ -694,15 +685,15 @@ export default {
             },
             otelMetricsExporter: {
                 label: 'メトリクスエクスポータ（otel.metrics_exporter）',
-                desc: 'メトリクスの送信先を none、statsig、OTLP/HTTP、OTLP/gRPC から選びます。既定は statsig です。',
+                desc: 'メトリクスの送信先。none、statsig（既定）、または OTLP/HTTP・OTLP/gRPC の送信先エンドポイントを指定します。analytics.enabled を無効にすると送信されません。',
             },
             otelTraceExporter: {
                 label: 'トレースエクスポータ（otel.trace_exporter）',
-                desc: 'トレースの送信先を none、OTLP/HTTP、OTLP/gRPC から選びます。',
+                desc: 'トレースの送信先。none、または OTLP/HTTP・OTLP/gRPC の送信先エンドポイントとヘッダーを指定します。',
             },
             otelExporter: {
                 label: 'ログエクスポータ（otel.exporter）',
-                desc: 'ログイベントの送信先を none、OTLP/HTTP、OTLP/gRPC から選びます。',
+                desc: 'ログイベントの送信先。none、または OTLP/HTTP・OTLP/gRPC の送信先エンドポイントとヘッダーを指定します。',
             },
             otelLogUserPrompt: {
                 label: '生プロンプトを送出（otel.log_user_prompt）',
@@ -732,30 +723,6 @@ export default {
                 label: 'メモリ抽出の待機時間（memories.min_rollout_idle_hours）',
                 desc: 'ロールアウトをメモリ抽出の対象にするまでの最小アイドル時間です。既定は6、範囲は1～48時間です。',
             },
-            featuresCodeModeEnabled: {
-                label: 'コードモード（features.code_mode.enabled）',
-                desc: 'MCP ツールをコード経由で呼び出すコードモードを有効にします。既定は無効です。',
-            },
-            featuresRolloutBudgetEnabled: {
-                label: 'ロールアウト予算（features.rollout_budget.enabled）',
-                desc: 'セッションのトークン予算を管理するロールアウト予算機能を有効にします。既定は無効です。',
-            },
-            featuresRolloutBudgetLimitTokens: {
-                label: 'ロールアウト予算の上限（features.rollout_budget.limit_tokens）',
-                desc: 'ロールアウト予算として許容する合計トークン数の上限です。',
-            },
-            featuresRolloutBudgetPrefillTokenWeight: {
-                label: 'プレフィルトークン係数（features.rollout_budget.prefill_token_weight）',
-                desc: '予算計算でプレフィル（入力）トークンに掛ける重みです。既定は1です。',
-            },
-            featuresRolloutBudgetSamplingTokenWeight: {
-                label: 'サンプリングトークン係数（features.rollout_budget.sampling_token_weight）',
-                desc: '予算計算でサンプリング（生成）トークンに掛ける重みです。既定は1です。',
-            },
-            featuresRolloutBudgetReminderIntervalTokens: {
-                label: '予算リマインダ間隔（features.rollout_budget.reminder_interval_tokens）',
-                desc: '残り予算を通知するトークン消費の間隔です。',
-            },
             appsDefaultEnabled: {
                 label: 'アプリ既定の有効化（apps._default.enabled）',
                 desc: '個別設定のないアプリに適用する既定の有効状態です。既定は有効です。',
@@ -775,6 +742,74 @@ export default {
             appsDefaultApprovalsReviewer: {
                 label: 'アプリ既定のレビュアー（apps._default.approvals_reviewer）',
                 desc: '個別設定のないアプリで、ツール承認の既定レビュアーを指定します。',
+            },
+            autoReviewExtraPolicy: {
+                label: '自動レビュー追加方針（auto_review.extra_policy）',
+                desc: 'auto_review.policy に加えて自動レビューへ渡す、ローカルの追加 Markdown 方針です。',
+            },
+            tuiAutoRecap: {
+                label: '自動要約（tui.auto_recap）',
+                desc: '端末が非フォーカスの間に、会話の要約を自動で作成します。',
+            },
+            tuiDisablePasteBurst: {
+                label: '大量貼り付け検出を無効化（tui.disable_paste_burst）',
+                desc: 'TUI が短時間の大量入力を貼り付けとして扱う検出を無効にします。',
+            },
+            tuiShowServerVersionNotice: {
+                label: 'サーバーバージョン差の通知（tui.show_server_version_notice）',
+                desc: '接続先の app-server とバージョンが異なるときに案内を表示します。',
+            },
+            mcpOptionalStartupGraceMs: {
+                label: '任意MCPの起動待ち時間（mcp_optional_startup_grace_ms）',
+                desc: '初期ツール一覧を作るときに、必須でない MCP サーバーの起動を待つ共通の時間（ミリ秒）です。0 にすると各サーバーの startup_timeout_sec まで待ちます。',
+            },
+            featuresUltrafastMode: {
+                label: '超高速モード（features.ultrafast_mode）',
+                desc: '対応モデルの Ultrafast モードを利用可能にします。features.fast_mode とは独立して切り替わります。',
+            },
+            featuresPreferMxc: {
+                label: 'MXC優先（features.prefer_mxc）',
+                desc: 'Windows のローカル実行で、利用可能かつポリシーで許可されていれば MXC サンドボックスを優先します。使えない場合は windows.sandbox の方式を使います。',
+            },
+            skillsMaxContextTokens: {
+                label: 'スキル一覧のトークン上限（skills.max_context_tokens）',
+                desc: '利用可能なスキル一覧に使うトークン数の上限です。未設定時はモデルのコンテキストウィンドウの 2% です。',
+            },
+            browserUseAllowHistoryAccess: {
+                label: 'ブラウザ履歴へのアクセス（browser_use.allow_history_access）',
+                desc: 'Browser Use によるブラウザ履歴へのアクセスを許可します。無効にすると履歴へのアクセスを制限します。',
+            },
+            browserUseDefaultOriginPolicy: {
+                label: 'ブラウザの既定オリジン制限（browser_use.default_origin_policy）',
+                desc: '個別指定のないサイトに適用する、アクセス・アップロード・ダウンロード・CDP フルアクセスの許可・拒否です。',
+            },
+            browserUseOrigins: {
+                label: 'ブラウザのオリジン別制限（browser_use.origins.<origin>）',
+                desc: 'サイト（オリジン）ごとに、アクセス・アップロード・ダウンロード・CDP フルアクセスの許可・拒否を指定します。',
+            },
+            computerUseDefaultAppAccess: {
+                label: 'Computer Use の既定アプリアクセス（computer_use.default_app_access）',
+                desc: '個別指定のないネイティブアプリを Computer Use が操作することを許可するか拒否するかを選びます。',
+            },
+            computerUseMacosBundleIds: {
+                label: 'Computer Use の macOS アプリ（computer_use.macos.bundle_ids）',
+                desc: 'macOS アプリのバンドル ID ごとに、Computer Use の操作を許可するか拒否するかを指定します。',
+            },
+            computerUseWindowsAumids: {
+                label: 'Computer Use の Windows パッケージアプリ（computer_use.windows.aumids）',
+                desc: 'パッケージ化された Windows アプリの AUMID ごとに、Computer Use の操作を許可するか拒否するかを指定します。',
+            },
+            computerUseWindowsExes: {
+                label: 'Computer Use の Windows 実行ファイル（computer_use.windows.exes）',
+                desc: '発行元・製品名（任意で実行ファイル名）で Windows の実行ファイルを指定し、Computer Use の操作を許可するか拒否するかを決めます。',
+            },
+            marketplaces: {
+                label: 'プラグインマーケットプレイス（marketplaces.<name>）',
+                desc: '追加したプラグインマーケットプレイスの取得元（Git またはローカル）、ref、スパースチェックアウトのパスです。',
+            },
+            pluginsEnabled: {
+                label: 'プラグインの有効状態（plugins.<plugin>.enabled）',
+                desc: 'ローカルマーケットプレイスのプラグインを「プラグイン名@マーケットプレイス名」ごとに有効化・無効化します。',
             },
         },
     },

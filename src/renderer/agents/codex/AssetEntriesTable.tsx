@@ -16,18 +16,15 @@ import {
 import { Visibility as ViewIcon, Article as FullViewIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import type { AssetEntry } from '@shared/agents/codex/types';
 import { formatCount, formatDateTime, isRecent, relativeTimeParts } from '../../utils/format';
+import {
+    AssetDetails,
+    ColumnValue,
+    EffortLine,
+    resolveColumnValue,
+    type FmColumn,
+} from '../../components/assets/assetColumns';
 
-// frontmatter 列の表示設定（table-layout: fixed と併用）。
-// - fit:    内容に合わせて伸縮し、maxWidth で上限を制限する（name）。上限超過は省略（…）。
-// - width:  固定幅（model）。
-// - flex:   残り幅をすべて使う伸縮列（description。width:auto で貪欲に確保）。
-export interface FmColumn {
-    key: string;
-    width?: number;
-    maxWidthPct?: number;
-    fit?: boolean;
-    flex?: boolean;
-}
+export type { FmColumn };
 
 const NAME_MIN_WIDTH = 80;
 const NAME_CHAR_PX = 8;
@@ -74,9 +71,9 @@ interface Props {
     onToggle: (relPath: string) => void;
     onToggleAll: () => void;
     onView: (entry: AssetEntry) => void;
-    // OS 標準のファイルマネージャーで対象を表示。本体一覧でのみ指定する。
+    // OS 標準のファイルマネージャーで対象を表示。未指定なら名前横の表示アイコンを出さない。
     onReveal?: (entry: AssetEntry) => void;
-    // 「全体」参照（ファイル内容全体の表示）。未指定なら「全体」ボタンを表示しない（公式ダイアログ用）。
+    // 「全体」参照（ファイル内容全体の表示）。未指定なら「全体」ボタンを表示しない。
     onViewFull?: (entry: AssetEntry) => void;
 }
 
@@ -161,8 +158,7 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                     />
                                 </TableCell>
                                 {columns.map(col => {
-                                    const fmValue = entry.frontmatter?.[col.key];
-                                    const value = fmValue ?? (col.key === 'name' ? (entry.name ?? '') : '');
+                                    const { value, effort } = resolveColumnValue(entry, col);
                                     const subPath = col.key === 'name' ? relSubDir(entry.relPath) : '';
                                     const valueSx = col.fit
                                         ? {
@@ -209,9 +205,7 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                                     </Tooltip>
                                                 </Box>
                                             ) : (
-                                                <Tooltip title={value} disableHoverListener={!value}>
-                                                    <Box sx={valueSx}>{value}</Box>
-                                                </Tooltip>
+                                                <ColumnValue value={value} sx={valueSx} />
                                             )}
                                             {subPath && (
                                                 <Tooltip title={subPath}>
@@ -230,6 +224,10 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                                         {subPath}
                                                     </Box>
                                                 </Tooltip>
+                                            )}
+                                            {effort && <EffortLine effort={effort} />}
+                                            {col.detailKeys && (
+                                                <AssetDetails frontmatter={entry.frontmatter} keys={col.detailKeys} />
                                             )}
                                         </TableCell>
                                     );

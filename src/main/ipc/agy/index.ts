@@ -20,8 +20,19 @@ export function registerAgyIpcHandlers(
     runner: AgentCliRunner,
     getMainWindow: () => BrowserWindow | null
 ): void {
+    // refresh が true のときは WSL distro の検出結果を破棄してから環境を列挙する
+    // （WSL への Agy の導入・削除をアプリの再起動なしで反映するため）。
+    const listEnvironments = <T>(refresh: unknown, list: () => Promise<T>): Promise<T> => {
+        if (refresh === true) {
+            detector.invalidate();
+        }
+        return list();
+    };
+
     const mcp = new AgyMcpManager(detector);
-    ipcMain.handle(AGY_MCP_CHANNELS.GET_ENVIRONMENTS, () => mcp.getEnvironments());
+    ipcMain.handle(AGY_MCP_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) =>
+        listEnvironments(refresh, () => mcp.getEnvironments())
+    );
     ipcMain.handle(AGY_MCP_CHANNELS.GET_MCP_SERVERS, (_, env: AgyEnvironment) => mcp.getMCPServers(env));
     ipcMain.handle(AGY_MCP_CHANNELS.ENABLE, (_, env: AgyEnvironment, name: string) => mcp.enableMCPServer(env, name));
     ipcMain.handle(AGY_MCP_CHANNELS.DISABLE, (_, env: AgyEnvironment, name: string) => mcp.disableMCPServer(env, name));
@@ -33,7 +44,9 @@ export function registerAgyIpcHandlers(
     );
 
     const asset = new AgyAssetManager(detector);
-    ipcMain.handle(AGY_ASSET_CHANNELS.GET_ENVIRONMENTS, () => asset.getEnvironments());
+    ipcMain.handle(AGY_ASSET_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) =>
+        listEnvironments(refresh, () => asset.getEnvironments())
+    );
     ipcMain.handle(AGY_ASSET_CHANNELS.LIST, (_, env: AgyEnvironment, kind: AssetKind) => asset.list(env, kind));
     ipcMain.handle(AGY_ASSET_CHANNELS.READ_ENTRY, (_, env: AgyEnvironment, kind: AssetKind, rel: string) =>
         asset.readEntry(env, kind, rel)
@@ -62,14 +75,18 @@ export function registerAgyIpcHandlers(
     );
 
     const cleanup = new AgyCleanupManager(detector);
-    ipcMain.handle(AGY_CLEANUP_CHANNELS.GET_ENVIRONMENTS, () => cleanup.getEnvironments());
+    ipcMain.handle(AGY_CLEANUP_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) =>
+        listEnvironments(refresh, () => cleanup.getEnvironments())
+    );
     ipcMain.handle(AGY_CLEANUP_CHANNELS.SCAN, (_, env: AgyEnvironment) => cleanup.scan(env));
     ipcMain.handle(AGY_CLEANUP_CHANNELS.DELETE, (_, env: AgyEnvironment, selection: CleanupSelection) =>
         cleanup.deleteSelected(env, selection)
     );
 
     const settings = new AgySettingsManager(detector);
-    ipcMain.handle(AGY_SETTINGS_CHANNELS.GET_ENVIRONMENTS, () => settings.getEnvironments());
+    ipcMain.handle(AGY_SETTINGS_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) =>
+        listEnvironments(refresh, () => settings.getEnvironments())
+    );
     ipcMain.handle(AGY_SETTINGS_CHANNELS.READ, (_, env: AgyEnvironment) => settings.read(env));
     ipcMain.handle(AGY_SETTINGS_CHANNELS.WRITE, (_, env: AgyEnvironment, values: SettingsValues) =>
         settings.write(env, values)
@@ -79,7 +96,10 @@ export function registerAgyIpcHandlers(
     );
 
     const plugin = new AgyPluginManager(detector, runner);
-    ipcMain.handle(AGY_PLUGIN_CHANNELS.GET_ENVIRONMENTS, () => plugin.getEnvironments());
+    // refresh=true は CLI と WSL distro の検出結果を破棄してから環境を列挙する。
+    ipcMain.handle(AGY_PLUGIN_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) =>
+        plugin.getEnvironments(refresh === true)
+    );
     ipcMain.handle(AGY_PLUGIN_CHANNELS.LIST, (_, env: AgyEnvironment) => plugin.list(env));
     ipcMain.handle(AGY_PLUGIN_CHANNELS.CATALOG, (_, env: AgyEnvironment) => plugin.catalog(env));
     ipcMain.handle(AGY_PLUGIN_CHANNELS.INSTALL, (_, env: AgyEnvironment, id: string) => plugin.install(env, id));

@@ -320,10 +320,10 @@ export const McpManagerView: React.FC<Props> = ({ agentId, api }) => {
         severity: 'success',
     });
 
-    const load = async () => {
+    const load = async (refresh = false) => {
         setLoading(true);
         try {
-            setEnvironments(await api.getEnvironments());
+            setEnvironments(await api.getEnvironments(refresh));
         } catch (error) {
             console.error('Failed to load MCP environments:', error);
         } finally {
@@ -358,11 +358,21 @@ export const McpManagerView: React.FC<Props> = ({ agentId, api }) => {
                 <Typography variant='h4' component='h1'>
                     {t(`${agentId}.mcp.title`)}
                 </Typography>
-                <Button variant='outlined' startIcon={<RefreshIcon />} onClick={load} sx={{ textTransform: 'none' }}>
+                <Button
+                    variant='outlined'
+                    startIcon={<RefreshIcon />}
+                    onClick={() => void load(true)}
+                    sx={{ textTransform: 'none' }}
+                >
                     {t('common.refresh')}
                 </Button>
             </Box>
 
+            {environments.length === 0 && (
+                <Alert severity='info' sx={{ mb: 2 }}>
+                    {t(`${agentId}.noEnvironment`)}
+                </Alert>
+            )}
             {nativeEnvs.map(info => (
                 <Box key={envId(info.env)}>
                     <Typography variant='h6' sx={{ mb: 1 }}>

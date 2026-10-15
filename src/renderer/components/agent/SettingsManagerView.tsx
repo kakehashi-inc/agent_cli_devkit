@@ -28,7 +28,9 @@ import {
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import type { AgentEnvironment, SettingsFieldSpec, SettingsFieldValue, SettingsValues } from '@shared/agents/types';
+import { findInvalidSettingsValue } from '@shared/agents/settingsValue';
 import { SettingsValueEditor } from '../settings/SettingsValueEditor';
+import { settingsValueProblemMessage } from '../settings/settingsValueMessage';
 import { AssetSearchField } from '../assets/AssetSearchField';
 import { envId } from '../../utils/format';
 import { filterSettingsFields } from '../../utils/settingsSearch';
@@ -41,9 +43,9 @@ interface Props {
 
 /**
  * 1 環境分の設定編集セクション。
- * 既存 agent（Grok 等）と同じデザイン: 折りたたみ可能なグループ見出し行を持つ 1 枚のテーブル、
- * SettingsValueEditor による値編集（directEdit 項目はテキスト表示のみ）、
- * テーブル下の 保存 / キャンセル（左）と 直接編集（右端）。
+ * 折りたたみ可能なグループ見出し行を持つ 1 枚のテーブル、SettingsValueEditor による値編集
+ * （directEdit 項目はテキスト表示のみ）、テーブル下の 保存 / キャンセル（左）と 直接編集（右端）で構成する。
+ * 設定ファイル全体への注記があれば、テーブルの上に表示する。
  */
 const SettingsSection: React.FC<{
     agentId: string;
@@ -59,6 +61,8 @@ const SettingsSection: React.FC<{
     const [fields, setFields] = useState<SettingsFieldSpec[]>([]);
     const [editValues, setEditValues] = useState<Record<string, SettingsFieldValue>>({});
     const [originalValues, setOriginalValues] = useState<Record<string, SettingsFieldValue>>({});
+    const [notices, setNotices] = useState<Record<string, string>>({});
+    const [fileNotice, setFileNotice] = useState<string | undefined>(undefined);
 
     const [rawOpen, setRawOpen] = useState(false);
     const [rawText, setRawText] = useState('');
@@ -134,6 +138,8 @@ const SettingsSection: React.FC<{
             }
             setEditValues(next);
             setOriginalValues(next);
+            setNotices(result.notices ?? {});
+            setFileNotice(result.fileNotice);
         } catch (error) {
             console.error('Failed to read settings:', error);
             notify(t(`${agentId}.settings.readError`), 'error');
@@ -157,9 +163,23 @@ const SettingsSection: React.FC<{
         );
 
     const handleSave = async () => {
+        const values = collectValues();
+        const invalid = findInvalidSettingsValue(fields, values);
+        if (invalid) {
+            notify(
+                settingsValueProblemMessage(
+                    t,
+                    invalid.field,
+                    invalid.problem,
+                    t(`${agentId}.settings.field.${invalid.field.key}.label`)
+                ),
+                'error'
+            );
+            return;
+        }
         setBusy(true);
         try {
-            const result = await api.write(env, collectValues());
+            const result = await api.write(env, values);
             if (result.ok) {
                 notify(t(`${agentId}.settings.saveSuccess`), 'success');
                 await load();
@@ -237,6 +257,11 @@ const SettingsSection: React.FC<{
 
     return (
         <Box>
+            {fileNotice && (
+                <Alert severity='info' sx={{ mb: 2 }}>
+                    {t(`${agentId}.settings.${fileNotice}`)}
+                </Alert>
+            )}
             <AssetSearchField value={searchQuery} onChange={setSearchQuery} label={t('common.settingsSearchLabel')} />
 
             {searching && groupedFields.length === 0 ? (
@@ -312,6 +337,15 @@ const SettingsSection: React.FC<{
                                                             }))}
                                                             onChange={value => setValue(f.key, value)}
                                                         />
+                                                        {notices[f.key] && (
+                                                            <Typography
+                                                                variant='caption'
+                                                                color='text.secondary'
+                                                                sx={{ display: 'block', mt: 0.5 }}
+                                                            >
+                                                                {t(`${agentId}.settings.${notices[f.key]}`)}
+                                                            </Typography>
+                                                        )}
                                                     </TableCell>
                                                 </TableRow>
                                             ))}
@@ -410,10 +444,10 @@ export const SettingsManagerView: React.FC<Props> = ({ agentId, api }) => {
         severity: 'success' | 'error' | 'warning';
     }>({ open: false, message: '', severity: 'success' });
 
-    const load = async () => {
+    const load = async (refresh = false) => {
         setLoading(true);
         try {
-            setEnvironments(await api.getEnvironments());
+            setEnvironments(await api.getEnvironments(refresh));
             setReload(value => value + 1);
         } catch (error) {
             console.error('Failed to load settings environments:', error);
@@ -455,13 +489,18 @@ export const SettingsManagerView: React.FC<Props> = ({ agentId, api }) => {
                 <Button
                     variant='outlined'
                     startIcon={<RefreshIcon />}
-                    onClick={load}
+                    onClick={() => void load(true)}
                     sx={{ textTransform: 'none', flexShrink: 0 }}
                 >
                     {t('common.refresh')}
                 </Button>
             </Box>
 
+            {environments.length === 0 && (
+                <Alert severity='info' sx={{ mb: 2 }}>
+                    {t(`${agentId}.noEnvironment`)}
+                </Alert>
+            )}
             {nativeEnvs.map(item => (
                 <Box key={`${envId(item.env)}-${reload}`} sx={{ mb: 4 }}>
                     <Typography variant='h6' sx={{ mb: 1 }}>

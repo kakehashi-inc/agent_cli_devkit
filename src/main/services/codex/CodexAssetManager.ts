@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog } from 'electron';
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { createWriteStream, existsSync, readdirSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
-import { basename, dirname, extname, join } from 'path';
+import { basename, extname, join } from 'path';
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
 import { parse } from 'smol-toml';
@@ -26,8 +26,15 @@ import { WslDetector } from '../common/wsl/WslDetector';
 import { GitRunner } from '../common/git/GitRunner';
 import { revealAssetPath } from '../common/assets/revealAssetPath';
 import { assetArchiveFileName } from '../common/assets/archiveFileName';
-import { parseFrontmatter } from '../../utils/frontmatter';
-import { applyMtime, fileMtimeMs, zipEntryMtimeMs, zipArchiveOptions } from '../../utils/fileTime';
+import { extractArchiveEntries, installStaged, writeTextFile } from '../common/assets/stagedInstall';
+import {
+    archiveTopLevelDirs,
+    archiveTopLevelNames,
+    isSafePathSegment,
+    normalizedArchiveEntries,
+} from '../common/fs/archiveEntryPath';
+import { parseFrontmatter, parseYamlScalars } from '../../utils/frontmatter';
+import { fileMtimeMs, zipArchiveOptions } from '../../utils/fileTime';
 import { recursiveDirStats } from '../../utils/fsSize';
 
 // agents/ サブディレクトリを再帰探索する深さの上限（暴走防止）。
@@ -76,9 +83,19 @@ export class CodexAssetManager {
         return ASSET_PARENT_REL[kind];
     }
 
-    /** パストラバーサル対策: 区切り文字や .. を含む名前を拒否する。 */
+    /** パストラバーサル対策: 区切り文字・'.'・'..' を含む名前や、別の場所を指し得る名前を拒否する。 */
     private isUnsafeName(name: string): boolean {
-        return name.includes('/') || name.includes('\\') || name.includes('..') || name.trim().length === 0;
+        return !isSafePathSegment(name);
+    }
+
+    /** parentRel 直下の dirs のいずれかがリンク（シンボリックリンク・ジャンクション）か。 */
+    private async anyLinkedDir(fs: HomeFs, parentRel: string, dirs: string[]): Promise<boolean> {
+        for (const dir of dirs) {
+            if (await fs.isLink(`${parentRel}/${dir}`)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 相対パス（区切りは '/'）が安全か。各セグメントを isUnsafeName で検証する。 */
@@ -125,7 +142,10 @@ export class CodexAssetManager {
         return { env, label, kind, available: true, entries };
     }
 
-    /** skills/: 直下サブディレクトリを 1 件とし、<skill>/SKILL.md の frontmatter を読む。 */
+    /**
+     * skills/: 直下サブディレクトリを 1 件とし、<skill>/SKILL.md の frontmatter を読む。
+     * <skill>/agents/openai.yaml があれば、その呼び出しポリシー（policy.*）もメタへ加える。
+     */
     private async listSkills(fs: HomeFs, parentRel: string): Promise<AssetEntry[]> {
         const entries: AssetEntry[] = [];
         const dirs = await fs.listDirs(parentRel);
@@ -134,16 +154,21 @@ export class CodexAssetManager {
                 continue;
             }
             const dirRel = `${parentRel}/${name}`;
+            const md = await fs.readText(`${dirRel}/SKILL.md`);
+            // SKILL.md を持たない隠しディレクトリ（.trash/ など）はスキルではない。
+            if (md === null && name.startsWith('.')) {
+                continue;
+            }
             // skills はファイル数のみ表示する（サイズは取得・保持しない）。
             const stats = await fs.dirStats(dirRel);
-            const md = await fs.readText(`${dirRel}/SKILL.md`);
             const fm = parseFrontmatter(md);
+            const policy = this.parseSkillPolicy(await fs.readText(`${dirRel}/agents/openai.yaml`));
             entries.push({
                 name,
                 relPath: name,
                 isFile: false,
                 fileCount: stats.fileCount,
-                frontmatter: fm?.fields ?? {},
+                frontmatter: { ...(fm?.fields ?? {}), ...policy },
                 frontmatterRaw: fm?.raw ?? null,
                 // フォルダ単位: 配下ファイルの最終更新日時の最大値。
                 mtimeMs: stats.mtimeMs,
@@ -193,7 +218,18 @@ export class CodexAssetManager {
         return entries;
     }
 
-    /** エージェント .toml のテキストからメタフィールドを抽出する（欠落キーは入れない）。 */
+    /** agents/openai.yaml のテキストから policy.* のスカラー値だけを抽出する。 */
+    private parseSkillPolicy(raw: string | null): Record<string, string> {
+        const policy: Record<string, string> = {};
+        for (const [key, value] of Object.entries(parseYamlScalars(raw))) {
+            if (key.startsWith('policy.')) {
+                policy[key] = value;
+            }
+        }
+        return policy;
+    }
+
+    /** エージェント .toml のテキストからメタフィールドと無効化した機能（features）を抽出する（欠落キーは入れない）。 */
     private parseAgentMeta(raw: string | null): Record<string, string> {
         if (!raw) {
             return {};
@@ -213,6 +249,24 @@ export class CodexAssetManager {
             const value = obj[key];
             if (value !== undefined && value !== null && typeof value !== 'object') {
                 meta[key] = String(value);
+            }
+        }
+        // [features] で無効にした機能（`機能名 = false`、またはテーブル形式の `[features.機能名]` で
+        // `enabled = false`）を「機能名=false」のカンマ区切りでまとめる。
+        const features = obj.features;
+        if (features && typeof features === 'object' && !Array.isArray(features)) {
+            const disabled = Object.entries(features as Record<string, unknown>)
+                .filter(
+                    ([, value]) =>
+                        value === false ||
+                        (!!value &&
+                            typeof value === 'object' &&
+                            !Array.isArray(value) &&
+                            (value as Record<string, unknown>).enabled === false)
+                )
+                .map(([name]) => `${name}=false`);
+            if (disabled.length > 0) {
+                meta.features = disabled.join(', ');
             }
         }
         return meta;
@@ -329,7 +383,7 @@ export class CodexAssetManager {
     }
 
     /**
-     * アップロード前検査: ファイル（ZIP or 単体）を選択させ、既存との衝突を返す。
+     * アップロード前検査: ファイル（ZIP or 単体）を選択させ、取り込み対象のうち既にあるもの（衝突）を返す。
      * 実際の展開は upload()/uploadFile() で行う（renderer が衝突確認後に呼ぶ）。
      */
     async inspectUpload(env: CodexEnvironment, kind: AssetKind, window: BrowserWindow | null): Promise<AssetOpResult> {
@@ -365,6 +419,10 @@ export class CodexAssetManager {
             zip = new AdmZip(srcPath);
         } catch (error) {
             console.error(`Failed to read archive ${srcPath}:`, error);
+            return { ok: false, message: 'invalid-archive' };
+        }
+        // パストラバーサル対策: 不正なエントリ名を含む ZIP は拒否する。
+        if (normalizedArchiveEntries(zip) === null) {
             return { ok: false, message: 'invalid-archive' };
         }
 
@@ -441,8 +499,9 @@ export class CodexAssetManager {
 
     /**
      * 単体ファイルを取り込む。
-     * - skills: <dir>/SKILL.md として配置。overwrite 時は <dir> を削除してから書く。
-     * - agents: 元ファイル名のまま .codex/agents 直下へ配置。overwrite 時は既存を削除してから書く。
+     * - skills: <dir>/SKILL.md として配置。overwrite 時は既存の <dir> を丸ごと置き換える。
+     * - agents: 元ファイル名のまま .codex/agents 直下へ配置。overwrite 時は既存のファイルを置き換える。
+     * 既にある取り込み先は overwrite=true のときだけ置き換える。書き込みに失敗した場合は取り込み前の状態に戻す。
      */
     async uploadFile(
         env: CodexEnvironment,
@@ -472,27 +531,13 @@ export class CodexAssetManager {
 
         // 取り込み元ファイルの更新日時。配置後のファイルへ引き継ぐ（アップロード日にしない）。
         const srcMtimeMs = fileMtimeMs(filePath);
+        const item = kind === 'skills' ? target.name : target.relPath;
+        const relPath = target.relPath;
 
         try {
-            if (kind === 'skills') {
-                const dirRel = `${parentRel}/${target.name}`;
-                if (overwrite && (await fs.exists(dirRel))) {
-                    await fs.removeDir(dirRel);
-                }
-                await fs.writeText(`${parentRel}/${target.relPath}`, content);
-                if (srcMtimeMs !== null) {
-                    await fs.setMtime(`${parentRel}/${target.relPath}`, srcMtimeMs);
-                }
-            } else {
-                const fileRel = `${parentRel}/${target.relPath}`;
-                if (overwrite && (await fs.exists(fileRel))) {
-                    await fs.deleteFile(fileRel);
-                }
-                await fs.writeText(fileRel, content);
-                if (srcMtimeMs !== null) {
-                    await fs.setMtime(fileRel, srcMtimeMs);
-                }
-            }
+            installStaged(parentReal, [item], new Set(overwrite ? [item] : []), dir =>
+                writeTextFile(dir, relPath, content, srcMtimeMs)
+            );
             return { ok: true, importedCount: 1 };
         } catch (error) {
             console.error(`Failed to upload file (${JSON.stringify(env)}, ${kind}):`, error);
@@ -502,7 +547,9 @@ export class CodexAssetManager {
 
     /**
      * ZIP を対象フォルダへ展開する。
-     * overwrite=true の場合、衝突する対象（skills=ディレクトリ / agents=ファイル）を削除してから展開する。
+     * 取り込み対象のうち既にあるもの（computeConflicts）は、overwrite=true のときだけ丸ごと置き換え
+     * （skills=トップレベルのディレクトリ / agents=ファイル）、overwrite=false のときは何も変えずに conflict を返す。
+     * 展開は作業用ディレクトリで行い、失敗した場合は取り込み前の状態に戻す。
      */
     async upload(env: CodexEnvironment, kind: AssetKind, zipPath: string, overwrite: boolean): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
@@ -520,49 +567,30 @@ export class CodexAssetManager {
             return { ok: false, message: 'invalid-archive' };
         }
 
-        const allEntries = zip.getEntries();
-        if (allEntries.length === 0) {
+        if (zip.getEntries().length === 0) {
             return { ok: false, message: 'empty-archive' };
         }
 
         // パストラバーサル対策: 不正なエントリ名を含む ZIP は拒否する。
-        for (const entry of allEntries) {
-            const name = entry.entryName.replace(/\\/g, '/');
-            if (name.includes('..') || name.startsWith('/') || /^[a-zA-Z]:/.test(name)) {
-                console.error(`Rejected archive with unsafe entry: ${entry.entryName}`);
-                return { ok: false, message: 'invalid-archive' };
-            }
+        const entries = normalizedArchiveEntries(zip);
+        if (entries === null) {
+            console.error(`Rejected archive with unsafe entry: ${zipPath}`);
+            return { ok: false, message: 'invalid-archive' };
         }
 
         try {
-            // 親ディレクトリが無ければ作成する（agents/ skills/ が未作成のケース）。
-            await fs.writeText(`${parentRel}/.cxdt-asset-keep`, '');
-            await fs.deleteFile(`${parentRel}/.cxdt-asset-keep`);
-
-            if (overwrite) {
-                if (kind === 'skills') {
-                    for (const dir of this.zipTopLevelDirsFrom(zip)) {
-                        if (this.isUnsafeName(dir)) {
-                            continue;
-                        }
-                        const target = `${parentRel}/${dir}`;
-                        if (await fs.exists(target)) {
-                            await fs.removeDir(target);
-                        }
-                    }
-                } else {
-                    for (const file of this.zipFileEntries(zip)) {
-                        if (this.isUnsafeRelPath(file)) {
-                            continue;
-                        }
-                        if (await fs.exists(`${parentRel}/${file}`)) {
-                            await fs.deleteFile(`${parentRel}/${file}`);
-                        }
-                    }
-                }
+            // リンクのスキルディレクトリには展開しない（リンク先の管理対象外のファイルを書き換えないため）。
+            if (kind === 'skills' && (await this.anyLinkedDir(fs, parentRel, this.zipTopLevelNamesFrom(zip)))) {
+                return { ok: false, message: 'upload-failed' };
             }
 
-            this.extractZipTo(zip, parentReal);
+            const conflicts = await this.computeConflicts(fs, parentRel, zip, kind);
+            if (conflicts.length > 0 && !overwrite) {
+                return { ok: false, message: 'conflict', conflicts };
+            }
+            installStaged(parentReal, this.uploadItems(zip, kind), new Set(conflicts), dir =>
+                extractArchiveEntries(entries, dir)
+            );
             const importedCount =
                 kind === 'skills' ? this.zipTopLevelDirsFrom(zip).length : this.zipFileEntries(zip).length;
             return { ok: true, importedCount };
@@ -664,7 +692,10 @@ export class CodexAssetManager {
         return entries;
     }
 
-    /** sourceDir 配下の相対パス（skillRel）から 1 件分の AssetEntry を構築する。 */
+    /**
+     * sourceDir 配下の相対パス（skillRel）から 1 件分の AssetEntry を構築する。
+     * <skill>/agents/openai.yaml があれば、その呼び出しポリシー（policy.*）もメタへ加える。
+     */
     private buildOfficialEntry(sourceDir: string, skillRel: string): AssetEntry {
         const absDir = join(sourceDir, skillRel);
         let mdContent: string | null = null;
@@ -678,7 +709,14 @@ export class CodexAssetManager {
         } catch {
             mdContent = null;
         }
+        let yamlContent: string | null = null;
+        try {
+            yamlContent = readFileSync(join(absDir, 'agents', 'openai.yaml'), 'utf-8');
+        } catch {
+            yamlContent = null;
+        }
         const fm = parseFrontmatter(mdContent);
+        const policy = this.parseSkillPolicy(yamlContent);
         const stats = recursiveDirStats(absDir);
         const dirName = skillRel.split('/').pop() ?? skillRel;
         return {
@@ -686,7 +724,7 @@ export class CodexAssetManager {
             relPath: skillRel,
             isFile: false,
             fileCount: stats.fileCount,
-            frontmatter: fm?.fields ?? {},
+            frontmatter: { ...(fm?.fields ?? {}), ...policy },
             frontmatterRaw: fm?.raw ?? null,
             mtimeMs: stats.mtimeMs,
         };
@@ -695,7 +733,7 @@ export class CodexAssetManager {
     /**
      * 選択した公式スキル（relPaths は sourceDir からの相対）を対象環境へ取り込む。
      * 取り込み先のディレクトリ名は relPath の末尾セグメント（= スキルディレクトリ名）。
-     * 公式スキル同士の置換のため、同名は確認なしで削除→展開する。
+     * 公式スキル同士の置換のため、同名は確認なしで丸ごと置き換える（失敗した場合は取り込み前の状態に戻す）。
      */
     async importOfficialSkills(env: CodexEnvironment, relPaths: string[]): Promise<AssetOpResult> {
         if (!(await this.git.isAvailable())) {
@@ -725,20 +763,12 @@ export class CodexAssetManager {
                 tmpZip
             );
 
-            const zip = new AdmZip(tmpZip);
-            for (const dir of this.zipTopLevelDirsFrom(zip)) {
-                if (this.isUnsafeName(dir)) {
-                    continue;
-                }
-                const targetRel = `${parentRel}/${dir}`;
-                if (await fs.exists(targetRel)) {
-                    await fs.removeDir(targetRel);
-                }
+            const entries = normalizedArchiveEntries(new AdmZip(tmpZip));
+            if (entries === null) {
+                throw new Error('Archive contains an unsafe entry name');
             }
-            await fs.writeText(`${parentRel}/.cxdt-asset-keep`, '');
-            await fs.deleteFile(`${parentRel}/.cxdt-asset-keep`);
-
-            this.extractZipTo(zip, parentReal);
+            const dirs = archiveTopLevelDirs(entries);
+            installStaged(parentReal, dirs, new Set(dirs), dir => extractArchiveEntries(entries, dir));
             return { ok: true, importedCount: targets.length };
         } catch (error) {
             console.error(`Failed to import official skills (${JSON.stringify(env)}):`, error);
@@ -811,72 +841,45 @@ export class CodexAssetManager {
         return { ok: skipped.length === 0, deletedCount, skipped: skipped.length > 0 ? skipped : undefined };
     }
 
-    /**
-     * ZIP を destDir 配下へ展開する（adm-zip の extractAllTo は使わない）。
-     * WSL の UNC パスでは chmod が失敗するため、chmod を行わない writeFileSync で自前展開する。
-     */
-    private extractZipTo(zip: AdmZip, destDir: string): void {
-        // ディレクトリの日時はファイル書き込みで変わるため、全ファイル展開後にまとめて適用する。
-        const dirs: { path: string; mtimeMs: number | null }[] = [];
-        for (const entry of zip.getEntries()) {
-            const rel = entry.entryName.replace(/\\/g, '/');
-            const outPath = join(destDir, rel);
-            if (entry.isDirectory) {
-                mkdirSync(outPath, { recursive: true });
-                dirs.push({ path: outPath, mtimeMs: zipEntryMtimeMs(entry) });
-                continue;
-            }
-            mkdirSync(dirname(outPath), { recursive: true });
-            writeFileSync(outPath, entry.getData());
-            // ZIP に記録された更新日時を引き継ぐ（展開日ではなく元の日時を維持する）。
-            applyMtime(outPath, zipEntryMtimeMs(entry));
-        }
-        for (const dir of dirs) {
-            applyMtime(dir.path, dir.mtimeMs);
-        }
+    /** ZIP の取り込み対象（skills=トップレベルの名前 / agents=ファイルの相対パス）。 */
+    private uploadItems(zip: AdmZip, kind: AssetKind): string[] {
+        return kind === 'skills' ? this.zipTopLevelNamesFrom(zip) : this.zipFileEntries(zip);
     }
 
-    /** ZIP と既存内容から衝突一覧を計算する（表示用）。 */
+    /**
+     * 取り込み対象のうち、取り込み先に既にあるもの（上書きの確認対象で、上書き時に置き換えるもの）を返す。
+     * 既にあるかはファイルシステムで判定する（大文字・小文字を区別しないファイルシステムでは、大文字・小文字だけが
+     * 異なる既存の名前も既にあるものになる）。
+     */
     private async computeConflicts(fs: HomeFs, parentRel: string, zip: AdmZip, kind: AssetKind): Promise<string[]> {
-        if (kind === 'skills') {
-            const existing = new Set(await fs.listDirs(parentRel));
-            return this.zipTopLevelDirsFrom(zip).filter(d => existing.has(d));
-        }
         const conflicts: string[] = [];
-        for (const file of this.zipFileEntries(zip)) {
-            if (this.isUnsafeRelPath(file)) {
-                continue;
-            }
-            if (await fs.exists(`${parentRel}/${file}`)) {
-                conflicts.push(file);
+        for (const item of this.uploadItems(zip, kind)) {
+            if (!this.isUnsafeRelPath(item) && (await fs.exists(`${parentRel}/${item}`))) {
+                conflicts.push(item);
             }
         }
         return conflicts;
     }
 
-    /** AdmZip インスタンスからトップレベルディレクトリ名一覧を抽出する（skills 用）。 */
+    /**
+     * AdmZip インスタンスから、正規化したエントリ名のトップレベルディレクトリ名一覧を抽出する（skills 用）。
+     * 不正なエントリ名を含む ZIP は空配列。
+     */
     private zipTopLevelDirsFrom(zip: AdmZip): string[] {
-        const dirs = new Set<string>();
-        for (const entry of zip.getEntries()) {
-            const name = entry.entryName.replace(/\\/g, '/');
-            const top = name.split('/')[0];
-            if (top && top.length > 0) {
-                dirs.add(top);
-            }
-        }
-        return Array.from(dirs);
+        return archiveTopLevelDirs(normalizedArchiveEntries(zip) ?? []);
     }
 
-    /** AdmZip インスタンスからファイルエントリの相対パス一覧を抽出する（agents 用）。 */
+    /** AdmZip インスタンスから、正規化したエントリ名の先頭セグメント（トップレベルのファイルを含む）を抽出する。 */
+    private zipTopLevelNamesFrom(zip: AdmZip): string[] {
+        return archiveTopLevelNames(normalizedArchiveEntries(zip) ?? []);
+    }
+
+    /**
+     * AdmZip インスタンスから、ファイルエントリの正規化した相対パス一覧を抽出する（agents 用）。
+     * 不正なエントリ名を含む ZIP は空配列。
+     */
     private zipFileEntries(zip: AdmZip): string[] {
-        const files: string[] = [];
-        for (const entry of zip.getEntries()) {
-            if (entry.isDirectory) {
-                continue;
-            }
-            files.push(entry.entryName.replace(/\\/g, '/'));
-        }
-        return files;
+        return (normalizedArchiveEntries(zip) ?? []).filter(({ entry }) => !entry.isDirectory).map(({ path }) => path);
     }
 
     // ============================================================

@@ -25,8 +25,20 @@ export function registerOpenCodeIpcHandlers(
     runner: AgentCliRunner,
     getMainWindow: () => BrowserWindow | null
 ): void {
-    const mcp = new OpenCodeMcpManager(detector);
-    ipcMain.handle(OPENCODE_MCP_CHANNELS.GET_ENVIRONMENTS, () => mcp.getEnvironments());
+    // refresh が true のときは CLI と WSL distro の検出結果を破棄してから環境を列挙する
+    // （OpenCode 2 の導入・削除をアプリの再起動なしで反映するため）。
+    const listEnvironments = <T>(refresh: unknown, list: () => Promise<T>): Promise<T> => {
+        if (refresh === true) {
+            runner.invalidate();
+            detector.invalidate();
+        }
+        return list();
+    };
+
+    const mcp = new OpenCodeMcpManager(detector, runner);
+    ipcMain.handle(OPENCODE_MCP_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) =>
+        listEnvironments(refresh, () => mcp.getEnvironments())
+    );
     ipcMain.handle(OPENCODE_MCP_CHANNELS.GET_MCP_SERVERS, (_, env: OpenCodeEnvironment) => mcp.getMCPServers(env));
     ipcMain.handle(OPENCODE_MCP_CHANNELS.ENABLE, (_, env: OpenCodeEnvironment, name: string) =>
         mcp.enableMCPServer(env, name)
@@ -41,8 +53,10 @@ export function registerOpenCodeIpcHandlers(
         mcp.reorderDisabledMCPServers(env, names)
     );
 
-    const asset = new OpenCodeAssetManager(detector);
-    ipcMain.handle(OPENCODE_ASSET_CHANNELS.GET_ENVIRONMENTS, () => asset.getEnvironments());
+    const asset = new OpenCodeAssetManager(detector, runner);
+    ipcMain.handle(OPENCODE_ASSET_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) =>
+        listEnvironments(refresh, () => asset.getEnvironments())
+    );
     ipcMain.handle(OPENCODE_ASSET_CHANNELS.LIST, (_, env: OpenCodeEnvironment, kind: AssetKind) =>
         asset.list(env, kind)
     );
@@ -72,15 +86,19 @@ export function registerOpenCodeIpcHandlers(
         asset.deleteSelected(env, kind, rels)
     );
 
-    const cleanup = new OpenCodeCleanupManager(detector);
-    ipcMain.handle(OPENCODE_CLEANUP_CHANNELS.GET_ENVIRONMENTS, () => cleanup.getEnvironments());
+    const cleanup = new OpenCodeCleanupManager(detector, runner);
+    ipcMain.handle(OPENCODE_CLEANUP_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) =>
+        listEnvironments(refresh, () => cleanup.getEnvironments())
+    );
     ipcMain.handle(OPENCODE_CLEANUP_CHANNELS.SCAN, (_, env: OpenCodeEnvironment) => cleanup.scan(env));
     ipcMain.handle(OPENCODE_CLEANUP_CHANNELS.DELETE, (_, env: OpenCodeEnvironment, selection: CleanupSelection) =>
         cleanup.deleteSelected(env, selection)
     );
 
-    const settings = new OpenCodeSettingsManager(detector);
-    ipcMain.handle(OPENCODE_SETTINGS_CHANNELS.GET_ENVIRONMENTS, () => settings.getEnvironments());
+    const settings = new OpenCodeSettingsManager(detector, runner);
+    ipcMain.handle(OPENCODE_SETTINGS_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) =>
+        listEnvironments(refresh, () => settings.getEnvironments())
+    );
     ipcMain.handle(OPENCODE_SETTINGS_CHANNELS.READ, (_, env: OpenCodeEnvironment) => settings.read(env));
     ipcMain.handle(OPENCODE_SETTINGS_CHANNELS.WRITE, (_, env: OpenCodeEnvironment, values: SettingsValues) =>
         settings.write(env, values)
@@ -90,7 +108,9 @@ export function registerOpenCodeIpcHandlers(
     );
 
     const plugin = new OpenCodePluginManager(detector, runner);
-    ipcMain.handle(OPENCODE_PLUGIN_CHANNELS.GET_ENVIRONMENTS, () => plugin.getEnvironments());
+    ipcMain.handle(OPENCODE_PLUGIN_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) =>
+        listEnvironments(refresh, () => plugin.getEnvironments())
+    );
     ipcMain.handle(OPENCODE_PLUGIN_CHANNELS.LIST, (_, env: OpenCodeEnvironment) => plugin.list(env));
     ipcMain.handle(OPENCODE_PLUGIN_CHANNELS.CATALOG, (_, env: OpenCodeEnvironment) => plugin.catalog(env));
     ipcMain.handle(OPENCODE_PLUGIN_CHANNELS.INSTALL, (_, env: OpenCodeEnvironment, id: string) =>
