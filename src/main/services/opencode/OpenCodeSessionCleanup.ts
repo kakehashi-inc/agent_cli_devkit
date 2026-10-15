@@ -82,11 +82,11 @@ function toEntries(items: SessionItem[]): SessionEntry[] {
 
 /**
  * OpenCode 2 の履歴（opencode.db 内のセッション）を CLI で消すクリーンアップ候補。
- * `opencode2 api GET /api/session`（全プロジェクトのセッションを子セッションを含めて更新日時の新しい順）で一覧し、
- * 親なしのセッションを候補にして、`opencode2 session delete`（子セッションを含めて削除）で消す。
+ * `opencode api GET /api/session`（全プロジェクトのセッションを子セッションを含めて更新日時の新しい順）で一覧し、
+ * 親なしのセッションを候補にして、`opencode session delete`（子セッションを含めて削除）で消す。
  * いずれも環境の中（WSL は distro の中）の private サーバー（--standalone）で実行し、資格情報・保存済みの権限・
- * アカウントなどデータベースの他の内容には触れない。opencode2 が見つからない環境と、データベース（OPENCODE_DATABASE_REL）が
- * 無い環境では、CLI を実行せずにセッションが無いものとして扱う（CLI の実行で作られるフォルダーやログを増やさないため）。
+ * アカウントなどデータベースの他の内容には触れない。OpenCode 2 が見つからない環境と、データベース（OPENCODE_DATABASE_REL）が
+ * 無い環境では、セッション用のコマンドを実行せずにセッションが無いものとして扱う。
  * 実行中かどうかは CLI から得られないため、自身か子孫（サブエージェントのセッション）が直近 5 分以内に更新された
  * セッションと、更新日時が分からないセッションは使用中として削除しない。
  * 選択されたセッションは表示名の末尾の ID で特定する（タイトルが変わっても同じものを消す）。
@@ -99,7 +99,7 @@ export class OpenCodeSessionCleanup implements CleanupHandler {
     ) {}
 
     /**
-     * 親なしのセッションを新しい順に取得する。opencode2 が無い場合とデータベースが無い場合は CLI を実行せずに空の一覧、
+     * 親なしのセッションを新しい順に取得する。OpenCode 2 が無い場合とデータベースが無い場合はセッション用のコマンドを実行せずに空の一覧、
      * CLI が失敗した場合は例外を投げる。
      */
     private async list(env: AgentEnvironment): Promise<SessionListing> {

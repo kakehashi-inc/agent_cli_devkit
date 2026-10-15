@@ -41,11 +41,11 @@ Agent CLI DevKit は、AI エージェント CLI（Claude Code / Codex CLI / Ant
 
 **OpenCode グループ（OpenCode 2）**
 
-OpenCode の各画面は、`opencode2` コマンドが見つかった native と WSL distro を対象に表示します。コマンドの確認では OpenCode を実行せず、OpenCode を実行するのはプラグインのパッケージ導入と、セッション履歴の一覧・削除のときだけです。
+OpenCode の各画面は、`opencode --version` が成功してバージョン 2.x を返す環境を対象に表示します。各操作も `opencode` コマンドで実行します。判定結果は環境ごとにキャッシュし、「再取得」で確認し直します。macOS・Linux では、アプリの PATH に含まれなくても `~/.bun/bin`・`~/.opencode/bin`・`~/.local/bin`・Homebrew などの標準的な導入先を探します。バージョン確認では OpenCode のログが作成される場合があります。プラグインのパッケージ導入と、セッション履歴の一覧・削除でも OpenCode を実行します。
 
 - **OpenCode MCP 管理** — グローバル設定ファイル（`~/.config/opencode/opencode.json` または `opencode.jsonc` のうち先に見つかったもの）の MCP サーバー（`mcp.servers`）を、ほかの設定やコメントを保持したまま有効化/無効化/並べ替えします。
 - **OpenCode Agent・Skill 管理** — `~/.config/opencode/agents/**/*.md` と `~/.config/opencode/skills/<name>/SKILL.md` を管理します。Claude 互換・agents 互換ディレクトリは明示的に対象外です。
-- **OpenCode プラグイン管理** — `opencode2 plugin add` によるパッケージ（npm・Git）の導入、ローカルの .ts・.js プラグインとプラグインフォルダーの `~/.config/opencode/plugins` へのコピー、有効化・無効化・削除を行います。無効化したプラグインを有効化すると、`plugins` の並びの元の位置へ戻します。
+- **OpenCode プラグイン管理** — `opencode plugin add` によるパッケージ（npm・Git）の導入、ローカルの .ts・.js プラグインとプラグインフォルダーの `~/.config/opencode/plugins` へのコピー、有効化・無効化・削除を行います。無効化したプラグインを有効化すると、`plugins` の並びの元の位置へ戻します。
 - **OpenCode 設定** — スカラー設定とモデルをテーブルで編集するか、JSONC ファイル（両方あれば `opencode.jsonc`）を直接編集します。配列・マップ・オブジェクトは直接編集のみで、TUI キーバインドは対象外です。
 - **OpenCode クリーンアップ** — 設定、資産、認証情報を残し、公式の XDG ディレクトリからキャッシュ・ログ・ツール出力・スナップショット・プロンプト履歴・セッション履歴を選択して削除します。セッション履歴は OpenCode を通じてセッション単位で削除し、削除できるセッションがある場合だけ一覧に表示します。直近 5 分以内に更新されたセッション（サブエージェントのセッションが更新されたものを含む）は残します。
 

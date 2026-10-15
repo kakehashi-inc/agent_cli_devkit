@@ -30,6 +30,7 @@ interface Options {
     wslTest: string;
     // native 環境を一覧に出すかの判定。指定した場合は、true を返すときだけ native 環境を一覧に出す。
     nativeAvailable?: () => Promise<boolean>;
+    wslAvailable?: (env: AgentEnvironment) => Promise<boolean>;
     parents: Record<AssetKind, string>;
     // Agy custom agents are <name>/agent.md. OpenCode custom agents are <name>.md.
     agentLayout: 'directory' | 'file';
@@ -84,8 +85,12 @@ export class MarkdownAssetManager {
             result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         }
         const distros = await this.detector.getDistrosWithTest(this.options.wslTest);
-        for (const distro of distros)
-            result.push({ env: { kind: 'wsl', distro: distro.distro }, label: distro.distro });
+        for (const distro of distros) {
+            const env: AgentEnvironment = { kind: 'wsl', distro: distro.distro };
+            if (!this.options.wslAvailable || (await this.options.wslAvailable(env))) {
+                result.push({ env, label: distro.distro });
+            }
+        }
         return result;
     }
 

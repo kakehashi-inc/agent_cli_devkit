@@ -4,9 +4,10 @@ import { AgentEnvironment } from '../../../../shared/agents/types';
 import { shellQuotePosix, WSL_CLI_PATH_SETUP, wslCliTest, wslFindCliScript } from '../../../../shared/agents/wsl';
 import { system32Command } from '../../../utils/system32Command';
 import { decodeWslBuffer } from '../wsl/WslDetector';
+import { nativeCliEnvironment } from './nativeCliEnvironment';
 
 /**
- * agent CLI（claude / codex / agy / grok / opencode2）をヘッドレス実行する共通基盤。
+ * agent CLI（claude / codex / agy / grok / opencode）をヘッドレス実行する共通基盤。
  *
  * 設計の要点:
  * - native（ホスト OS）と WSL の両方で同じインターフェースを提供する。
@@ -121,7 +122,7 @@ function stopProcessTree(child: ChildProcess): void {
 function runProcess(
     file: string,
     args: string[],
-    options: { timeout: number; windowsVerbatimArguments?: boolean; cwd?: string }
+    options: { timeout: number; windowsVerbatimArguments?: boolean; cwd?: string; env?: NodeJS.ProcessEnv }
 ): Promise<ProcessResult> {
     return new Promise(resolve => {
         let child: ChildProcess;
@@ -130,6 +131,7 @@ function runProcess(
                 windowsHide: true,
                 windowsVerbatimArguments: options.windowsVerbatimArguments,
                 cwd: options.cwd,
+                env: options.env,
             });
         } catch (error) {
             resolve({
@@ -257,7 +259,7 @@ export class AgentCliRunner {
 
     /**
      * native の実行ファイルパスを解決する。
-     * Windows は `where`、それ以外は `command -v` を使う。見つからなければ null。
+     * Windows は `where`、それ以外は標準の導入先を PATH に補って `command -v` を使う。見つからなければ null。
      */
     private async resolveNativePath(cli: string): Promise<string | null> {
         const cached = this.nativePathCache.get(cli);
@@ -281,6 +283,7 @@ export class AgentCliRunner {
         } else {
             const { code, stdout } = await runProcess('/bin/sh', ['-c', `command -v ${shellQuotePosix(cli)}`], {
                 timeout: 10_000,
+                env: nativeCliEnvironment(),
             });
             if (code === 0) {
                 const first = stdout.toString('utf8').trim();
@@ -311,7 +314,7 @@ export class AgentCliRunner {
                 cwd: homedir(),
             });
         } else {
-            result = await runProcess(path, args, { timeout, cwd: homedir() });
+            result = await runProcess(path, args, { timeout, cwd: homedir(), env: nativeCliEnvironment() });
         }
         return toCliResult(cli, result, timeout, buf => buf.toString('utf8'));
     }

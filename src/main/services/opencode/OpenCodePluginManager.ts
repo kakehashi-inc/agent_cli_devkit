@@ -76,7 +76,7 @@ const PLUGIN_DIRECTORY_MARKERS = [
     'package.json',
     ...['index', 'server', 'tui'].flatMap(name => LOCAL_PLUGIN_EXTENSIONS.map(ext => `${name}${ext}`)),
 ];
-// `opencode2 plugin add` はパッケージの取得と導入まで行うため長めに待つ。
+// `opencode plugin add` はパッケージの取得と導入まで行うため長めに待つ。
 const INSTALL_TIMEOUT_MS = 5 * 60_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -138,12 +138,12 @@ function isLockedError(error: unknown): boolean {
 /**
  * OpenCode のグローバルプラグインを管理する。
  * - 設定ファイル（opencode.json / opencode.jsonc）の `plugins` 配列のパッケージ指定（npm・Git）とローカルパス指定。
- *   導入は `opencode2 plugin add` で行い、無効化した要素は opencode-disabled-plugins.json へ退避する
+ *   導入は `opencode plugin add` で行い、無効化した要素は opencode-disabled-plugins.json へ退避する
  *   （OpenCode は先頭から評価し後ろの指定が勝つため、有効化では無効化した時点の並びに沿った位置へ戻す。
  *   無効化中の他の要素も並びに含めて記録するため、複数の要素を無効化してから任意の順に有効化しても元の並びに戻る）。
  *   退避ファイルが壊れている場合は、一覧では空として扱って警告を添え、退避ファイルを書き換える操作と導入は行わない。
  *   有効化の指示（`-<ID>`・`*`・`<接頭辞>.*`・組み込み ID `opencode.*`）は一覧に出さず、位置を保って残す。
- * - ターミナル UI の設定（cli.json）の `plugins` 配列（`opencode2 plugin add` が TUI 専用のパッケージを追加する先）:
+ * - ターミナル UI の設定（cli.json）の `plugins` 配列（`opencode plugin add` が TUI 専用のパッケージを追加する先）:
  *   読み取り専用で一覧に出し、有効化・無効化・削除は行わない。
  * - ~/.config/opencode/plugins 直下の .ts / .js ファイルとプラグインフォルダー:
  *   無効化すると plugins-disabled へ移動する。導入はコピーを一時フォルダーに作ってから置き換え、
@@ -172,8 +172,10 @@ export class OpenCodePluginManager {
             result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         }
         const distros = await this.detector.getDistrosWithTest(OPENCODE_WSL_CLI_TEST);
-        for (const distro of distros)
-            result.push({ env: { kind: 'wsl', distro: distro.distro }, label: distro.distro });
+        for (const distro of distros) {
+            const env: OpenCodeEnvironment = { kind: 'wsl', distro: distro.distro };
+            if (await openCodeCliAvailable(this.runner, env)) result.push({ env, label: distro.distro });
+        }
         return result;
     }
 
@@ -193,7 +195,7 @@ export class OpenCodePluginManager {
         return typeof item === 'string' ? item : item.package;
     }
 
-    /** 有効化の指示（`-<ID>`・`*`・`<接頭辞>.*`・組み込み ID）か。`opencode2 plugin list` と同じ判定。 */
+    /** 有効化の指示（`-<ID>`・`*`・`<接頭辞>.*`・組み込み ID）か。`opencode plugin list` と同じ判定。 */
     private isDirective(target: string): boolean {
         return target.startsWith('-') || target === '*' || target.endsWith('.*') || target.startsWith('opencode.');
     }
@@ -496,7 +498,7 @@ export class OpenCodePluginManager {
 
     /**
      * ローカルの .ts / .js ファイルとプラグインフォルダーは plugins へコピーする（同名の既存分は置き換える）。
-     * パッケージ（npm・Git）は `opencode2 plugin add` で取得して plugins 配列へ追加する。
+     * パッケージ（npm・Git）は `opencode plugin add` で取得して plugins 配列へ追加する。
      * 退避ファイルが壊れている場合は、導入後に退避分を整理できないためパッケージの導入を行わない。
      */
     async installFromSource(env: OpenCodeEnvironment, source: string): Promise<PluginOpResult> {

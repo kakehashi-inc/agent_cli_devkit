@@ -7,7 +7,7 @@ export default {
         cleanup: 'OpenCode Cleanup',
     },
     noEnvironment:
-        'OpenCode 2 was not found. Install OpenCode 2 so that the opencode2 command is available on Windows or in WSL, then press Refresh. If it is not found right after installing, you may need to restart the app.',
+        'OpenCode 2 was not found. Check that OpenCode 2 is available on this computer, then press Refresh. If it is not found right after installing, you may need to restart the app.',
     dashboard: {
         mcpDesc: 'Enable/disable/reorder the MCP servers (mcp.servers) in the global OpenCode configuration.',
         assetsDesc: 'Manage OpenCode agents and skills under its own global config directory.',
@@ -91,7 +91,7 @@ export default {
         description:
             'Manage package (npm and Git) and local path entries in the plugins array of opencode.json / opencode.jsonc, and .ts / .js files and plugin folders directly under ~/.config/opencode/plugins. Enable and disable directives (-ID, *, built-in IDs) are not listed and are kept as they are. Terminal UI plugins (the plugins in cli.json) are shown for reference only.',
         sourceHelp:
-            'Installs an npm package (optionally with an @ version, tag, or range) or a Git package specifier (such as github:owner/repo#branch) with opencode2 plugin add and adds it to the plugins setting (terminal UI packages are added to cli.json). An absolute path to a local .ts / .js file or plugin folder (one containing package.json or an index, server, or tui .ts / .js file) is copied into the plugins folder.',
+            'Installs an npm package (optionally with an @ version, tag, or range) or a Git package specifier (such as github:owner/repo#branch) with opencode plugin add and adds it to the plugins setting (terminal UI packages are added to cli.json). An absolute path to a local .ts / .js file or plugin folder (one containing package.json or an index, server, or tui .ts / .js file) is copied into the plugins folder.',
         tuiNote: 'Terminal UI only (cli.json). It cannot be enabled, disabled, or removed here.',
         disabledFileInvalid:
             'Disabled plugins cannot be shown because the file that keeps them (~/.config/opencode/opencode-disabled-plugins.json) is malformed. Until you fix or delete this file, plugins in the plugins setting cannot be enabled, disabled, or removed, and packages cannot be installed.',
@@ -282,7 +282,7 @@ export default {
             'Delete selected data only from OpenCode official XDG directories. The database file itself (it holds credentials, saved permissions, and accounts), configuration, agents, skills, plugins, worktrees, and service configuration and registration are excluded.',
         wslSection: 'WSL: {{distro}}',
         inUseNotice:
-            'Close OpenCode and its background service (stop it with opencode2 service stop) before cleanup. Files in use may be skipped.',
+            'Close OpenCode and its background service (stop it with opencode service stop) before cleanup. Files in use may be skipped.',
         noCandidates: 'No cleanup targets found',
         name: 'Item',
         descriptionColumn: 'Description',
@@ -324,7 +324,7 @@ export default {
             },
             sessions: {
                 label: 'sessions',
-                desc: 'OpenCode session history (conversations). Where the session database exists, the session list is loaded with the OpenCode CLI when this screen opens, and this row appears only when there are sessions that can be deleted. You can select sessions individually or all of them. Deleted with the OpenCode CLI (opencode2 session delete), which also removes sub-sessions. Sign-in information, saved permissions, and account information in the database are kept. Sessions that were updated, or whose sub-sessions were updated, within the last 5 minutes may be in use and are excluded.',
+                desc: 'OpenCode session history (conversations). Where the session database exists, the session list is loaded with the OpenCode CLI when this screen opens, and this row appears only when there are sessions that can be deleted. You can select sessions individually or all of them. Deleted with the OpenCode CLI (opencode session delete), which also removes sub-sessions. Sign-in information, saved permissions, and account information in the database are kept. Sessions that were updated, or whose sub-sessions were updated, within the last 5 minutes may be in use and are excluded.',
             },
         },
     },

@@ -24,6 +24,7 @@ interface Options {
     wslTest: string;
     // native 環境を一覧に出すかの判定。指定した場合は、true を返すときだけ native 環境を一覧に出す。
     nativeAvailable?: () => Promise<boolean>;
+    wslAvailable?: (env: AgentEnvironment) => Promise<boolean>;
     candidates: CleanupCandidateSpec[];
     // 候補キーごとの子要素リゾルバ。指定した候補は baseRel に縛られず、リゾルバが解決した子要素だけを扱う。
     resolvers?: Record<string, CleanupResolver>;
@@ -88,8 +89,12 @@ export class AgentCleanupManager {
             result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         }
         const distros = await this.detector.getDistrosWithTest(this.options.wslTest);
-        for (const distro of distros)
-            result.push({ env: { kind: 'wsl', distro: distro.distro }, label: distro.distro });
+        for (const distro of distros) {
+            const env: AgentEnvironment = { kind: 'wsl', distro: distro.distro };
+            if (!this.options.wslAvailable || (await this.options.wslAvailable(env))) {
+                result.push({ env, label: distro.distro });
+            }
+        }
         return result;
     }
 

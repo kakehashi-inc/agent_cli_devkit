@@ -57,7 +57,8 @@ export class OpenCodeMcpManager {
             result.push(await this.envInfo({ kind: 'native' }, this.nativeLabel()));
         }
         for (const distro of await this.detector.getDistrosWithTest(OPENCODE_WSL_CLI_TEST)) {
-            result.push(await this.envInfo({ kind: 'wsl', distro: distro.distro }, distro.distro));
+            const env: OpenCodeEnvironment = { kind: 'wsl', distro: distro.distro };
+            if (await openCodeCliAvailable(this.runner, env)) result.push(await this.envInfo(env, distro.distro));
         }
         return result;
     }

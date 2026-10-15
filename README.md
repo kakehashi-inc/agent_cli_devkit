@@ -41,11 +41,11 @@ Agent CLI DevKit is an Electron desktop tool that manages the development enviro
 
 **OpenCode group (OpenCode 2)**
 
-The OpenCode screens are shown for the native OS and WSL distributions where the `opencode2` command is found. Finding it does not run OpenCode; OpenCode runs only when you install a plugin package or list or delete session history.
+The OpenCode screens are shown where `opencode --version` succeeds and reports version 2.x. All operations use the `opencode` command. The result is cached per environment and checked again when you press Refresh. On macOS and Linux, standard installation folders (including `~/.bun/bin`, `~/.opencode/bin`, `~/.local/bin`, and Homebrew) are searched even when they are absent from the app's PATH. The version check can create OpenCode logs. OpenCode also runs when you install a plugin package or list or delete session history.
 
 - **OpenCode MCP Manager** — Enable, disable, and reorder the MCP servers (`mcp.servers`) in the global configuration file (`~/.config/opencode/opencode.json` or `opencode.jsonc`, whichever exists first) while preserving all other settings and comments.
 - **OpenCode Agent / Skill Manager** — Manage `~/.config/opencode/agents/**/*.md` and `~/.config/opencode/skills/<name>/SKILL.md`. Claude-compatible and agents-compatible directories are deliberately excluded.
-- **OpenCode Plugin Manager** — Install packages (npm or Git) with `opencode2 plugin add`, copy local .ts/.js plugins and plugin folders into `~/.config/opencode/plugins`, and enable, disable, or uninstall them. Re-enabling a plugin puts it back where it was in the `plugins` list.
+- **OpenCode Plugin Manager** — Install packages (npm or Git) with `opencode plugin add`, copy local .ts/.js plugins and plugin folders into `~/.config/opencode/plugins`, and enable, disable, or uninstall them. Re-enabling a plugin puts it back where it was in the `plugins` list.
 - **OpenCode Settings** — Edit scalar settings and the model in a table or edit the JSONC file directly (`opencode.jsonc` when both files exist); arrays, maps, and objects are direct-edit only. TUI keybindings are outside this feature scope.
 - **OpenCode Cleanup** — Selectively remove caches, logs, tool output, snapshots, prompt history, and session history from the official XDG directories while keeping configuration, assets, and credentials. Session history is deleted per session through OpenCode and is listed only when there are sessions to delete; sessions updated in the last 5 minutes, including those with a recently updated subagent session, are kept.
 

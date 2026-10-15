@@ -1,11 +1,11 @@
 import type { AssetKind, CleanupCandidateSpec, PluginCapabilities, SettingsFieldSpec } from '../types';
 import { wslCliTest } from '../wsl';
 
-// 対象は OpenCode 2（npm @opencode/cli 2.x、コマンド名 opencode2）。
+// 対象は opencode --version が 2.x を返す OpenCode 2。
 export const OPENCODE_CONFIG_DIR = '.config/opencode';
 export const OPENCODE_CONFIG_SCHEMA_URL = 'https://opencode.ai/config.json';
 // グローバル設定ファイルの候補。OpenCode は両方を読み込み、同じ値は opencode.jsonc が優先する。
-// MCP・プラグインの編集対象は `opencode2 mcp add --global` / `opencode2 plugin add` と同じく存在する最初の候補、
+// MCP・プラグインの編集対象は `opencode mcp add --global` / `opencode plugin add` と同じく存在する最初の候補、
 // 設定画面の編集対象は OpenCode が値を優先する、存在する最後の候補とし、どちらも無ければ先頭を作成する。
 export const OPENCODE_CONFIG_CANDIDATES_REL = [
     `${OPENCODE_CONFIG_DIR}/opencode.json`,
@@ -25,7 +25,7 @@ export const OPENCODE_DISABLED_PLUGINS_DIR = 'plugins-disabled';
 // 無効化した plugins 配列の要素の退避先。中身は設定ファイルと同じ { plugins: [...] } と、
 // 有効化で元の位置へ戻すための無効化した時点の並び { positions: { <指定子>: [...] } }。
 export const OPENCODE_DISABLED_PLUGINS_REL = `${OPENCODE_CONFIG_DIR}/opencode-disabled-plugins.json`;
-// ターミナル UI の設定。`opencode2 plugin add` は TUI 専用のプラグインをこのファイルの plugins へ追加する。
+// ターミナル UI の設定。`opencode plugin add` は TUI 専用のプラグインをこのファイルの plugins へ追加する。
 export const OPENCODE_CLI_CONFIG_REL = `${OPENCODE_CONFIG_DIR}/cli.json`;
 
 export const ASSET_PARENT_REL: Record<AssetKind, string> = {
@@ -33,10 +33,9 @@ export const ASSET_PARENT_REL: Record<AssetKind, string> = {
     skills: OPENCODE_SKILLS_REL,
 };
 
-// OpenCode 2 のコマンド名。このコマンドの有無で OpenCode 2 の導入を判定する（CLI 本体は実行しない）。
-export const OPENCODE_CLI_COMMAND = 'opencode2';
-// WSL distro の検出は opencode2 コマンドの有無で行う。CLI の実行と同じ PATH・同じ規則（Windows 側のドライブにある
-// ものを除く）で解決する。
+// 全 OS でバージョン確認と各操作に使うコマンド名。
+export const OPENCODE_CLI_COMMAND = 'opencode';
+// WSL の候補は Windows 側のドライブを除いて opencode を解決し、導入判定でバージョンを確認する。
 export const OPENCODE_WSL_CLI_TEST = wslCliTest(OPENCODE_CLI_COMMAND);
 export const OPENCODE_MCP_CHANNELS = {
     GET_ENVIRONMENTS: 'opencode-mcp:get-environments',
@@ -124,7 +123,7 @@ export const CLEANUP_CANDIDATES: CleanupCandidateSpec[] = [
 ];
 
 // セッション履歴を保存するデータベース（XDG データ領域の opencode.db。OpenCode 2 の正式リリースが使う名前）。
-// これが無い環境ではセッション履歴が無いため、CLI を実行せずにセッション履歴の候補を出さない。
+// これが無い環境ではセッション履歴が無いため、セッション用のコマンドを実行せずに候補を出さない。
 export const OPENCODE_DATABASE_REL = '.local/share/opencode/opencode.db';
 
 // model の文字列形式（provider/model#variant。variant は省略可）。OpenCode の設定スキーマと同じパターン。

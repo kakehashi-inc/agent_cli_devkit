@@ -21,6 +21,7 @@ export class OpenCodeAssetManager extends MarkdownAssetManager {
             id: 'opencode',
             wslTest: OPENCODE_WSL_CLI_TEST,
             nativeAvailable: () => openCodeCliAvailable(runner, { kind: 'native' }),
+            wslAvailable: env => openCodeCliAvailable(runner, env),
             parents: ASSET_PARENT_REL,
             agentLayout: 'file',
         });

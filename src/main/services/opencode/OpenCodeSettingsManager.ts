@@ -65,6 +65,7 @@ export class OpenCodeSettingsManager {
             configRel,
             wslTest: OPENCODE_WSL_CLI_TEST,
             nativeAvailable: () => openCodeCliAvailable(this.runner, { kind: 'native' }),
+            wslAvailable: env => openCodeCliAvailable(this.runner, env),
             fields: SETTINGS_FIELDS,
             initial: { $schema: OPENCODE_CONFIG_SCHEMA_URL },
         });

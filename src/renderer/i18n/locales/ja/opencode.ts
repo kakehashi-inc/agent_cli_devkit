@@ -7,7 +7,7 @@ export default {
         cleanup: 'OpenCode クリーンアップ',
     },
     noEnvironment:
-        'OpenCode 2 が見つかりません。Windows または WSL で opencode2 コマンドを使えるように OpenCode 2 を導入してから、「再取得」を押してください。導入した直後に見つからない場合は、アプリの再起動が必要なことがあります。',
+        'OpenCode 2 が見つかりません。この端末で OpenCode 2 を利用できることを確認してから、「再取得」を押してください。導入した直後に見つからない場合は、アプリの再起動が必要なことがあります。',
     dashboard: {
         mcpDesc: 'OpenCode のグローバル設定にある MCP サーバー（mcp.servers）を有効化/無効化/並べ替えします。',
         assetsDesc: 'OpenCode 自身のグローバル設定ディレクトリ配下だけでエージェントとスキルを管理します。',
@@ -90,7 +90,7 @@ export default {
         description:
             'opencode.json・opencode.jsonc の plugins 配列にあるパッケージ（npm・Git）とローカルパスの指定と、~/.config/opencode/plugins 直下の .ts・.js ファイルとプラグインフォルダーを管理します。有効化・無効化の指示（-ID・*・組み込み ID）は一覧に表示せず、そのまま保持します。ターミナル UI 専用のプラグイン（cli.json の plugins）は表示だけを行います。',
         sourceHelp:
-            'npm パッケージ（@ でバージョン・タグ・範囲を指定可）または Git のパッケージ指定（github:owner/repo#ブランチ など）を opencode2 plugin add で導入し、plugins 設定へ追加します（ターミナル UI 専用のパッケージは cli.json へ追加されます）。ローカルの .ts / .js ファイルやプラグインフォルダー（package.json または index・server・tui の .ts / .js を含むもの）を絶対パスで指定すると plugins フォルダーへコピーします。',
+            'npm パッケージ（@ でバージョン・タグ・範囲を指定可）または Git のパッケージ指定（github:owner/repo#ブランチ など）を opencode plugin add で導入し、plugins 設定へ追加します（ターミナル UI 専用のパッケージは cli.json へ追加されます）。ローカルの .ts / .js ファイルやプラグインフォルダー（package.json または index・server・tui の .ts / .js を含むもの）を絶対パスで指定すると plugins フォルダーへコピーします。',
         tuiNote: 'ターミナル UI 専用（cli.json）。この画面では有効化・無効化・削除できません。',
         disabledFileInvalid:
             '無効化したプラグインの退避ファイル（~/.config/opencode/opencode-disabled-plugins.json）の形式が正しくないため、無効化中のプラグインを表示できません。このファイルを修正するか削除するまで、plugins 設定のプラグインの有効化・無効化・削除とパッケージの導入は行えません。',
@@ -275,7 +275,7 @@ export default {
             'OpenCode 公式の XDG ディレクトリから選択したデータを削除します。データベースファイルそのもの（資格情報・保存済みの権限・アカウントを含む）、設定、エージェント、スキル、プラグイン、ワークツリー、サービスの設定・登録は対象外です。',
         wslSection: 'WSL: {{distro}}',
         inUseNotice:
-            'OpenCode とバックグラウンドサービス（opencode2 service stop で停止）を終了してから削除してください。使用中のファイルはスキップされる場合があります。',
+            'OpenCode とバックグラウンドサービス（opencode service stop で停止）を終了してから削除してください。使用中のファイルはスキップされる場合があります。',
         noCandidates: '削除候補はありません',
         name: '項目',
         descriptionColumn: '説明',
@@ -317,7 +317,7 @@ export default {
             },
             sessions: {
                 label: 'sessions',
-                desc: 'OpenCode のセッション履歴（会話）。セッション履歴のデータベースがある環境で、画面を開いたときに OpenCode の CLI で一覧を取得し、削除できるセッションがある場合だけ表示します。セッション単位またはすべてを選択できます。OpenCode の CLI（opencode2 session delete）で削除し、サブセッションも一緒に消えます。データベース内のサインイン情報・保存済みの権限・アカウント情報は消えません。本人かサブセッションが直近 5 分以内に更新されたセッションは使用中の可能性があるため対象外です。',
+                desc: 'OpenCode のセッション履歴（会話）。セッション履歴のデータベースがある環境で、画面を開いたときに OpenCode の CLI で一覧を取得し、削除できるセッションがある場合だけ表示します。セッション単位またはすべてを選択できます。OpenCode の CLI（opencode session delete）で削除し、サブセッションも一緒に消えます。データベース内のサインイン情報・保存済みの権限・アカウント情報は消えません。本人かサブセッションが直近 5 分以内に更新されたセッションは使用中の可能性があるため対象外です。',
             },
         },
     },

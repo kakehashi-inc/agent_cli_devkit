@@ -25,6 +25,7 @@ interface Options {
     wslTest: string;
     // 指定すると、false を返す間は native 環境を一覧に出さない。
     nativeAvailable?: () => Promise<boolean>;
+    wslAvailable?: (env: AgentEnvironment) => Promise<boolean>;
     fields: SettingsFieldSpec[];
     initial?: Record<string, unknown>;
 }
@@ -53,8 +54,12 @@ export class JsonSettingsManager {
             result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         }
         const distros = await this.detector.getDistrosWithTest(this.options.wslTest);
-        for (const distro of distros)
-            result.push({ env: { kind: 'wsl', distro: distro.distro }, label: distro.distro });
+        for (const distro of distros) {
+            const env: AgentEnvironment = { kind: 'wsl', distro: distro.distro };
+            if (!this.options.wslAvailable || (await this.options.wslAvailable(env))) {
+                result.push({ env, label: distro.distro });
+            }
+        }
         return result;
     }
 

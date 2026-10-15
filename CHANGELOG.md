@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- The OpenCode screens support OpenCode 2 only and find it by its `opencode2` command.
+- The OpenCode screens support OpenCode 2 only, verified with `opencode --version`.
 - Deleting a Claude Code project in Cleanup removes it together with its memory. A project with a running session is kept as it is, including its memory; a session counts as running when Claude Code has registered it or its conversation was updated in the last 10 minutes.
 - Cleanup covers newer data folders for every agent, including old Codex and Grok versions left behind by updates.
 - Re-enabling an OpenCode plugin puts it back where it was in the plugin list.
