@@ -20,7 +20,12 @@ import {
     OtherCleanupSelection,
 } from '../../../shared/agents/codex/types';
 import { createCleanupProbe } from '../common/cleanup/CleanupProbe';
-import { deleteResolvedChildren, resolveChildren, toResolvedCandidate } from '../common/cleanup/resolvedCleanup';
+import {
+    deleteResolvedChildren,
+    removeHomeTargets,
+    resolveChildren,
+    toResolvedCandidate,
+} from '../common/cleanup/resolvedCleanup';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { clearYamlList, countYamlListEntries, needsYamlListNormalize } from '../../utils/yamlPreserve';
@@ -140,12 +145,16 @@ export class CodexCleanupManager {
     }
 
     /**
-     * 選択されたディレクトリ／子要素を削除し、再スキャン結果を返す。
+     * 選択されたディレクトリ／子要素を削除し、再スキャン結果を返す。OS のファイルロックなどで消せないものを飛ばして続け、
+     * 削除できなかった対象を skipped に、残ったパスを failedPaths に入れる。
      */
     async deleteSelected(env: CodexEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport> {
         const fs = this.fsFor(env);
         const probe = createCleanupProbe(env, this.detector);
+        // 削除しようとして削除できなかった対象
         const skipped: string[] = [];
+        // OS のファイルロックなどで削除できずに残ったパス
+        const failedPaths: string[] = [];
 
         for (const key of selection.dirs) {
             if (!VALID_KEYS.has(key) || this.isUnsafeName(key)) {
@@ -153,7 +162,7 @@ export class CodexCleanupManager {
             }
             const resolver = CODEX_CLEANUP_RESOLVERS[key];
             if (resolver) {
-                skipped.push(...(await deleteResolvedChildren(resolver, probe, key, env, 'all')));
+                skipped.push(...(await deleteResolvedChildren(resolver, probe, key, env, 'all', failedPaths)));
                 continue;
             }
             const spec = CLEANUP_CANDIDATES.find(c => c.key === key);
@@ -161,27 +170,27 @@ export class CodexCleanupManager {
             // 旧バージョン候補は「全体削除」でも releases ディレクトリごとは消さず、
             // 保護対象を除いたリリースディレクトリのみを削除する。
             if (key === CLEANUP_OLD_RELEASES_KEY) {
-                for (const name of await this.oldReleaseNames(env, fs, relPath)) {
-                    if (!(await this.removeChildDir(env, fs, `${relPath}/${name}`))) {
+                const releases = await this.oldReleaseNames(env, fs, relPath);
+                const removed = await removeHomeTargets(
+                    probe,
+                    env,
+                    releases.map(name => ({ rel: `${relPath}/${name}`, type: 'dir' as const })),
+                    failedPaths
+                );
+                releases.forEach((name, i) => {
+                    if (!removed[i]) {
                         skipped.push(name);
                     }
-                }
+                });
                 continue;
             }
-            try {
-                if (spec?.kind === 'file') {
-                    await fs.deleteFile(relPath);
-                    if (await fs.exists(relPath)) {
-                        skipped.push(key);
-                    }
-                } else {
-                    const { removedAll } = await fs.removeDirBestEffort(relPath);
-                    if (!removedAll) {
-                        skipped.push(key);
-                    }
-                }
-            } catch (error) {
-                console.error(`Failed to remove ${key} (${JSON.stringify(env)}):`, error);
+            const [removed] = await removeHomeTargets(
+                probe,
+                env,
+                [{ rel: relPath, type: spec?.kind === 'file' ? 'file' : 'dir' }],
+                failedPaths
+            );
+            if (!removed) {
                 skipped.push(key);
             }
         }
@@ -201,7 +210,7 @@ export class CodexCleanupManager {
             }
             const resolver = CODEX_CLEANUP_RESOLVERS[spec.key];
             if (resolver) {
-                skipped.push(...(await deleteResolvedChildren(resolver, probe, spec.key, env, names)));
+                skipped.push(...(await deleteResolvedChildren(resolver, probe, spec.key, env, names, failedPaths)));
                 continue;
             }
             const baseRel = this.rel(spec.path ?? spec.key);
@@ -216,33 +225,30 @@ export class CodexCleanupManager {
                         ? await fs.listFiles(baseRel)
                         : await fs.listDirs(baseRel)
             );
-            for (const name of names) {
-                if (this.isUnsafeName(name) || !existing.has(name)) {
-                    continue;
-                }
-                const childRel = `${baseRel}/${name}`;
-                try {
-                    if (spec.childKind === 'file') {
-                        await fs.deleteFile(childRel);
-                        if (await fs.exists(childRel)) {
-                            skipped.push(name);
-                        }
-                    } else {
-                        const { removedAll } = await fs.removeDirBestEffort(childRel);
-                        if (!removedAll) {
-                            skipped.push(name);
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Failed to remove child ${spec.key}/${name} (${JSON.stringify(env)}):`, error);
+            // 消せないものを飛ばして削除し、残ったものを報告する。
+            const childNames = names.filter(name => !this.isUnsafeName(name) && existing.has(name));
+            const removed = await removeHomeTargets(
+                probe,
+                env,
+                childNames.map(name => ({
+                    rel: `${baseRel}/${name}`,
+                    type: spec.childKind === 'file' ? ('file' as const) : ('dir' as const),
+                })),
+                failedPaths
+            );
+            childNames.forEach((name, i) => {
+                if (!removed[i]) {
                     skipped.push(name);
                 }
-            }
+            });
         }
 
         const report = await this.scan(env);
         if (skipped.length > 0) {
             report.skipped = skipped;
+        }
+        if (failedPaths.length > 0) {
+            report.failedPaths = failedPaths;
         }
         return report;
     }
@@ -250,17 +256,6 @@ export class CodexCleanupManager {
     /** パストラバーサル対策: 区切り文字や .. を含む名前を拒否する。 */
     private isUnsafeName(name: string): boolean {
         return name.includes('/') || name.includes('\\') || name.includes('..') || name.trim().length === 0;
-    }
-
-    /** ディレクトリを best-effort で削除し、すべて削除できたかを返す（例外はログのみ）。 */
-    private async removeChildDir(env: CodexEnvironment, fs: HomeFs, relPath: string): Promise<boolean> {
-        try {
-            const { removedAll } = await fs.removeDirBestEffort(relPath);
-            return removedAll;
-        } catch (error) {
-            console.error(`Failed to remove ${relPath} (${JSON.stringify(env)}):`, error);
-            return false;
-        }
     }
 
     // ===== スタンドアロン版の旧バージョン候補（CLEANUP_OLD_RELEASES_KEY）の特別処理 =====

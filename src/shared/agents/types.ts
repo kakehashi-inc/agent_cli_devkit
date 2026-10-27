@@ -84,12 +84,28 @@ export interface CleanupChild {
     fileCount: number;
     // 大きさを取得できない子要素（画面にはサイズを表示しない）。
     sizeUnknown?: boolean;
-    // 使用中のため削除対象から外した子要素（画面では選択できない）。
+    // 使用中（またはその可能性がある）ため削除対象から外した子要素。画面では、inUseSessions のある子要素を除いて選択できない。
     inUse?: boolean;
-    // 子要素の中身と付随する対象のうち、使用中のため削除対象から外したものの件数（size / fileCount には含めない）。
+    // 子要素の中身と付随する対象のうち、使用中の可能性があるため削除対象から外したものの件数（size / fileCount には含めない）。
     inUseParts?: number;
     // 本体が既に無く、付随する一時物だけが残っている子要素。
     orphan?: boolean;
+    // 使用中の可能性があると判定した根拠のセッション（削除時に子要素ごとに問い合わせる）。
+    inUseSessions?: CleanupInUseSession[];
+}
+
+// クリーンアップ: 子要素を使用中の可能性があると判定した根拠のセッション。
+// プロセスを調べない推定のため、利用者が承認した子要素は削除する。
+export interface CleanupInUseSession {
+    // セッションの識別子（agent ごとのセッション ID など。agent が判定できないことを表す値を使う場合もある）
+    id: string;
+    // 判定の根拠
+    // - 'registered': 実行中として登録されている（終了済みのセッションの登録が残っている場合を含む）
+    // - 'recent': 直近に更新された
+    // - 'unknown': 更新日時や登録を読めないなどで判定できない
+    reason: 'registered' | 'recent' | 'unknown';
+    // セッション名（登録にある場合）
+    title?: string;
 }
 
 // クリーンアップ候補ディレクトリ/ファイル
@@ -115,6 +131,8 @@ export interface CleanupEnvReport {
     // 使用中（ロック）などで完全に削除できず一部スキップした対象のキー一覧。
     // 例外は投げずに best-effort で削除し、スキップした分をここで報告する。
     skipped?: string[];
+    // OS のファイルロックなどで削除できずに残ったパス（環境内の絶対パス）。消せるものは消したうえで残ったものだけを並べる。
+    failedPaths?: string[];
 }
 
 // クリーンアップ削除の選択内容
@@ -123,6 +141,9 @@ export interface CleanupSelection {
     // expandable 候補で個別選択された子要素名。キー=候補キー、値=選択された子要素名の配列。
     // dirs に候補キー全体が含まれる場合、その候補の childSelections は無視される。
     childSelections: Record<string, string[]>;
+    // 使用中の可能性がある子要素（inUseSessions のあるもの）のうち、利用者が削除を承認したもの。
+    // キー=候補キー、値=子要素名の配列。承認されなかった使用中の可能性がある子要素は削除しない。
+    approvedChildren?: Record<string, string[]>;
 }
 
 // 「その他のツール」クリーンアップ: 各項目が自分の掃除方法を宣言で内包する汎用モデル

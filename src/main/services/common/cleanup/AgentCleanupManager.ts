@@ -14,6 +14,7 @@ import { listHandled, removeHandled, type CleanupHandler } from './handledCleanu
 import {
     deleteResolvedChildren,
     homePath,
+    removeHomeTargets,
     resolveChildren,
     toResolvedCandidate,
     type CleanupResolver,
@@ -37,6 +38,8 @@ interface Options {
  * resolvers を指定した候補は、ホーム外を含めてリゾルバが特定した子要素だけを扱う。
  * handlers を指定した候補は、ハンドラーが子要素の一覧と削除を行う（CLI 経由の削除など）。
  * その子要素は走査のたびにハンドラーで一覧し、一覧できなかった場合は対象なしとして扱う。
+ * 削除は OS のファイルロックなどで消せないものを飛ばして続け、残ったパスを CleanupEnvReport.failedPaths で報告する。
+ * 使用中の可能性がある子要素は、利用者が削除を承認したもの（CleanupSelection.approvedChildren）だけを削除する。
  */
 export class AgentCleanupManager {
     private readonly validKeys: Set<string>;
@@ -157,33 +160,45 @@ export class AgentCleanupManager {
         return name.trim().length > 0 && !name.includes('/') && !name.includes('\\') && !name.includes('..');
     }
 
+    /** 画面から渡された子要素名の配列を検証し、文字列だけを残す（ハンドラーは名前の中の識別子で特定する）。 */
+    private safeNames(value: unknown): string[] {
+        return Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
+    }
+
     async deleteSelected(env: AgentEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport> {
         const fs = this.fsFor(env);
         const probe = createCleanupProbe(env, this.detector);
+        // 削除しようとして削除できなかった対象
         const skipped: string[] = [];
+        // OS のファイルロックなどで削除できずに残ったパス
+        const failedPaths: string[] = [];
+        const approvedOf = (key: string) => this.safeNames(selection.approvedChildren?.[key]);
         for (const key of selection.dirs) {
             if (!this.validKeys.has(key)) continue;
             const spec = this.options.candidates.find(candidate => candidate.key === key);
             if (!spec) continue;
             const handler = this.handlerFor(spec);
             if (handler) {
-                skipped.push(...(await removeHandled(handler, key, env, 'all')));
+                skipped.push(...(await removeHandled(handler, key, env, 'all', approvedOf(key))));
                 continue;
             }
             const resolver = this.resolverFor(spec);
             if (resolver) {
-                skipped.push(...(await deleteResolvedChildren(resolver, probe, key, env, 'all')));
+                skipped.push(...(await deleteResolvedChildren(resolver, probe, key, env, 'all', failedPaths)));
                 continue;
             }
-            try {
-                const rel = this.rel(spec);
-                if (spec.lockFile && (await this.isLockHeld(probe, rel))) skipped.push(key);
-                else if (spec.kind === 'file') await fs.deleteFile(rel);
-                else if (!(await fs.removeDirBestEffort(rel)).removedAll) skipped.push(key);
-            } catch (error) {
-                console.error(`Failed to clean ${key} (${JSON.stringify(env)}):`, error);
+            const rel = this.rel(spec);
+            if (spec.lockFile && (await this.isLockHeld(probe, rel))) {
                 skipped.push(key);
+                continue;
             }
+            const [removed] = await removeHomeTargets(
+                probe,
+                env,
+                [{ rel, type: spec.kind === 'file' ? 'file' : 'dir' }],
+                failedPaths
+            );
+            if (!removed) skipped.push(key);
         }
         for (const spec of this.options.candidates) {
             if (!spec.expandable || !spec.childKind || selection.dirs.includes(spec.key)) continue;
@@ -191,12 +206,12 @@ export class AgentCleanupManager {
             if (selected.length === 0) continue;
             const handler = this.handlerFor(spec);
             if (handler) {
-                skipped.push(...(await removeHandled(handler, spec.key, env, selected)));
+                skipped.push(...(await removeHandled(handler, spec.key, env, selected, approvedOf(spec.key))));
                 continue;
             }
             const resolver = this.resolverFor(spec);
             if (resolver) {
-                skipped.push(...(await deleteResolvedChildren(resolver, probe, spec.key, env, selected)));
+                skipped.push(...(await deleteResolvedChildren(resolver, probe, spec.key, env, selected, failedPaths)));
                 continue;
             }
             const base = this.rel(spec);
@@ -207,19 +222,20 @@ export class AgentCleanupManager {
                       ? await fs.listDirs(base)
                       : await fs.listFiles(base)
             );
-            for (const name of selected) {
-                if (!this.safeName(name) || !existing.has(name)) continue;
-                try {
-                    if (spec.childKind === 'file') await fs.deleteFile(`${base}/${name}`);
-                    else if (!(await fs.removeDirBestEffort(`${base}/${name}`)).removedAll) skipped.push(name);
-                } catch (error) {
-                    console.error(`Failed to clean ${spec.key}/${name} (${JSON.stringify(env)}):`, error);
-                    skipped.push(name);
-                }
-            }
+            const names = selected.filter(name => this.safeName(name) && existing.has(name));
+            const removed = await removeHomeTargets(
+                probe,
+                env,
+                names.map(name => ({ rel: `${base}/${name}`, type: spec.childKind === 'file' ? 'file' : 'dir' })),
+                failedPaths
+            );
+            names.forEach((name, i) => {
+                if (!removed[i]) skipped.push(name);
+            });
         }
         const report = await this.scan(env);
         if (skipped.length > 0) report.skipped = skipped;
+        if (failedPaths.length > 0) report.failedPaths = failedPaths;
         return report;
     }
 }

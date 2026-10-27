@@ -33,7 +33,8 @@ import type {
     OtherCleanupReport,
 } from '@shared/agents/codex/types';
 import { formatBytes, formatCount } from '../../utils/format';
-import { CleanupChildRow } from '../../components/agent/CleanupManagerView';
+import { CleanupChildRow, isVisibleCandidate } from '../../components/agent/CleanupManagerView';
+import { FailedPathsDialog } from '../../components/agent/CleanupDeleteDialogs';
 
 interface Props {
     env: CodexEnvironment;
@@ -64,6 +65,8 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
     const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    // 削除できずに残ったパス（空でなければ一覧のダイアログを表示する）
+    const [failedPaths, setFailedPaths] = useState<string[]>([]);
 
     const applyReports = (r: CleanupEnvReport | null, o: OtherCleanupReport | null) => {
         setReport(r);
@@ -98,7 +101,7 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [label]);
 
-    const candidates = (report?.candidates ?? []).filter(c => c.exists && c.fileCount > 0);
+    const candidates = (report?.candidates ?? []).filter(isVisibleCandidate);
     const otherItems = otherReport?.items ?? [];
 
     const toggleDir = (key: string) => {
@@ -192,7 +195,9 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
         setConfirmOpen(false);
         setDeleting(true);
         let hadError = false;
+        // 削除しようとして削除できなかった項目の数
         let skippedCount = 0;
+        let failed: string[] = [];
         let r: CleanupEnvReport | null = report;
         let o: OtherCleanupReport | null = otherReport;
         try {
@@ -200,6 +205,7 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
             if (codexSelection.dirs.length > 0 || hasChildSelection) {
                 r = await window.agentCliDevkit.codex.cleanup.delete(env, codexSelection);
                 skippedCount += r.skipped?.length ?? 0;
+                failed = r.failedPaths ?? [];
             }
         } catch (error) {
             hadError = true;
@@ -220,12 +226,14 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
             await load();
         } else {
             applyReports(r, o);
-            if (skippedCount > 0) {
-                onNotify(t('codex.cleanup.deletePartial'), 'warning');
+            if (skippedCount > 0 || failed.length > 0) {
+                onNotify(t('common.cleanupDeleteFailed'), 'warning');
             } else {
                 onNotify(t('codex.cleanup.deleteSuccess'), 'success');
             }
         }
+        // 削除できずに残ったパスは、最後にまとめて一覧で報告する。
+        setFailedPaths(failed);
         setDeleting(false);
     };
 
@@ -344,6 +352,7 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
         return (
             <Box sx={{ mb: 4 }}>
                 <Alert severity='info'>{t('codex.cleanup.noCandidates')}</Alert>
+                <FailedPathsDialog paths={failedPaths} onClose={() => setFailedPaths([])} />
             </Box>
         );
     }
@@ -465,6 +474,8 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            <FailedPathsDialog paths={failedPaths} onClose={() => setFailedPaths([])} />
         </Box>
     );
 };

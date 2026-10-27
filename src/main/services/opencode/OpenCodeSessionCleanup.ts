@@ -1,5 +1,5 @@
 import { OPENCODE_CLI_COMMAND, OPENCODE_DATABASE_REL } from '../../../shared/agents/opencode/constants';
-import type { AgentEnvironment } from '../../../shared/agents/types';
+import type { AgentEnvironment, CleanupInUseSession } from '../../../shared/agents/types';
 import type { AgentCliRunner } from '../common/cli/AgentCliRunner';
 import { HandledRemovalIncomplete, type CleanupHandler, type HandledChild } from '../common/cleanup/handledCleanup';
 import { MINUTE_MS } from '../common/cleanup/resolvedCleanup';
@@ -16,14 +16,17 @@ const SESSION_TIMEOUT_MS = 120_000;
 const SESSION_ID_PATTERN = /^ses_[A-Za-z0-9]+$/;
 // 表示名の末尾に付けたセッション ID（[ses_...]）。
 const SESSION_ID_IN_NAME = /\[(ses_[A-Za-z0-9]+)\]$/;
-// 自身か子孫のセッションがこの時間内に更新された親なしのセッションは、実行中の可能性があるため使用中として削除しない。
+// 自身か子孫のセッションがこの時間内に更新された親なしのセッションは、実行中の可能性があるため承認されない限り削除しない。
 const RECENT_UPDATE_MS = 5 * MINUTE_MS;
+
+/** 使用中の可能性があると判定した根拠（'recent'=直近に更新、'unknown'=更新日時や親が分からない）。 */
+type InUseReason = Extract<CleanupInUseSession['reason'], 'recent' | 'unknown'>;
 
 interface SessionEntry {
     id: string;
     name: string;
-    // 自身か子孫が直近に更新された（または更新日時が分からない）ため、使用中として扱うセッションか。
-    recent: boolean;
+    // 使用中の可能性があるセッションの根拠。使用中の可能性が無いセッションは undefined。
+    inUse?: InUseReason;
 }
 
 interface SessionListing {
@@ -38,8 +41,8 @@ interface SessionItem {
     id: string;
     title?: string;
     parentID?: string;
-    // 直近に更新された（または更新日時が分からない）か
-    recent: boolean;
+    // 直近に更新された（'recent'）か、更新日時が分からない（'unknown'）か。どちらでもなければ undefined。
+    inUse?: InUseReason;
 }
 
 /** 表示名の末尾にセッション ID を付ける。削除するときは名前から ID を取り出して特定する。 */
@@ -49,17 +52,18 @@ function displayName(title: string | undefined, id: string): string {
 }
 
 /**
- * 一覧の各セッションを親なしのセッションごとにまとめ、自身か子孫が直近に更新されたものを使用中にする。
+ * 一覧の各セッションを親なしのセッションごとにまとめ、自身か子孫が直近に更新された（または更新日時が分からない）ものを
+ * 使用中の可能性があるものにする。根拠は、更新日時が分からないものを含む場合は 'unknown'、それ以外は 'recent'。
  * 一覧は更新日時の新しい順のため、一覧に入らなかった子孫はそのセッションより古く、判定に影響しない。
  * 直近に更新されたセッションの親を一覧の中でたどれない場合は、どの親なしのセッションのものか分からないため、
- * すべての親なしのセッションを使用中にする。
+ * すべての親なしのセッションを根拠 'unknown' で使用中の可能性があるものにする。
  */
 function toEntries(items: SessionItem[]): SessionEntry[] {
     const byId = new Map(items.map(item => [item.id, item]));
-    const recentRoots = new Set<string>();
+    const recentRoots = new Map<string, InUseReason>();
     let unknownRoot = false;
     for (const item of items) {
-        if (!item.recent) continue;
+        if (!item.inUse) continue;
         let current = item;
         const visited = new Set<string>();
         while (current.parentID !== undefined && !visited.has(current.id)) {
@@ -68,16 +72,23 @@ function toEntries(items: SessionItem[]): SessionEntry[] {
             if (!parent) break;
             current = parent;
         }
-        if (current.parentID === undefined) recentRoots.add(current.id);
-        else unknownRoot = true;
+        if (current.parentID === undefined) {
+            if (recentRoots.get(current.id) !== 'unknown') recentRoots.set(current.id, item.inUse);
+        } else {
+            unknownRoot = true;
+        }
     }
     return items
         .filter(item => item.parentID === undefined)
-        .map(item => ({
-            id: item.id,
-            name: displayName(item.title, item.id),
-            recent: unknownRoot || recentRoots.has(item.id),
-        }));
+        .map(item => {
+            const inUse: InUseReason | undefined = unknownRoot ? 'unknown' : recentRoots.get(item.id);
+            return { id: item.id, name: displayName(item.title, item.id), ...(inUse ? { inUse } : {}) };
+        });
+}
+
+/** 表示名の末尾のセッション ID を取り出す。 */
+function sessionIdOf(name: string): string | undefined {
+    return SESSION_ID_IN_NAME.exec(name)?.[1];
 }
 
 /**
@@ -88,9 +99,10 @@ function toEntries(items: SessionItem[]): SessionEntry[] {
  * アカウントなどデータベースの他の内容には触れない。OpenCode 2 が見つからない環境と、データベース（OPENCODE_DATABASE_REL）が
  * 無い環境では、セッション用のコマンドを実行せずにセッションが無いものとして扱う。
  * 実行中かどうかは CLI から得られないため、自身か子孫（サブエージェントのセッション）が直近 5 分以内に更新された
- * セッションと、更新日時が分からないセッションは使用中として削除しない。
- * 選択されたセッションは表示名の末尾の ID で特定する（タイトルが変わっても同じものを消す）。
- * 削除に失敗したセッション（使用中でロックされている場合など）・使用中・見つからないセッションは消せなかったものとして返す。
+ * セッションと、更新日時が分からないセッションは使用中の可能性があるものとし、利用者が承認したものだけを削除する。
+ * 選択・承認されたセッションは表示名の末尾の ID で特定する（タイトルが変わっても同じものを消す）。
+ * 削除に失敗したセッション（使用中でロックされている場合など）・個別に選択したが承認されていない使用中の可能性がある
+ * セッション・見つからないセッションは消せなかったものとして返す。
  */
 export class OpenCodeSessionCleanup implements CleanupHandler {
     constructor(
@@ -130,12 +142,17 @@ export class OpenCodeSessionCleanup implements CleanupHandler {
             if (typeof id !== 'string' || !SESSION_ID_PATTERN.test(id)) continue;
             // time.updated はエポックミリ秒。未来の日時（時計のずれ）も直近として扱う。
             const updated = time?.updated;
-            const recent = typeof updated !== 'number' || !Number.isFinite(updated) || now - updated < RECENT_UPDATE_MS;
+            const inUse: InUseReason | undefined =
+                typeof updated !== 'number' || !Number.isFinite(updated)
+                    ? 'unknown'
+                    : now - updated < RECENT_UPDATE_MS
+                      ? 'recent'
+                      : undefined;
             items.push({
                 id,
                 ...(typeof title === 'string' ? { title } : {}),
                 ...(typeof parentID === 'string' ? { parentID } : {}),
-                recent,
+                ...(inUse ? { inUse } : {}),
             });
         }
         return { entries: toEntries(items), truncated: data.length >= LIST_LIMIT };
@@ -160,33 +177,41 @@ export class OpenCodeSessionCleanup implements CleanupHandler {
             size: 0,
             fileCount: 1,
             sizeUnknown: true,
-            ...(entry.recent ? { excluded: 'in-use' as const } : {}),
+            ...(entry.inUse
+                ? { excluded: 'in-use' as const, inUseSessions: [{ id: entry.id, reason: entry.inUse }] }
+                : {}),
         }));
     }
 
-    async remove(env: AgentEnvironment, names: 'all' | string[]): Promise<string[]> {
-        return names === 'all' ? this.removeAll(env) : this.removeSelected(env, names);
+    async remove(env: AgentEnvironment, names: 'all' | string[], approved: readonly string[]): Promise<string[]> {
+        const approvedIds = new Set(approved.map(sessionIdOf).filter((id): id is string => id !== undefined));
+        return names === 'all' ? this.removeAll(env, approvedIds) : this.removeSelected(env, names, approvedIds);
     }
 
-    /** 選択されたセッションを名前の ID で特定して削除する。一覧に無い・使用中・削除に失敗したものの名前を返す。 */
-    private async removeSelected(env: AgentEnvironment, names: string[]): Promise<string[]> {
+    /**
+     * 選択されたセッションを名前の ID で特定して削除する。一覧に無い・承認されていない使用中の可能性がある・
+     * 削除に失敗したものの名前を返す。
+     */
+    private async removeSelected(env: AgentEnvironment, names: string[], approvedIds: Set<string>): Promise<string[]> {
         const listed = new Map((await this.list(env)).entries.map(entry => [entry.id, entry]));
         const skipped: string[] = [];
         for (const name of names) {
-            const id = SESSION_ID_IN_NAME.exec(name)?.[1];
+            const id = sessionIdOf(name);
             const entry = id ? listed.get(id) : undefined;
-            if (!entry || entry.recent || !(await this.deleteSession(env, entry))) skipped.push(name);
+            const allowed = entry !== undefined && (!entry.inUse || approvedIds.has(entry.id));
+            if (!entry || !allowed || !(await this.deleteSession(env, entry))) skipped.push(name);
         }
         return skipped;
     }
 
     /**
-     * 使用中ではないセッションをすべて削除する。一覧の上限を超える分は、一覧と削除を繰り返して取り切る。
-     * 使用中・削除に失敗したものの名前を返す。2 回目以降の一覧に失敗した場合と、取り切れないまま
+     * 使用中の可能性が無いセッションと、承認された使用中の可能性があるセッションをすべて削除する。
+     * 一覧の上限を超える分は、一覧と削除を繰り返して取り切る。削除に失敗したものの名前を返し、承認されていない使用中の
+     * 可能性があるセッションは削除の対象ではないため黙って残す。2 回目以降の一覧に失敗した場合と、取り切れないまま
      * （一覧が上限に達したまま新しく消せるものが無くなった場合と、繰り返しの上限に達した場合）終わった場合は
      * HandledRemovalIncomplete を投げる。
      */
-    private async removeAll(env: AgentEnvironment): Promise<string[]> {
+    private async removeAll(env: AgentEnvironment, approvedIds: Set<string>): Promise<string[]> {
         const deleted = new Set<string>();
         const skipped = new Map<string, string>();
         for (let round = 0; ; round++) {
@@ -197,7 +222,9 @@ export class OpenCodeSessionCleanup implements CleanupHandler {
                 if (round === 0) throw error;
                 throw new HandledRemovalIncomplete([...skipped.values()], error);
             }
-            const targets = listing.entries.filter(entry => !deleted.has(entry.id) && !skipped.has(entry.id));
+            const targets = listing.entries.filter(
+                entry => !deleted.has(entry.id) && !skipped.has(entry.id) && (!entry.inUse || approvedIds.has(entry.id))
+            );
             if (targets.length === 0) {
                 if (!listing.truncated) return [...skipped.values()];
                 throw new HandledRemovalIncomplete(
@@ -212,7 +239,7 @@ export class OpenCodeSessionCleanup implements CleanupHandler {
                 );
             }
             for (const entry of targets) {
-                if (!entry.recent && (await this.deleteSession(env, entry))) deleted.add(entry.id);
+                if (await this.deleteSession(env, entry)) deleted.add(entry.id);
                 else skipped.set(entry.id, entry.name);
             }
         }

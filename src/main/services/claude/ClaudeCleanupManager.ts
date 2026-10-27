@@ -18,7 +18,12 @@ import {
     OtherCleanupSelection,
 } from '../../../shared/agents/claude/types';
 import { createCleanupProbe, type CleanupProbe } from '../common/cleanup/CleanupProbe';
-import { deleteResolvedChildren, resolveChildren, toResolvedCandidate } from '../common/cleanup/resolvedCleanup';
+import {
+    deleteResolvedChildren,
+    removeHomeTargets,
+    resolveChildren,
+    toResolvedCandidate,
+} from '../common/cleanup/resolvedCleanup';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { clearYamlList, countYamlListEntries, needsYamlListNormalize } from '../../utils/yamlPreserve';
@@ -36,8 +41,10 @@ const OTHER_VALID_KEYS = new Set(OTHER_CLEANUP_ITEMS.map(i => i.key));
  *   リゾルバが使用中でないと判定した子要素だけを扱い、削除の直前に再判定する。
  * - 使用中かどうかは、~/.claude/sessions に実行中として登録されたセッション（登録した環境は問わない）と、
  *   会話記録が直近に更新されたセッションで判定し、プロセスは調べない。
- *   実行中のセッションがあるプロジェクトは、そのセッションの会話記録・memory/・一時物を残して削除する。
- *   登録を読めない場合は、実行中のセッションが分からないため、会話記録とセッション単位の一時物を削除しない。
+ *   実行中のセッションがあるプロジェクトと、登録を読めずに実行中のセッションが分からないプロジェクトは、使用中の
+ *   可能性があるプロジェクトとして、利用者が削除を承認したもの（CleanupSelection.approvedChildren）だけを
+ *   会話記録・memory/・一時物ごと削除し、承認されていないものには触れない。
+ * - 削除は OS のファイルロックなどで消せないものを飛ばして続け、残ったパスを CleanupEnvReport.failedPaths で報告する。
  * - リンク（シンボリックリンク・ジャンクション）の候補ディレクトリは、配下が管理対象の外にあり得るため扱わない。
  * - plans はファイル単位で個別 + 全体の両方を削除可能。それ以外はディレクトリごと削除（Claude Code が必要時に自動再作成する）。
  * - native とすべての Claude 入り WSL distro を環境として扱う。
@@ -82,7 +89,7 @@ export class ClaudeCleanupManager {
             : null;
     }
 
-    /** projects 候補（プロジェクト単位の子要素。サイズ・件数は削除できるものの合計）。 */
+    /** projects 候補（プロジェクト単位の子要素。サイズ・件数はプロジェクトごとの全体の合計）。 */
     private async scanProjects(
         spec: CleanupCandidateSpec,
         probe: CleanupProbe,
@@ -176,43 +183,40 @@ export class ClaudeCleanupManager {
         const fs = this.fsFor(env);
         const probe = createCleanupProbe(env, this.detector);
         const hostProbe = this.hostProbeFor(env);
-        const resolvers = claudeTempResolvers(hostProbe);
-        // 使用中（ロック）などで完全に削除できなかった対象。例外は投げずにここへ集約して報告する。
+        const approved = this.approvedChildren(selection.approvedChildren?.[CLAUDE_PROJECTS_CLEANUP_KEY]);
+        const resolvers = claudeTempResolvers(hostProbe, approved);
+        // 削除しようとして完全には削除できなかった対象（OS のファイルロックなど）。例外は投げずにここへ集約して報告する。
+        // 使用中の可能性があるため削除の対象にしなかったもの（承認されていないプロジェクトなど）は含めない。
         const skipped: string[] = [];
+        // OS のファイルロックなどで削除できずに残ったパス
+        const failedPaths: string[] = [];
 
         // dirs に含まれる候補はディレクトリごと削除（expandable 候補を全体指定した場合も含む）。
-        // 稼働中の Claude Code がファイルを掴んでいてもベストエフォートで消せる分を消し、
-        // ロック残存はスキップとして報告する（例外は投げない）。不正キーは無視。
+        // 稼働中の Claude Code がファイルを掴んでいても消せる分を消し、残ったものはスキップとして報告する
+        // （例外は投げない）。不正キーは無視。
         for (const key of selection.dirs) {
             if (!VALID_KEYS.has(key) || this.isUnsafeName(key)) {
                 continue;
             }
             if (key === CLAUDE_PROJECTS_CLEANUP_KEY) {
-                skipped.push(...(await deleteClaudeProjects(probe, hostProbe, key, env, 'all')));
+                const result = await deleteClaudeProjects(probe, hostProbe, key, env, 'all', approved);
+                skipped.push(...result.skipped);
+                failedPaths.push(...result.failedPaths);
                 continue;
             }
             const resolver = resolvers[key];
             if (resolver) {
-                skipped.push(...(await deleteResolvedChildren(resolver, probe, key, env, 'all')));
+                skipped.push(...(await deleteResolvedChildren(resolver, probe, key, env, 'all', failedPaths)));
                 continue;
             }
             const spec = CLEANUP_CANDIDATES.find(c => c.key === key);
-            const relPath = this.rel(spec?.path ?? key);
-            try {
-                if (spec?.kind === 'file') {
-                    // 単一ファイル候補（history.jsonl 等）はベストエフォート削除。残ればスキップ報告。
-                    await fs.deleteFile(relPath);
-                    if (await fs.exists(relPath)) {
-                        skipped.push(key);
-                    }
-                } else {
-                    const { removedAll } = await fs.removeDirBestEffort(relPath);
-                    if (!removedAll) {
-                        skipped.push(key);
-                    }
-                }
-            } catch (error) {
-                console.error(`Failed to remove ${key} (${JSON.stringify(env)}):`, error);
+            const [removed] = await removeHomeTargets(
+                probe,
+                env,
+                [{ rel: this.rel(spec?.path ?? key), type: spec?.kind === 'file' ? 'file' : 'dir' }],
+                failedPaths
+            );
+            if (!removed) {
                 skipped.push(key);
             }
         }
@@ -232,12 +236,14 @@ export class ClaudeCleanupManager {
                 continue;
             }
             if (spec.key === CLAUDE_PROJECTS_CLEANUP_KEY) {
-                skipped.push(...(await deleteClaudeProjects(probe, hostProbe, spec.key, env, names)));
+                const result = await deleteClaudeProjects(probe, hostProbe, spec.key, env, names, approved);
+                skipped.push(...result.skipped);
+                failedPaths.push(...result.failedPaths);
                 continue;
             }
             const resolver = resolvers[spec.key];
             if (resolver) {
-                skipped.push(...(await deleteResolvedChildren(resolver, probe, spec.key, env, names)));
+                skipped.push(...(await deleteResolvedChildren(resolver, probe, spec.key, env, names, failedPaths)));
                 continue;
             }
             const baseRel = this.rel(spec.path ?? spec.key);
@@ -248,36 +254,39 @@ export class ClaudeCleanupManager {
                       ? await fs.listFiles(baseRel)
                       : await fs.listDirs(baseRel)
             );
-            for (const name of names) {
-                if (this.isUnsafeName(name) || !existing.has(name)) {
-                    continue;
-                }
-                const childRel = `${baseRel}/${name}`;
-                try {
-                    if (spec.childKind === 'file') {
-                        // ファイル単位（plans）はベストエフォート削除。ロック等で残った場合はスキップ報告。
-                        await fs.deleteFile(childRel);
-                        if (await fs.exists(childRel)) {
-                            skipped.push(name);
-                        }
-                    } else {
-                        const { removedAll } = await fs.removeDirBestEffort(childRel);
-                        if (!removedAll) {
-                            skipped.push(name);
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Failed to remove child ${spec.key}/${name} (${JSON.stringify(env)}):`, error);
+            // ファイル単位（plans）・ディレクトリ単位の子要素は、消せないものを飛ばして削除し、残ったものを報告する。
+            const childNames = names.filter(name => !this.isUnsafeName(name) && existing.has(name));
+            const removed = await removeHomeTargets(
+                probe,
+                env,
+                childNames.map(name => ({
+                    rel: `${baseRel}/${name}`,
+                    type: spec.childKind === 'file' ? ('file' as const) : ('dir' as const),
+                })),
+                failedPaths
+            );
+            childNames.forEach((name, i) => {
+                if (!removed[i]) {
                     skipped.push(name);
                 }
-            }
+            });
         }
 
         const report = await this.scan(env);
         if (skipped.length > 0) {
             report.skipped = skipped;
         }
+        if (failedPaths.length > 0) {
+            report.failedPaths = failedPaths;
+        }
         return report;
+    }
+
+    /** 画面から渡された、利用者が削除を承認した子要素名を検証して返す（安全な名前の文字列だけを残す）。 */
+    private approvedChildren(value: unknown): string[] {
+        return Array.isArray(value)
+            ? value.filter((name): name is string => typeof name === 'string' && !this.isUnsafeName(name))
+            : [];
     }
 
     /** パストラバーサル対策: 区切り文字や .. を含む名前を拒否する。 */

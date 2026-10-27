@@ -50,14 +50,14 @@ export default {
         inUseNotice:
             '実行中の Claude Code セッションがあると一部ディレクトリの削除に失敗することがあります。削除前にセッションを終了してください。',
         deleteSuccess: 'クリーンアップが完了しました',
-        deletePartial: '使用中のファイルがあったため、一部をスキップしました',
         deleteError: '一部の項目の削除に失敗しました',
         columnName: '項目',
         columnDescription: '説明',
         columnFiles: 'ファイル数',
         columnSize: 'サイズ',
         childOrphan: '会話履歴なし（一時物のみ）',
-        childInUseParts: '使用中の可能性があるため {{count}} 件（会話記録・一時物など）を残します',
+        childMayBeInUse: '使用中の可能性あり（会話記録・一時物など {{count}} 件）',
+        approvalTitle: '使用中の可能性があるプロジェクト',
         dir: {
             projects: 'projects',
             plans: 'plans',

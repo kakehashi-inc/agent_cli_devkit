@@ -234,7 +234,6 @@ export default {
         confirmBody: 'Delete {{count}} selected item(s). This cannot be undone.',
         cancel: 'Cancel',
         deleteSuccess: 'Cleanup completed',
-        deletePartial: 'Some files were in use and were skipped',
         deleteError: 'Cleanup failed',
         item: {
             cache: {

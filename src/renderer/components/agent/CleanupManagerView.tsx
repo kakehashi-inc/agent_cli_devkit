@@ -38,6 +38,14 @@ import type {
     CleanupSelection,
 } from '@shared/agents/types';
 import { envId, formatBytes, formatCount } from '../../utils/format';
+import {
+    ApprovalList,
+    FailedPathsDialog,
+    applyApprovals,
+    collectPendingApprovals,
+    isSelectableChild,
+    needsApproval,
+} from './CleanupDeleteDialogs';
 import type { CleanupApi, Notify } from './types';
 
 interface Props {
@@ -46,16 +54,28 @@ interface Props {
 }
 
 /**
- * 展開可能な候補の全体を選んだときに削除する件数（使用中ではない子要素の数）。
+ * 展開可能な候補の全体を選んだときに数える件数（選択できる子要素の数。使用中の可能性があるものを含む）。
  * 数えられる子要素が無い場合（子要素の一覧に含まれない中身だけの場合など）は 1 件とする。
  */
 export function cleanupWholeCount(candidate: CleanupCandidate): number {
-    return Math.max(1, (candidate.children ?? []).filter(child => !child.inUse).length);
+    return Math.max(1, (candidate.children ?? []).filter(isSelectableChild).length);
+}
+
+/**
+ * 展開可能な候補を表示するか。削除できるファイルがあるか、子要素（中身が 0 件のディレクトリを含む）がある候補を表示する。
+ * 子要素は中身が 0 件でもディレクトリごと削除できるため表示する。
+ */
+export function isVisibleCandidate(candidate: CleanupCandidate): boolean {
+    return (
+        candidate.exists &&
+        (candidate.fileCount > 0 || (candidate.expandable === true && (candidate.children ?? []).length > 0))
+    );
 }
 
 /**
  * 展開可能なクリーンアップ候補の子要素 1 行（チェックボックス・名前・ファイル数・サイズ）。
- * 使用中の子要素は選択できず、名前の横に使用中である旨を表示する。
+ * 使用中の可能性がある子要素（削除の確認で問い合わせるもの）は選択でき、名前の横にその旨を表示する。
+ * それ以外の使用中の子要素は選択できず、名前の横に使用中である旨を表示する。
  */
 export const CleanupChildRow: React.FC<{
     child: CleanupChild;
@@ -64,23 +84,35 @@ export const CleanupChildRow: React.FC<{
     onToggle: () => void;
 }> = ({ child, checked, disabled, onToggle }) => {
     const { t } = useTranslation();
-    const inUse = child.inUse === true;
+    const selectable = isSelectableChild(child);
     return (
         <TableRow>
             <TableCell padding='checkbox' sx={{ border: 0 }}>
-                <Checkbox size='small' checked={checked && !inUse} disabled={disabled || inUse} onChange={onToggle} />
+                <Checkbox
+                    size='small'
+                    checked={checked && selectable}
+                    disabled={disabled || !selectable}
+                    onChange={onToggle}
+                />
             </TableCell>
             <TableCell sx={{ border: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
                     <Typography
                         variant='body2'
-                        color={inUse ? 'text.disabled' : undefined}
+                        color={selectable ? undefined : 'text.disabled'}
                         sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
                     >
                         {child.name}
                     </Typography>
-                    {inUse && (
-                        <Chip size='small' variant='outlined' color='warning' label={t('common.cleanupChildInUse')} />
+                    {child.inUse === true && (
+                        <Chip
+                            size='small'
+                            variant='outlined'
+                            color='warning'
+                            label={t(
+                                needsApproval(child) ? 'common.cleanupChildMayBeInUse' : 'common.cleanupChildInUse'
+                            )}
+                        />
                     )}
                 </Box>
             </TableCell>
@@ -112,6 +144,10 @@ const CleanupSection: React.FC<{
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [confirmOpen, setConfirmOpen] = useState(false);
+    // 削除の確認で、利用者が削除を承認した使用中の可能性がある子要素（approvalKey）
+    const [approved, setApproved] = useState<Set<string>>(new Set());
+    // 削除できずに残ったパス（空でなければ一覧のダイアログを表示する）
+    const [failedPaths, setFailedPaths] = useState<string[]>([]);
 
     const load = async () => {
         setLoading(true);
@@ -134,8 +170,7 @@ const CleanupSection: React.FC<{
         void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */
     }, []);
 
-    // 削除できるものがある候補だけを表示する。
-    const candidates = (report?.candidates ?? []).filter(candidate => candidate.exists && candidate.fileCount > 0);
+    const candidates = (report?.candidates ?? []).filter(isVisibleCandidate);
 
     const toggleDir = (key: string) => {
         setDirs(current => {
@@ -194,18 +229,38 @@ const CleanupSection: React.FC<{
         return { selectedCount: count, wholeLabels: labels };
     }, [agentId, candidates, children, dirs, t]);
 
+    // 選択したもののうち使用中の可能性があるもの。削除の確認で削除するかを問い合わせる。
+    const pending = useMemo(() => collectPendingApprovals(candidates, dirs, children), [candidates, children, dirs]);
+
+    const openConfirm = () => {
+        setApproved(new Set());
+        setConfirmOpen(true);
+    };
+
+    const toggleApproved = (key: string) => {
+        setApproved(current => {
+            const next = new Set(current);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
+
     const remove = async () => {
         setConfirmOpen(false);
         setBusy(true);
         try {
-            const next = await api.delete(env, selection);
+            const next = await api.delete(env, applyApprovals(selection, pending, approved));
             setReport(next);
             setDirs(new Set());
             setChildren({});
+            // 削除しようとして削除できなかったものがある場合だけ警告し、残ったパスは一覧で報告する。
+            const failed = (next.skipped?.length ?? 0) > 0 || (next.failedPaths?.length ?? 0) > 0;
             notify(
-                t(`${agentId}.cleanup.${(next.skipped?.length ?? 0) > 0 ? 'deletePartial' : 'deleteSuccess'}`),
-                (next.skipped?.length ?? 0) > 0 ? 'warning' : 'success'
+                failed ? t('common.cleanupDeleteFailed') : t(`${agentId}.cleanup.deleteSuccess`),
+                failed ? 'warning' : 'success'
             );
+            setFailedPaths(next.failedPaths ?? []);
         } catch (error) {
             console.error('Cleanup failed:', error);
             notify(t(`${agentId}.cleanup.deleteError`), 'error');
@@ -333,6 +388,7 @@ const CleanupSection: React.FC<{
         return (
             <Box sx={{ mb: 4 }}>
                 <Alert severity='info'>{t(`${agentId}.cleanup.noCandidates`)}</Alert>
+                <FailedPathsDialog paths={failedPaths} onClose={() => setFailedPaths([])} />
             </Box>
         );
 
@@ -366,13 +422,18 @@ const CleanupSection: React.FC<{
                     variant='contained'
                     startIcon={<DeleteIcon />}
                     disabled={busy || selectedCount === 0}
-                    onClick={() => setConfirmOpen(true)}
+                    onClick={openConfirm}
                     sx={{ textTransform: 'none' }}
                 >
                     {t(`${agentId}.cleanup.deleteSelected`)}
                 </Button>
             </Box>
-            <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+            <Dialog
+                open={confirmOpen}
+                onClose={() => setConfirmOpen(false)}
+                maxWidth={pending.length > 0 ? 'md' : 'sm'}
+                fullWidth={pending.length > 0}
+            >
                 <DialogTitle>{t(`${agentId}.cleanup.confirmTitle`)}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
@@ -382,6 +443,14 @@ const CleanupSection: React.FC<{
                         <DialogContentText sx={{ mt: 1 }}>
                             {t('common.cleanupConfirmWhole', { names: wholeLabels.join(', ') })}
                         </DialogContentText>
+                    )}
+                    {pending.length > 0 && (
+                        <ApprovalList
+                            title={t('common.cleanupApprovalTitle')}
+                            items={pending}
+                            checked={approved}
+                            onToggle={toggleApproved}
+                        />
                     )}
                     <Alert severity='info' sx={{ mt: 2 }}>
                         {t(`${agentId}.cleanup.inUseNotice`)}
@@ -396,6 +465,7 @@ const CleanupSection: React.FC<{
                     </Button>
                 </DialogActions>
             </Dialog>
+            <FailedPathsDialog paths={failedPaths} onClose={() => setFailedPaths([])} />
         </Box>
     );
 };

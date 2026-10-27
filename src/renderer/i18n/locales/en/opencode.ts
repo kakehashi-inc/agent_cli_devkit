@@ -293,7 +293,6 @@ export default {
         confirmBody: 'Delete {{count}} selected item(s). This cannot be undone.',
         cancel: 'Cancel',
         deleteSuccess: 'Cleanup completed',
-        deletePartial: 'Some files were in use and were skipped',
         deleteError: 'Cleanup failed',
         item: {
             cache: {
@@ -324,7 +323,7 @@ export default {
             },
             sessions: {
                 label: 'sessions',
-                desc: 'OpenCode session history (conversations). Where the session database exists, the session list is loaded with the OpenCode CLI when this screen opens, and this row appears only when there are sessions that can be deleted. You can select sessions individually or all of them. Deleted with the OpenCode CLI (opencode session delete), which also removes sub-sessions. Sign-in information, saved permissions, and account information in the database are kept. Sessions that were updated, or whose sub-sessions were updated, within the last 5 minutes may be in use and are excluded.',
+                desc: 'OpenCode session history (conversations). Where the session database exists, the session list is loaded with the OpenCode CLI when this screen opens, and this row appears only when there are sessions. You can select sessions individually or all of them. Deleted with the OpenCode CLI (opencode session delete), which also removes sub-sessions. Sign-in information, saved permissions, and account information in the database are kept. Sessions that were updated, or whose sub-sessions were updated, within the last 5 minutes, and sessions whose update time is unknown, may be in use and are deleted only if you check them in the confirmation.',
             },
         },
     },

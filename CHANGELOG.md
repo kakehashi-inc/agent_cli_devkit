@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-27
+
+### Added
+
+- Cleanup asks before deleting items that may be in use: Claude Code projects with sessions registered as running or recently updated (including ended sessions that are still registered), and OpenCode sessions that were recently updated or have no update time. Each item is listed with the reason, and only the items you check are deleted.
+- Cleanup deletes everything it can and then lists the files it could not delete (for example, files open in another program), with a button to copy the paths.
+
+### Changed
+
+- Claude Code Cleanup shows each project's full size and file count, including its temporary files outside `~/.claude`.
+- The message after a cleanup mentions only items that could not be deleted.
+
+### Fixed
+
+- Cleanup lists folders that contain no files, such as empty Claude Code projects and Codex or Grok sessions, so they can be deleted.
+
 ## [0.6.3] - 2026-10-16
 
 ### Added

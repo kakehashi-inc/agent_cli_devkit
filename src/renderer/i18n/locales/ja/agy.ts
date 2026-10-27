@@ -233,7 +233,6 @@ export default {
         confirmBody: '選択した {{count}} 件を削除します。この操作は元に戻せません。',
         cancel: 'キャンセル',
         deleteSuccess: 'クリーンアップが完了しました',
-        deletePartial: '使用中の一部ファイルをスキップしました',
         deleteError: 'クリーンアップに失敗しました',
         item: {
             cache: {

@@ -113,6 +113,11 @@ export interface CleanupProbe {
      * 対象自体がリンクの場合と、種別が変わっていた対象は削除しない。
      */
     remove(targets: RemoveTarget[]): Promise<boolean[]>;
+    /**
+     * remove と同じく削除し、対象ごとに削除できずに残ったパスを返す（すべて削除できた対象は空配列）。
+     * ディレクトリはOS のファイルロックなどで残った配下のファイル・ディレクトリを並べ、残ったものを特定できない場合は対象自体のパスにする。
+     */
+    removeReporting(targets: RemoveTarget[]): Promise<string[][]>;
 }
 
 /** 環境（native / WSL distro）に対応する CleanupProbe を作る。 */
@@ -409,35 +414,41 @@ class NativeCleanupProbe implements CleanupProbe {
     }
 
     async remove(targets: RemoveTarget[]): Promise<boolean[]> {
+        return (await this.removeReporting(targets)).map(left => left.length === 0);
+    }
+
+    async removeReporting(targets: RemoveTarget[]): Promise<string[][]> {
         return targets.map(target => {
             let st;
             try {
                 st = lstatSync(target.path);
             } catch (error) {
                 const code = (error as NodeJS.ErrnoException).code;
-                return code === 'ENOENT' || code === 'ENOTDIR';
+                return code === 'ENOENT' || code === 'ENOTDIR' ? [] : [target.path];
             }
-            if (st.isSymbolicLink()) return false;
+            if (st.isSymbolicLink()) return [target.path];
             try {
                 if (target.type === 'dir') {
-                    if (!st.isDirectory()) return false;
-                    return removeTreeBestEffort(target.path);
+                    if (!st.isDirectory()) return [target.path];
+                    const failed: string[] = [];
+                    if (removeTreeBestEffort(target.path, failed)) return [];
+                    return failed.length > 0 ? failed : [target.path];
                 }
                 if (target.type === 'empty-dir') {
-                    if (!st.isDirectory()) return false;
+                    if (!st.isDirectory()) return [target.path];
                     rmdirSync(target.path);
                 } else {
-                    if (!st.isFile()) return false;
+                    if (!st.isFile()) return [target.path];
                     unlinkSync(target.path);
                 }
             } catch {
-                return false;
+                return [target.path];
             }
             try {
                 lstatSync(target.path);
-                return false;
+                return [target.path];
             } catch {
-                return true;
+                return [];
             }
         });
     }
@@ -770,34 +781,58 @@ class WslCleanupProbe implements CleanupProbe {
     }
 
     async remove(targets: RemoveTarget[]): Promise<boolean[]> {
+        return (await this.removeReporting(targets)).map(left => left.length === 0);
+    }
+
+    async removeReporting(targets: RemoveTarget[]): Promise<string[][]> {
         if (targets.length === 0) return [];
         // rm は配下のシンボリックリンクを辿らない。--one-file-system（GNU coreutils）があれば別のファイルシステムへも降りない。
+        // 対象ごとに R（削除できた）か K（残った）を出力し、残ったディレクトリは配下に残った末端
+        // （ファイル・リンク・空のディレクトリ）を P<パス> として続ける。区切りは NUL。
         const script = [
             'if rm --help 2>&1 | grep -q -- --one-file-system; then one_fs=--one-file-system; else one_fs=; fi',
             'rm_one() {',
-            '    if [ ! -e "$1" ] && [ ! -L "$1" ]; then echo R; return; fi',
-            '    if [ -L "$1" ]; then echo K; return; fi',
+            `    if [ ! -e "$1" ] && [ ! -L "$1" ]; then printf 'R\\0'; return; fi`,
+            `    if [ -L "$1" ]; then printf 'K\\0'; return; fi`,
             '    if [ "$2" = dir ]; then',
-            '        if [ ! -d "$1" ]; then echo K; return; fi',
+            `        if [ ! -d "$1" ]; then printf 'K\\0'; return; fi`,
             '        rm -rf $one_fs -- "$1" 2>/dev/null',
             '    elif [ "$2" = empty-dir ]; then',
-            '        if [ ! -d "$1" ]; then echo K; return; fi',
+            `        if [ ! -d "$1" ]; then printf 'K\\0'; return; fi`,
             '        rmdir -- "$1" 2>/dev/null',
             '    else',
-            '        if [ ! -f "$1" ]; then echo K; return; fi',
+            `        if [ ! -f "$1" ]; then printf 'K\\0'; return; fi`,
             '        rm -f -- "$1" 2>/dev/null',
             '    fi',
-            '    if [ -e "$1" ] || [ -L "$1" ]; then echo K; else echo R; fi',
+            `    if [ ! -e "$1" ] && [ ! -L "$1" ]; then printf 'R\\0'; return; fi`,
+            `    printf 'K\\0'`,
+            '    if [ "$2" = dir ] && [ -d "$1" ] && [ ! -L "$1" ]; then',
+            `        find -P "$1" -xdev -mindepth 1 \\( -type d -empty -o ! -type d \\) -printf 'P%p\\0' 2>/dev/null`,
+            '    fi',
             '}',
             ...targets.map(target => `rm_one ${shellQuote(target.path)} ${target.type}`),
         ].join('\n');
+        let records: string[];
         try {
-            const lines = (await this.run(script)).toString('utf8').split(/\r?\n/);
-            return targets.map((_, i) => lines[i]?.trim() === 'R');
+            records = (await this.run(script)).toString('utf8').split('\0');
         } catch (error) {
             console.error(`Failed to remove cleanup targets (${this.distro}):`, error);
-            return targets.map(() => false);
+            return targets.map(target => [target.path]);
         }
+        // 対象ごとの残ったパス。null は残ったが配下の末端を特定できていない対象。
+        const results: (string[] | null)[] = [];
+        for (const record of records) {
+            if (record === 'R') {
+                results.push([]);
+            } else if (record === 'K') {
+                results.push(null);
+            } else if (record.startsWith('P') && results.length > 0) {
+                const last = results.length - 1;
+                results[last] = [...(results[last] ?? []), record.slice(1)];
+            }
+        }
+        // 残ったものを特定できなかった対象と、結果が出力されなかった対象は対象自体のパスにする。
+        return targets.map((target, i) => results[i] ?? [target.path]);
     }
 }
 

@@ -30,7 +30,6 @@ export default {
         inUseNotice:
             '実行中の Grok セッションがあると一部ディレクトリの削除に失敗することがあります。削除前にセッションを終了してください。',
         deleteSuccess: 'クリーンアップが完了しました',
-        deletePartial: '使用中のファイルがあったため、一部をスキップしました',
         deleteError: '一部の項目の削除に失敗しました',
         columnName: '項目',
         columnDescription: '説明',

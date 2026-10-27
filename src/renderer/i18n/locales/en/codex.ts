@@ -30,7 +30,6 @@ export default {
         inUseNotice:
             'If a Codex session is running, some directories may fail to delete. Please close sessions before deleting.',
         deleteSuccess: 'Cleanup completed',
-        deletePartial: 'Some files were in use and were skipped',
         deleteError: 'Failed to delete some items',
         columnName: 'Item',
         columnDescription: 'Description',

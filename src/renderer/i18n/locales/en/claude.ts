@@ -50,15 +50,14 @@ export default {
         inUseNotice:
             'Close running Claude Code sessions before cleanup, otherwise some directories may fail to delete.',
         deleteSuccess: 'Cleanup completed',
-        deletePartial: 'Some items were skipped because files were in use',
         deleteError: 'Failed to clean up some items',
         columnName: 'Item',
         columnDescription: 'Description',
         columnFiles: 'Files',
         columnSize: 'Size',
         childOrphan: 'No conversation history (temporary items only)',
-        childInUseParts:
-            '{{count}} item(s) kept because they may be in use (conversation records, temporary items, etc.)',
+        childMayBeInUse: 'May be in use ({{count}} conversation record(s), temporary item(s), etc.)',
+        approvalTitle: 'Projects That May Be in Use',
         dir: {
             projects: 'projects',
             plans: 'plans',

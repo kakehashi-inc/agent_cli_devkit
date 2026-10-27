@@ -1,5 +1,5 @@
 import { CLAUDE_DIR, CLAUDE_TEMP_CLEANUP_KEYS } from '../../../shared/agents/claude/constants';
-import type { AgentEnvironment, CleanupChild } from '../../../shared/agents/types';
+import type { AgentEnvironment, CleanupChild, CleanupInUseSession } from '../../../shared/agents/types';
 import { wyhash64 } from '../../utils/wyhash';
 import type { CleanupProbe, ProbeEntry, ProbeEntryType, RemoveTarget } from '../common/cleanup/CleanupProbe';
 import { MINUTE_MS, type CleanupResolver, type ResolvedChild } from '../common/cleanup/resolvedCleanup';
@@ -32,14 +32,18 @@ const SETTINGS_MAX_BYTES = 1024 * 1024;
 // 登録が無くても実行中として扱う。~/.claude/sessions に登録を書かない Claude Code のセッションを、
 // 実行中の会話が会話記録を書き続けることから検出する。
 const RECENT_SESSION_MS = 10 * MINUTE_MS;
+// 実行中のセッションを判定できないプロジェクトの、すべてのセッションを表す識別子（CleanupInUseSession.id）
+const ALL_SESSIONS_ID = '*';
 
 /**
  * 会話記録（~/.claude/projects/<プロジェクト名>）の扱い。実行中のセッションは、~/.claude/sessions に登録された
  * セッションと、会話記録が RECENT_SESSION_MS 以内に更新されたセッション。
- * - 'free': 実行中のセッションが無いため、memory/ を含めてディレクトリごと削除する。
- * - 'partial': 実行中のセッションがあるため、そのセッションの記録（<セッション ID>.jsonl と <セッション ID>/）と
- *   memory/ を残し、それ以外を削除する。
- * - 'locked': 実行中のセッションを判定できない（登録や会話記録を読めない）ため、すべて残す。
+ * 利用者が削除を承認したプロジェクトは、実行中のセッションが無いものとして扱う。
+ * - 'free': 実行中のセッションが無いため、memory/ を含めてディレクトリごと削除の対象にする。
+ * - 'partial': 実行中のセッションがあるため、使用中の可能性があるプロジェクトとして削除しない。そのセッションの記録
+ *   （<セッション ID>.jsonl と <セッション ID>/）と memory/ を使用中の可能性があるものとして数える。
+ * - 'locked': 実行中のセッションを判定できない（登録や会話記録を読めない）ため、使用中の可能性があるプロジェクトとして
+ *   削除しない。会話記録全体を 1 件として数える。
  */
 type HistoryState = 'free' | 'partial' | 'locked';
 
@@ -49,14 +53,28 @@ export interface ClaudeProjectGroup {
     name: string;
     // ~/.claude/projects/<プロジェクト名>（無ければ null）
     history: ResolvedChild | null;
-    // 会話記録のうち削除するもの（'free' はディレクトリ自体、'partial' は残すもの以外のエントリ）
+    // 会話記録のうち削除の対象にするもの（'free' のディレクトリ自体）
     historyTargets: ResolvedChild[];
-    // 会話記録のうち残すものの件数（'partial' は残すエントリの数、'locked' は会話記録全体を 1 件とする）
+    // 会話記録のうち使用中の可能性があるものの件数（'partial' はそのエントリの数、'locked' は会話記録全体を 1 件とする）
     keptHistory: number;
     // セッションの作業フォルダ・bash-edit-diff・MCP ログ。実行中のセッションのものは in-use。
     parts: ResolvedChild[];
     // 一時ルート配下の <プロジェクト名> ディレクトリ（作業フォルダの削除後に空なら削除する）
     tempDirs: string[];
+    // 会話記録・一時物を残す根拠になったセッション（識別子 → セッション）
+    inUseSessions: Map<string, CleanupInUseSession>;
+}
+
+/** 実行中として扱うセッション。 */
+interface RunningSession {
+    // 小文字のセッション ID。セッション ID の無い登録は 'pid:<pid>'
+    id: string;
+    reason: Exclude<CleanupInUseSession['reason'], 'unknown'>;
+    title?: string;
+    // セッション ID の wyhash（10 進）。セッション ID の無い登録は undefined
+    hash?: string;
+    // セッションがあるプロジェクト（登録の作業フォルダと会話記録の場所。keyOf で比較用にそろえたもの）
+    projects: Set<string>;
 }
 
 interface ClaudeTempLayout {
@@ -66,13 +84,10 @@ interface ClaudeTempLayout {
 }
 
 interface Registrations {
-    // 小文字のセッション ID
-    sessions: Set<string>;
-    // セッション ID の wyhash（10 進）
-    hashes: Set<string>;
+    // 実行中として登録されたセッション
+    sessions: RunningSession[];
+    // 実行中として登録されたセッションのバージョン
     versions: Set<string>;
-    // 実行中セッションの作業フォルダを符号化したプロジェクト名（keyOf で比較用にそろえたもの）
-    projects: Set<string>;
     // すべての登録を読めたか。一覧できない・読めない・解析できない登録があれば false（実行中のセッションが分からない）。
     complete: boolean;
 }
@@ -81,13 +96,18 @@ interface Registrations {
 const layouts = new WeakMap<CleanupProbe, Promise<ClaudeTempLayout>>();
 
 /**
- * Claude Code の会話履歴と ~/.claude 外の一時物の構成を調べる（同じ probe では結果を使い回す）。
+ * Claude Code の会話履歴と ~/.claude 外の一時物の構成を調べる（同じ probe では最初の呼び出しの結果を使い回す）。
  * hostProbe は WSL 環境のときの Windows 側。そこに登録されたセッションも実行中として扱う。
+ * approved のプロジェクト（利用者が削除を承認したもの）は、実行中のセッションが無いものとして扱う。
  */
-function loadLayout(probe: CleanupProbe, hostProbe: CleanupProbe | null): Promise<ClaudeTempLayout> {
+function loadLayout(
+    probe: CleanupProbe,
+    hostProbe: CleanupProbe | null,
+    approved: readonly string[] = []
+): Promise<ClaudeTempLayout> {
     let layout = layouts.get(probe);
     if (!layout) {
-        layout = buildLayout(probe, hostProbe);
+        layout = buildLayout(probe, hostProbe, approved);
         layouts.set(probe, layout);
     }
     return layout;
@@ -197,19 +217,13 @@ function parseRegistration(head: Buffer | null): Record<string, unknown> | null 
 }
 
 /**
- * ~/.claude/sessions/<pid>.json に実行中として登録されたセッションの ID・バージョン・作業フォルダを集める。
+ * ~/.claude/sessions/<pid>.json に実行中として登録されたセッションの ID・バージョン・作業フォルダ・名前を集める。
  * プロセスは調べないため、登録した環境（pidDomain の OS・ホスト名）は問わず、すべての登録を実行中として扱う。
  * sessions が無い場合だけ登録なしとし、一覧できない・読めない・解析できない登録が 1 件でもあれば
  * complete を false にする（どのセッションが実行中か分からない）。
  */
 async function readRegistrations(probe: CleanupProbe, hostProbe: CleanupProbe | null): Promise<Registrations> {
-    const result: Registrations = {
-        sessions: new Set(),
-        hashes: new Set(),
-        versions: new Set(),
-        projects: new Set(),
-        complete: true,
-    };
+    const result: Registrations = { sessions: [], versions: new Set(), complete: true };
     for (const source of hostProbe ? [probe, hostProbe] : [probe]) {
         const dir = source.join(await source.homeDir(), CLAUDE_DIR, SESSIONS_DIR);
         const listed = await source.tryListNested(dir, 1);
@@ -224,23 +238,33 @@ async function readRegistrations(probe: CleanupProbe, hostProbe: CleanupProbe | 
             files.map(file => file.path),
             REGISTRATION_MAX_BYTES
         );
-        for (const head of heads) {
+        heads.forEach((head, i) => {
             const registration = parseRegistration(head);
             if (!registration) {
                 result.complete = false;
-                continue;
-            }
-            if (typeof registration.sessionId === 'string' && SESSION_ID.test(registration.sessionId)) {
-                result.sessions.add(registration.sessionId.toLowerCase());
-                result.hashes.add(sessionHash(registration.sessionId));
+                return;
             }
             if (typeof registration.version === 'string' && registration.version.length > 0) {
                 result.versions.add(registration.version);
             }
+            const sessionId =
+                typeof registration.sessionId === 'string' && SESSION_ID.test(registration.sessionId)
+                    ? registration.sessionId
+                    : undefined;
+            const projects = new Set<string>();
             if (typeof registration.cwd === 'string' && registration.cwd.length > 0) {
-                result.projects.add(projectKey(probe, encodeProjectName(registration.cwd)));
+                projects.add(projectKey(probe, encodeProjectName(registration.cwd)));
             }
-        }
+            const title = typeof registration.name === 'string' && registration.name.trim() ? registration.name : '';
+            result.sessions.push({
+                // セッション ID の無い登録は、登録ファイル名の <pid> で識別する
+                id: sessionId ? sessionId.toLowerCase() : `pid:${files[i].rel.replace(/\.json$/, '')}`,
+                reason: 'registered',
+                ...(title ? { title } : {}),
+                ...(sessionId ? { hash: sessionHash(sessionId) } : {}),
+                projects,
+            });
+        });
     }
     return result;
 }
@@ -263,32 +287,26 @@ function isRecent(mtimeMs: number, now: number): boolean {
 }
 
 /**
- * 実行中のセッションがあるプロジェクトの会話記録を、残すもの（実行中のセッションの記録・memory/・リンク）と
- * 削除するものに分ける。
+ * 実行中のセッションがあるプロジェクトの会話記録のうち、使用中の可能性があるもの（実行中のセッションの記録・
+ * memory/・リンク）の件数を返す。
  */
-async function splitRunningHistory(
-    probe: CleanupProbe,
-    group: ClaudeProjectGroup,
-    history: ResolvedChild,
-    runningSessions: Set<string>
-): Promise<void> {
-    for (const entry of await probe.list(history.path, () => true)) {
-        const keep = entry.type === 'other' || entry.name === MEMORY_DIR || isRunningRecord(entry, runningSessions);
-        if (keep) {
-            group.keptHistory += 1;
-        } else {
-            group.historyTargets.push({
-                name: entry.name,
-                path: entry.path,
-                type: entry.type === 'dir' ? 'dir' : 'file',
-                size: entry.size,
-                fileCount: entry.fileCount,
-            });
-        }
-    }
+async function countRunningHistory(history: ResolvedChild, probe: CleanupProbe, runningSessions: Set<string>) {
+    const entries = await probe.list(history.path, () => true);
+    return entries.filter(
+        entry => entry.type === 'other' || entry.name === MEMORY_DIR || isRunningRecord(entry, runningSessions)
+    ).length;
 }
 
-async function buildLayout(probe: CleanupProbe, hostProbe: CleanupProbe | null): Promise<ClaudeTempLayout> {
+/** 実行中として扱うセッションを画面表示用にする。 */
+function toInUseSession(session: RunningSession): CleanupInUseSession {
+    return { id: session.id, reason: session.reason, ...(session.title ? { title: session.title } : {}) };
+}
+
+async function buildLayout(
+    probe: CleanupProbe,
+    hostProbe: CleanupProbe | null,
+    approved: readonly string[]
+): Promise<ClaudeTempLayout> {
     const home = await probe.homeDir();
     const claudeDir = probe.join(home, CLAUDE_DIR);
     const projectsDir = probe.join(claudeDir, PROJECTS_DIR);
@@ -298,12 +316,23 @@ async function buildLayout(probe: CleanupProbe, hostProbe: CleanupProbe | null):
     const unknownRunning = !registrations.complete;
     const roots = await resolveTempRoots(probe, claudeDir);
 
+    // 利用者が削除を承認したプロジェクト
+    const approvedProjects = new Set(approved.map(keyOf));
+
     const groups = new Map<string, ClaudeProjectGroup>();
     const groupFor = (name: string): ClaudeProjectGroup => {
         const key = keyOf(name);
         let group = groups.get(key);
         if (!group) {
-            group = { name, history: null, historyTargets: [], keptHistory: 0, parts: [], tempDirs: [] };
+            group = {
+                name,
+                history: null,
+                historyTargets: [],
+                keptHistory: 0,
+                parts: [],
+                tempDirs: [],
+                inUseSessions: new Map(),
+            };
             groups.set(key, group);
         }
         return group;
@@ -316,10 +345,13 @@ async function buildLayout(probe: CleanupProbe, hostProbe: CleanupProbe | null):
     for (const entry of projectEntries) {
         groupFor(entry.name).history = toChild(entry, entry.name);
     }
-    // 実行中のセッション（小文字のセッション ID とその wyhash）と、実行中のセッションがあるプロジェクト
-    const runningSessions = new Set(registrations.sessions);
-    const runningHashes = new Set(registrations.hashes);
-    const activeProjects = new Set(registrations.projects);
+    // 実行中として扱うセッション（識別子 → セッション）。同じセッションの登録が複数あればプロジェクトをまとめる。
+    const sessions = new Map<string, RunningSession>();
+    for (const session of registrations.sessions) {
+        const known = sessions.get(session.id);
+        if (known) session.projects.forEach(project => known.projects.add(project));
+        else sessions.set(session.id, session);
+    }
     // 会話履歴（<セッション ID>.jsonl とセッション ID のディレクトリ）からセッションとプロジェクトを対応付け、
     // 実行中のセッションの記録を含むプロジェクトを調べる。一覧できなければ会話記録はすべて残す。
     const nested = await probe.tryListNested(projectsDir, 2);
@@ -329,7 +361,7 @@ async function buildLayout(probe: CleanupProbe, hostProbe: CleanupProbe | null):
         const sessionId = recordSessionId(entry.type, name);
         if (!group || !sessionId) continue;
         sessionGroups.set(sessionHash(sessionId), group);
-        if (registrations.sessions.has(sessionId.toLowerCase())) activeProjects.add(keyOf(project));
+        sessions.get(sessionId.toLowerCase())?.projects.add(keyOf(project));
     }
     // 登録の無い実行中のセッション: 配下が直近に更新されたプロジェクトだけ、会話記録ごとの更新日時を調べる
     if (!unknownRunning && nested !== null) {
@@ -339,20 +371,58 @@ async function buildLayout(probe: CleanupProbe, hostProbe: CleanupProbe | null):
             for (const record of await probe.list(project.path, () => true)) {
                 const sessionId = recordSessionId(record.type, record.name);
                 if (!sessionId || !isRecent(record.mtimeMs, now)) continue;
-                runningSessions.add(sessionId.toLowerCase());
-                runningHashes.add(sessionHash(sessionId));
-                activeProjects.add(keyOf(project.name));
+                const id = sessionId.toLowerCase();
+                const known = sessions.get(id);
+                if (known) {
+                    known.projects.add(keyOf(project.name));
+                } else {
+                    sessions.set(id, {
+                        id,
+                        reason: 'recent',
+                        hash: sessionHash(sessionId),
+                        projects: new Set([keyOf(project.name)]),
+                    });
+                }
             }
         }
     }
+    // 実行中のセッションと、その wyhash・実行中のセッションがあるプロジェクト
+    const running = [...sessions.values()];
+    const runningIds = new Set(running.map(session => session.id));
+    const runningByHash = new Map<string, RunningSession>();
+    for (const session of running) {
+        if (session.hash) runningByHash.set(session.hash, session);
+    }
+    const activeProjects = new Set(running.flatMap(session => [...session.projects]));
+
+    // 削除を承認したプロジェクトは、実行中のセッションが無いものとして扱う
+    const historyLocked = (key: string) => (unknownRunning || nested === null) && !approvedProjects.has(key);
+    const partsLocked = (key: string) => unknownRunning && !approvedProjects.has(key);
+    const isActive = (key: string) => activeProjects.has(key) && !approvedProjects.has(key);
+    // 残すものの根拠にしたセッションをプロジェクトに記録する
+    const noteLocked = (group: ClaudeProjectGroup) =>
+        group.inUseSessions.set(ALL_SESSIONS_ID, { id: ALL_SESSIONS_ID, reason: 'unknown' });
+    const noteSession = (group: ClaudeProjectGroup, session: RunningSession) =>
+        group.inUseSessions.set(session.id, toInUseSession(session));
+    const noteActive = (group: ClaudeProjectGroup, key: string) => {
+        for (const session of running) {
+            if (session.projects.has(key)) noteSession(group, session);
+        }
+    };
+
     for (const [key, group] of groups) {
         const history = group.history;
         if (!history) continue;
-        const state: HistoryState =
-            unknownRunning || nested === null ? 'locked' : activeProjects.has(key) ? 'partial' : 'free';
-        if (state === 'free') group.historyTargets.push(history);
-        else if (state === 'locked') group.keptHistory = 1;
-        else await splitRunningHistory(probe, group, history, runningSessions);
+        const state: HistoryState = historyLocked(key) ? 'locked' : isActive(key) ? 'partial' : 'free';
+        if (state === 'free') {
+            group.historyTargets.push(history);
+        } else if (state === 'locked') {
+            group.keptHistory = 1;
+            noteLocked(group);
+        } else {
+            group.keptHistory = await countRunningHistory(history, probe, runningIds);
+            noteActive(group, key);
+        }
     }
 
     // 一時ルート配下 <プロジェクト名>/<セッション ID>（セッションの作業フォルダ）
@@ -361,11 +431,16 @@ async function buildLayout(probe: CleanupProbe, hostProbe: CleanupProbe | null):
             if (top.type !== 'dir' || !isProject(top.rel)) continue;
             const work = (await probe.list(top.path, name => SESSION_ID.test(name))).filter(e => e.type === 'dir');
             const group = groupFor(top.rel);
+            const key = keyOf(top.rel);
             group.tempDirs.push(top.path);
             for (const entry of work) {
                 sessionGroups.set(sessionHash(entry.name), group);
-                const running = unknownRunning || runningSessions.has(entry.name.toLowerCase());
-                group.parts.push({ ...toChild(entry), excluded: running ? 'in-use' : undefined });
+                const session = approvedProjects.has(key) ? undefined : sessions.get(entry.name.toLowerCase());
+                const locked = partsLocked(key);
+                const inUse = locked || session !== undefined;
+                if (locked) noteLocked(group);
+                else if (inUse && session) noteSession(group, session);
+                group.parts.push({ ...toChild(entry), excluded: inUse ? 'in-use' : undefined });
             }
         }
     }
@@ -373,8 +448,13 @@ async function buildLayout(probe: CleanupProbe, hostProbe: CleanupProbe | null):
     // MCP ログのキャッシュ <プロジェクト名>/（mcp-logs-* など）。実行中のセッションがあるプロジェクトのものは使用中
     for (const entry of await probe.list(await mcpCacheDir(probe, home), () => true)) {
         if (entry.type !== 'dir' || !isProject(entry.name)) continue;
-        const running = unknownRunning || activeProjects.has(keyOf(entry.name));
-        groupFor(entry.name).parts.push({ ...toChild(entry), excluded: running ? 'in-use' : undefined });
+        const group = groupFor(entry.name);
+        const key = keyOf(entry.name);
+        const locked = partsLocked(key);
+        const inUse = locked || isActive(key);
+        if (locked) noteLocked(group);
+        else if (inUse) noteActive(group, key);
+        group.parts.push({ ...toChild(entry), excluded: inUse ? 'in-use' : undefined });
     }
 
     // bash-edit-diff はセッション ID でプロジェクトへ対応付け、対応しないものを独立した候補にする
@@ -386,12 +466,21 @@ async function buildLayout(probe: CleanupProbe, hostProbe: CleanupProbe | null):
             if (entry.type !== 'dir') continue;
             const lead = BASH_EDIT_DIFF_ENTRY.exec(entry.name)?.[1] ?? '';
             const hash = SESSION_ID.test(lead) ? sessionHash(lead) : lead;
-            const excluded = unknownRunning || runningHashes.has(hash) ? ('in-use' as const) : undefined;
             const group = sessionGroups.get(hash);
             if (group) {
-                group.parts.push({ ...toChild(entry), excluded });
+                const key = keyOf(group.name);
+                const session = approvedProjects.has(key) ? undefined : runningByHash.get(hash);
+                const locked = partsLocked(key);
+                const inUse = locked || session !== undefined;
+                if (locked) noteLocked(group);
+                else if (session) noteSession(group, session);
+                group.parts.push({ ...toChild(entry), excluded: inUse ? 'in-use' : undefined });
             } else {
-                bashEditDiff.push({ ...toChild(entry, i === 0 ? entry.name : entry.path), excluded });
+                const inUse = unknownRunning || runningByHash.has(hash);
+                bashEditDiff.push({
+                    ...toChild(entry, i === 0 ? entry.name : entry.path),
+                    excluded: inUse ? 'in-use' : undefined,
+                });
             }
         }
         // bundled-skills/<バージョン>。実行中として登録されたセッションのバージョンは使用中
@@ -409,20 +498,20 @@ async function buildLayout(probe: CleanupProbe, hostProbe: CleanupProbe | null):
 }
 
 /**
- * プロジェクト 1 件を画面表示用の子要素にする。サイズ・件数は削除できるものの合計とし、
- * 実行中のセッションのために残すもの（会話記録・一時物）の件数を inUseParts にする。
- * 削除できるものが無く残すものがある場合だけ、選択できない使用中の子要素にする。
+ * プロジェクト 1 件を画面表示用の子要素にする。サイズ・件数は、削除すれば消える全体（会話履歴のディレクトリと
+ * すべての一時物）の合計とする。使用中の可能性があるもの（会話記録・一時物）があるプロジェクトは、承認されない限り
+ * 削除しない使用中の子要素とし、その件数を inUseParts に、根拠のセッションを inUseSessions にする。
  */
 function toProjectChild(group: ClaudeProjectGroup): CleanupChild {
-    const deletable = [...group.historyTargets, ...group.parts.filter(part => !part.excluded)];
     const kept = group.keptHistory + group.parts.filter(part => part.excluded).length;
+    const all = [...(group.history ? [group.history] : []), ...group.parts];
     return {
         name: group.name,
-        size: deletable.reduce((sum, item) => sum + item.size, 0),
-        fileCount: deletable.reduce((sum, item) => sum + item.fileCount, 0),
-        ...(kept > 0 ? { inUseParts: kept } : {}),
+        size: all.reduce((sum, item) => sum + item.size, 0),
+        fileCount: all.reduce((sum, item) => sum + item.fileCount, 0),
+        ...(kept > 0 ? { inUse: true, inUseParts: kept } : {}),
+        ...(kept > 0 && group.inUseSessions.size > 0 ? { inUseSessions: [...group.inUseSessions.values()] } : {}),
         ...(group.history ? {} : { orphan: true }),
-        ...(deletable.length === 0 && kept > 0 ? { inUse: true } : {}),
     };
 }
 
@@ -445,51 +534,55 @@ export async function resolveClaudeProjects(
 }
 
 /**
- * プロジェクトを紐づく一時物ごと削除し、削除しなかった・できなかったものの名前を返す。
+ * プロジェクトを紐づく一時物ごと削除し、削除に失敗したものがあるプロジェクトの名前（skipped）と、
+ * OS のファイルロックなどで削除できずに残ったパス（failedPaths）を返す。消せないものがあっても残りは削除する。
  * - names='all': すべてのプロジェクトを対象にする（~/.claude/projects 自体は残す）。
  * - names=名前の配列: 選択されたプロジェクトを対象にする。
- * 実行中のセッションが無いプロジェクトは、会話記録のディレクトリ（memory/ を含む）ごと削除する。
- * 実行中のセッションがあるプロジェクトは、そのセッションの記録・memory/・作業フォルダ・bash-edit-diff・MCP ログを残して
- * それ以外を削除し、そのプロジェクトを報告する。実行中のセッションを判定できない場合は会話記録と一時物を残して報告する。
- * 一時ルート配下の <プロジェクト名> ディレクトリは、空になった場合だけ削除する。
+ * 使用中の可能性があるプロジェクト（実行中のセッションがある、または判定できない）は、approved に含まれる
+ * （利用者が削除を承認した）ものだけを対象にし、承認されていないものには触れない。names='all' のときの承認されていない
+ * ものは削除の対象ではないため報告せず、名前で選択されたものは選択後に使用中の可能性が生じたものとして skipped で報告する。
+ * 対象のプロジェクトは、会話記録のディレクトリ（memory/ を含む）と一時物（作業フォルダ・bash-edit-diff・MCP ログ）を
+ * すべて削除する。一時ルート配下の <プロジェクト名> ディレクトリは、空になった場合だけ削除する。
  */
 export async function deleteClaudeProjects(
     probe: CleanupProbe,
     hostProbe: CleanupProbe | null,
     key: string,
     env: AgentEnvironment,
-    names: 'all' | string[]
-): Promise<string[]> {
+    names: 'all' | string[],
+    approved: readonly string[] = []
+): Promise<{ skipped: string[]; failedPaths: string[] }> {
     let layout: ClaudeTempLayout;
     try {
-        layout = await loadLayout(probe, hostProbe);
+        layout = await loadLayout(probe, hostProbe, approved);
     } catch (error) {
         console.error(`Failed to resolve Claude projects (${JSON.stringify(env)}):`, error);
-        return names === 'all' ? [key] : [...names];
+        return { skipped: names === 'all' ? [key] : [...names], failedPaths: [] };
     }
     const wanted = names === 'all' ? null : new Set(names.map(name => projectKey(probe, name)));
-    const selected = layout.groups.filter(group => !wanted || wanted.has(projectKey(probe, group.name)));
-
     const skipped = new Set<string>();
+    // 残すもの（使用中の可能性があるもの）があるプロジェクトは承認されていないため対象にしない。承認されたプロジェクトは
+    // 実行中のセッションが無いものとして構成を調べているため、残すものが無い。
+    const selected: ClaudeProjectGroup[] = [];
+    for (const group of layout.groups) {
+        if (wanted && !wanted.has(projectKey(probe, group.name))) continue;
+        if (group.keptHistory === 0 && !group.parts.some(part => part.excluded)) selected.push(group);
+        else if (wanted) skipped.add(group.name);
+    }
+
     const targets: { owner: string; target: RemoveTarget }[] = [];
     for (const group of selected) {
-        if (group.keptHistory > 0) skipped.add(group.name);
-        for (const item of group.historyTargets) {
+        for (const item of [...group.historyTargets, ...group.parts]) {
             targets.push({ owner: group.name, target: { path: item.path, type: item.type } });
         }
-        for (const part of group.parts) {
-            if (part.excluded) {
-                skipped.add(group.name);
-            } else {
-                targets.push({ owner: group.name, target: { path: part.path, type: part.type } });
-            }
-        }
     }
-    const removed = await probe.remove(targets.map(item => item.target));
+    const failedPaths: string[] = [];
+    const left = await probe.removeReporting(targets.map(item => item.target));
     targets.forEach((item, i) => {
-        if (!removed[i]) {
+        if (left[i].length > 0) {
             console.error(`Failed to remove ${item.target.path} (${JSON.stringify(env)})`);
             skipped.add(item.owner);
+            failedPaths.push(...left[i]);
         }
     });
 
@@ -497,13 +590,21 @@ export async function deleteClaudeProjects(
     await probe.remove(
         selected.flatMap(group => group.tempDirs.map(dir => ({ path: dir, type: 'empty-dir' as const })))
     );
-    return [...skipped];
+    return { skipped: [...skipped], failedPaths };
 }
 
-/** ~/.claude 外の一時物のうちプロジェクトに紐づかない候補のリゾルバ（候補キー → リゾルバ）。 */
-export function claudeTempResolvers(hostProbe: CleanupProbe | null): Record<string, CleanupResolver> {
+/**
+ * ~/.claude 外の一時物のうちプロジェクトに紐づかない候補のリゾルバ（候補キー → リゾルバ）。
+ * approved のプロジェクト（利用者が削除を承認したもの）は、実行中のセッションが無いものとして扱う。
+ */
+export function claudeTempResolvers(
+    hostProbe: CleanupProbe | null,
+    approved: readonly string[] = []
+): Record<string, CleanupResolver> {
     return {
-        [CLAUDE_TEMP_CLEANUP_KEYS.BUNDLED_SKILLS]: async probe => (await loadLayout(probe, hostProbe)).bundledSkills,
-        [CLAUDE_TEMP_CLEANUP_KEYS.BASH_EDIT_DIFF]: async probe => (await loadLayout(probe, hostProbe)).bashEditDiff,
+        [CLAUDE_TEMP_CLEANUP_KEYS.BUNDLED_SKILLS]: async probe =>
+            (await loadLayout(probe, hostProbe, approved)).bundledSkills,
+        [CLAUDE_TEMP_CLEANUP_KEYS.BASH_EDIT_DIFF]: async probe =>
+            (await loadLayout(probe, hostProbe, approved)).bashEditDiff,
     };
 }
