@@ -11,6 +11,10 @@ import { registerGrokAssetHandlers } from './grokAssetHandlers';
 import { registerGrokCleanupHandlers } from './grokCleanupHandlers';
 import { registerGrokConfigHandlers } from './grokConfigHandlers';
 import { registerGrokPluginHandlers } from './grokPluginHandlers';
+import { profileChannels } from '../../../shared/agents/profile/channels';
+import { GROK_PROFILE_SPEC } from '../../../shared/agents/grok/profileTabs';
+import { ProfileManager } from '../../services/common/profile/ProfileManager';
+import { registerProfileHandlers } from '../common/profileHandlers';
 
 /**
  * Grok 系の IPC ハンドラを一括登録する。
@@ -26,4 +30,5 @@ export function registerGrokIpcHandlers(
     registerGrokCleanupHandlers(new GrokCleanupManager(detector));
     registerGrokConfigHandlers(new GrokConfigManager(detector));
     registerGrokPluginHandlers(new GrokPluginManager(detector, cliRunner));
+    registerProfileHandlers(profileChannels('grok'), new ProfileManager(detector, GROK_PROFILE_SPEC), getMainWindow);
 }

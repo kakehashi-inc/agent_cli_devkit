@@ -3,12 +3,20 @@ import type {
     OSType,
     SettingsFieldSpec,
     SettingsFieldValue,
+    SettingsParseError,
+    SettingsRawResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
 } from '../../../../shared/agents/types';
 import { settingsValueProblem } from '../../../../shared/agents/settingsValue';
-import { deleteJsoncProperty, parseJsonc, parseJsoncObject, setJsoncProperty } from '../../../utils/jsoncEdit';
+import {
+    deleteJsoncProperty,
+    jsonSyntaxProblem,
+    parseJsonc,
+    parseJsoncObject,
+    setJsoncProperty,
+} from '../../../utils/jsoncEdit';
 import {
     deepEqualLoose,
     deleteNestedValue,
@@ -16,9 +24,22 @@ import {
     setNestedValue,
     withoutEmptyObjects,
 } from '../../../utils/nestedValue';
+import {
+    conflictResult,
+    failureDetail,
+    normalizeEol,
+    rawResultOf,
+    readConfigFile,
+    saveConfigText,
+    saveDirectEdit,
+    saveFailure,
+    staleSettingsKeys,
+    unreadableRawResult,
+    withFinalEol,
+    type ConfigFile,
+} from '../fs/configFile';
 import { HomeFs } from '../wsl/HomeFs';
 import { WslDetector } from '../wsl/WslDetector';
-import { stripBom } from './stripBom';
 
 interface Options {
     configRel: string;
@@ -28,6 +49,11 @@ interface Options {
     wslAvailable?: (env: AgentEnvironment) => Promise<boolean>;
     fields: SettingsFieldSpec[];
     initial?: Record<string, unknown>;
+    // 画面に見せる現在の値を、ファイルの内容から補正する。保存時の値の比較も補正した値で行う。
+    displayValues?: (
+        root: Record<string, unknown>,
+        values: Record<string, SettingsFieldValue>
+    ) => Record<string, SettingsFieldValue>;
 }
 
 /** JSON / JSONC 設定のスカラー差分編集と raw 編集を提供する。 */
@@ -79,32 +105,69 @@ export class JsonSettingsManager {
         return typeof value === 'string' ? value : undefined;
     }
 
-    /**
-     * 設定ファイルを読み、登録項目の現在値と生テキスト（先頭の BOM は除く）を返す。
-     * 構文が壊れている場合は値を未設定として扱い、生テキストは直接編集で直せるようそのまま返す。
-     */
-    async read(env: AgentEnvironment): Promise<SettingsReadResult> {
-        const fs = this.fsFor(env);
-        const raw = stripBom(await fs.readText(this.options.configRel));
-        let root: Record<string, unknown> = {};
-        if (raw !== null && raw.trim().length > 0) {
-            try {
-                root = parseJsoncObject(raw);
-            } catch {
-                root = {};
-            }
-        }
-        const values: Record<string, SettingsFieldValue> = {};
-        for (const field of this.options.fields) values[field.key] = this.extract(field, root);
+    private resultBase(env: AgentEnvironment) {
         return {
             env,
             label: env.kind === 'wsl' ? (env.distro ?? 'WSL') : this.nativeLabel(),
             available: true,
-            exists: raw !== null,
-            values,
             fields: this.options.fields,
-            raw: raw ?? `${JSON.stringify(this.options.initial ?? {}, null, 2)}\n`,
         };
+    }
+
+    private valuesOf(root: Record<string, unknown>): Record<string, SettingsFieldValue> {
+        const values: Record<string, SettingsFieldValue> = {};
+        for (const field of this.options.fields) values[field.key] = this.extract(field, root);
+        return values;
+    }
+
+    private displayValuesOf(root: Record<string, unknown>): Record<string, SettingsFieldValue> {
+        const values = this.valuesOf(root);
+        return this.options.displayValues ? this.options.displayValues(root, values) : values;
+    }
+
+    /** 設定ファイルを読めなかったときの読み取り結果。 */
+    unreadable(env: AgentEnvironment, detail: string): SettingsReadResult {
+        return { ...this.resultBase(env), exists: true, values: this.valuesOf({}), readFailed: detail };
+    }
+
+    /** 未作成のファイルと空白だけのファイルを保存するときの最初の内容。 */
+    private initialText(): string {
+        return `${JSON.stringify(this.options.initial ?? {}, null, 2)}\n`;
+    }
+
+    /** 設定ファイルを読み、登録項目の現在値を返す。読めないファイルは readFailed、構文が壊れている場合は parseError を付ける。 */
+    async read(env: AgentEnvironment): Promise<SettingsReadResult> {
+        let file: ConfigFile;
+        try {
+            file = await readConfigFile(this.fsFor(env), this.options.configRel);
+        } catch (error) {
+            return this.unreadable(env, failureDetail(error));
+        }
+        let root: Record<string, unknown> = {};
+        let parseError: SettingsParseError | undefined;
+        if (file.text.trim().length > 0) {
+            try {
+                root = parseJsoncObject(file.text);
+            } catch (error) {
+                parseError = jsonSyntaxProblem(error, file.text);
+            }
+        }
+        return {
+            ...this.resultBase(env),
+            exists: file.exists,
+            values: this.displayValuesOf(root),
+            ...(parseError ? { parseError } : {}),
+        };
+    }
+
+    /** 直接編集のために設定ファイルの全文（先頭の BOM は除く）を読む。ファイルが無ければ最初の内容を返す。 */
+    async readRaw(env: AgentEnvironment): Promise<SettingsRawResult> {
+        try {
+            const file = await readConfigFile(this.fsFor(env), this.options.configRel);
+            return rawResultOf(file, file.exists ? file.text : this.initialText());
+        } catch (error) {
+            return unreadableRawResult(error);
+        }
     }
 
     /**
@@ -128,25 +191,31 @@ export class JsonSettingsManager {
 
     /**
      * テーブル編集の保存。既存テキストへ登録項目だけを外科的に反映して書き戻す。
-     * コメント・空行・インデントなど対象外の文字列は保持する。ファイルが無いか空白だけなら initial から始める。
+     * コメント・空行・インデント・改行コード・BOM など対象外の文字列は保持する。ファイルが無いか空白だけなら initial から始める。
+     * 読めないファイルは read-failed、解釈できないファイルは invalid-existing-json を返し、何も書かない。
      * registry の制約を満たさない値が含まれていれば、何も書かずに失敗を返す。
+     * 保存する項目の現在の値が読み込んだ時点の値（base）と違えば、conflict を返して何も書かない。他の項目の変更はそのまま残す。
      *
      * 安全弁: 編集後テキストの parse 結果が「編集前の parse 結果へ意図した変更を適用した
      * 期待モデル」と deep 一致することを検証し、一致しない場合はファイルを書かずに失敗を返す。
      */
-    async write(env: AgentEnvironment, values: SettingsValues): Promise<SettingsWriteResult> {
+    async write(env: AgentEnvironment, values: SettingsValues, base: SettingsValues): Promise<SettingsWriteResult> {
         const fs = this.fsFor(env);
-        const existing = stripBom(await fs.readText(this.options.configRel));
-        let text =
-            existing !== null && existing.trim().length > 0
-                ? existing
-                : `${JSON.stringify(this.options.initial ?? {}, null, 2)}\n`;
+        let file: ConfigFile;
+        try {
+            file = await readConfigFile(fs, this.options.configRel);
+        } catch (error) {
+            return saveFailure(error, this.options.configRel);
+        }
+        let text = file.text.trim().length > 0 ? file.text : normalizeEol(this.initialText(), file.eol);
         const expected: Record<string, unknown> = {};
         try {
             Object.assign(expected, parseJsoncObject(text));
         } catch {
             return { ok: false, message: 'invalid-existing-json' };
         }
+        const stale = staleSettingsKeys(values, base, this.displayValuesOf(expected));
+        if (stale.length > 0) return conflictResult(stale);
         for (const field of this.options.fields) {
             if (field.type === 'directEdit' || !Object.prototype.hasOwnProperty.call(values, field.key)) continue;
             const value = this.normalize(field, values[field.key]);
@@ -172,28 +241,21 @@ export class JsonSettingsManager {
             return { ok: false, message: 'verify-failed' };
         }
 
-        try {
-            await fs.writeText(this.options.configRel, text.endsWith('\n') ? text : `${text}\n`);
-            return { ok: true };
-        } catch (error) {
-            console.error(`Failed to write JSON settings (${JSON.stringify(env)}):`, error);
-            return { ok: false, message: 'write-failed' };
-        }
+        return saveConfigText(fs, file, withFinalEol(text, file.eol));
     }
 
-    async writeRaw(env: AgentEnvironment, input: string): Promise<SettingsWriteResult> {
-        const raw = stripBom(input);
-        try {
-            parseJsoncObject(raw);
-        } catch {
-            return { ok: false, message: 'invalid-json' };
-        }
-        try {
-            await this.fsFor(env).writeText(this.options.configRel, raw.endsWith('\n') ? raw : `${raw}\n`);
-            return { ok: true };
-        } catch (error) {
-            console.error(`Failed to write raw JSON settings (${JSON.stringify(env)}):`, error);
-            return { ok: false, message: 'write-failed' };
-        }
+    /**
+     * 直接編集の保存。baseRevision は読み込んだ時点の revision で、ファイルが変わっていれば conflict を返す。
+     * 改行はファイルの改行へ揃え、JSONC の構文だけを検証する。
+     */
+    async writeRaw(env: AgentEnvironment, input: string, baseRevision: string): Promise<SettingsWriteResult> {
+        return saveDirectEdit(this.fsFor(env), this.options.configRel, input, baseRevision, text => {
+            try {
+                parseJsoncObject(text);
+                return null;
+            } catch {
+                return 'invalid-json';
+            }
+        });
     }
 }

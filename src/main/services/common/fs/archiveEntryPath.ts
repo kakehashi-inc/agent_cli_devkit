@@ -6,20 +6,29 @@ export interface NormalizedArchiveEntry {
     entry: AdmZip.IZipEntry;
 }
 
+// ZIP に混ざる OS の管理用エントリの名前。
+const ARCHIVE_JUNK_NAMES = new Set(['__macosx', '.ds_store', 'thumbs.db']);
+
 /**
  * パスの 1 セグメントとして安全な名前か。
- * 空・空白だけ・'.'・'..' を含む名前、区切り文字（'/'・'\'）、':'（ドライブ・代替データストリーム）、制御文字を含む名前、
+ * 空・空白だけ・'.'・'..'、区切り文字（'/'・'\'）、':'（ドライブ・代替データストリーム）、制御文字を含む名前、
  * 末尾がドット・空白の名前（Windows では末尾が取り除かれ、別の名前と同じ場所を指す）を拒否する。
+ * 名前の途中の '..' はセグメント単位ではトラバーサルにならないので許可する。
  */
 export function isSafePathSegment(name: string): boolean {
     return (
         name.trim().length > 0 &&
         name !== '.' &&
-        !name.includes('..') &&
+        name !== '..' &&
         !/[/\\:]/.test(name) &&
         !Array.from(name).some(char => char.charCodeAt(0) < 0x20) &&
         !/[. ]$/.test(name)
     );
+}
+
+/** 正規化した相対パスが OS の管理用エントリ（__MACOSX 配下、.DS_Store、Thumbs.db、._*）か。 */
+export function isArchiveJunkPath(path: string): boolean {
+    return path.split('/').some(segment => ARCHIVE_JUNK_NAMES.has(segment.toLowerCase()) || segment.startsWith('._'));
 }
 
 /**
@@ -37,14 +46,14 @@ export function normalizeArchiveEntryPath(entryName: string): string | null {
 
 /**
  * ZIP の各エントリを正規化した相対パスと組にして返す。安全でない名前のエントリが 1 つでもあれば null。
- * 正規化して何も残らないエントリは含めない。
+ * 正規化して何も残らないエントリと、OS の管理用エントリ（isArchiveJunkPath）は含めない。
  */
 export function normalizedArchiveEntries(zip: AdmZip): NormalizedArchiveEntry[] | null {
     const entries: NormalizedArchiveEntry[] = [];
     for (const entry of zip.getEntries()) {
         const path = normalizeArchiveEntryPath(entry.entryName);
         if (path === null) return null;
-        if (path.length > 0) entries.push({ path, entry });
+        if (path.length > 0 && !isArchiveJunkPath(path)) entries.push({ path, entry });
     }
     return entries;
 }

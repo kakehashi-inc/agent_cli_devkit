@@ -235,10 +235,6 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
         }
     };
 
-    const sourceHelp = capabilities.directInstall
-        ? t(capabilities.sourceHelpKey ?? 'pluginManager.sourceHelpDirect')
-        : t('pluginManager.sourceHelpTwoStep');
-
     return (
         <Dialog open fullWidth maxWidth='md' onClose={() => !busy && onClose(changed)}>
             <DialogTitle>{t('pluginManager.addPluginTitle')}</DialogTitle>
@@ -256,12 +252,8 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                         }}
                         sx={{ mb: 2 }}
                     >
-                        <ToggleButton value='catalog' sx={{ textTransform: 'none' }}>
-                            {t('pluginManager.modeCatalog')}
-                        </ToggleButton>
-                        <ToggleButton value='source' sx={{ textTransform: 'none' }}>
-                            {t('pluginManager.modeSource')}
-                        </ToggleButton>
+                        <ToggleButton value='catalog'>{t('pluginManager.modeCatalog')}</ToggleButton>
+                        <ToggleButton value='source'>{t('pluginManager.modeSource')}</ToggleButton>
                     </ToggleButtonGroup>
                 )}
 
@@ -361,7 +353,6 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                                                     variant='outlined'
                                                     disabled={busy}
                                                     onClick={() => setTrustTarget({ kind: 'catalog', entry })}
-                                                    sx={{ textTransform: 'none' }}
                                                 >
                                                     {t('pluginManager.install')}
                                                 </Button>
@@ -394,9 +385,11 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
 
                 {mode === 'source' && (
                     <>
-                        <Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
-                            {sourceHelp}
-                        </Typography>
+                        {capabilities.sourceHelpKey && (
+                            <Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
+                                {t(capabilities.sourceHelpKey)}
+                            </Typography>
+                        )}
                         <TextField
                             autoFocus
                             fullWidth
@@ -414,7 +407,6 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                                     variant='contained'
                                     disabled={busy || !isValidSource(source)}
                                     onClick={() => setTrustTarget({ kind: 'source' })}
-                                    sx={{ textTransform: 'none' }}
                                 >
                                     {t('pluginManager.install')}
                                 </Button>
@@ -423,7 +415,6 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                                     variant='contained'
                                     disabled={busy || !isValidSource(source)}
                                     onClick={handleAddAsMarketplace}
-                                    sx={{ textTransform: 'none' }}
                                 >
                                     {t('pluginManager.addAsMarketplace')}
                                 </Button>
@@ -449,7 +440,7 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                 )}
             </DialogContent>
             <DialogActions>
-                <Button disabled={busy} onClick={() => onClose(changed)} sx={{ textTransform: 'none' }}>
+                <Button disabled={busy} onClick={() => onClose(changed)}>
                     {t('pluginManager.close')}
                 </Button>
             </DialogActions>
@@ -461,10 +452,8 @@ export const AddPluginDialog: React.FC<Props> = ({ api, env, capabilities, marke
                     <DialogContentText>{t('pluginManager.trustBody')}</DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setTrustTarget(null)} sx={{ textTransform: 'none' }}>
-                        {t('pluginManager.cancel')}
-                    </Button>
-                    <Button variant='contained' onClick={handleTrustProceed} sx={{ textTransform: 'none' }}>
+                    <Button onClick={() => setTrustTarget(null)}>{t('pluginManager.cancel')}</Button>
+                    <Button variant='contained' onClick={handleTrustProceed}>
                         {t('pluginManager.trustProceed')}
                     </Button>
                 </DialogActions>

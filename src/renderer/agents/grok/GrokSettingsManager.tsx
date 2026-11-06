@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Box, Button, Typography, Snackbar, Alert, Divider } from '@mui/material';
 import { Refresh as RefreshIcon } from '@mui/icons-material';
 import type { GrokEnvironment } from '@shared/agents/grok/types';
+import { ProfileTabsShell } from '../../components/profile/ProfileTabsShell';
+import { useProfileTabSelection } from '../../components/profile/useProfileTabSelection';
 import { envId } from '../../utils/format';
 import { SettingsSection } from './SettingsSection';
 
@@ -15,6 +17,8 @@ export const GrokSettingsManager: React.FC = () => {
     const { t } = useTranslation();
     const [environments, setEnvironments] = useState<{ env: GrokEnvironment; label: string }[]>([]);
     const [loading, setLoading] = useState(true);
+    const [reloadNonce, setReloadNonce] = useState(0);
+    const selection = useProfileTabSelection('grok');
     const [snackbar, setSnackbar] = useState<{
         open: boolean;
         message: string;
@@ -25,11 +29,11 @@ export const GrokSettingsManager: React.FC = () => {
         severity: 'success',
     });
 
-    const load = async () => {
-        setLoading(true);
+    const load = async (refresh = false) => {
         try {
-            const envs = await window.agentCliDevkit.grok.config.getEnvironments();
+            const envs = await window.agentCliDevkit.grok.config.getEnvironments(refresh);
             setEnvironments(envs);
+            setReloadNonce(value => value + 1);
         } catch (error) {
             console.error('Failed to load settings environments:', error);
         } finally {
@@ -38,7 +42,7 @@ export const GrokSettingsManager: React.FC = () => {
     };
 
     useEffect(() => {
-        load();
+        void load();
     }, []);
 
     const notify = (message: string, severity: 'success' | 'error' | 'warning') => {
@@ -70,8 +74,8 @@ export const GrokSettingsManager: React.FC = () => {
                 <Button
                     variant='outlined'
                     startIcon={<RefreshIcon />}
-                    onClick={load}
-                    sx={{ textTransform: 'none', flexShrink: 0 }}
+                    onClick={() => void load(true)}
+                    sx={{ flexShrink: 0 }}
                 >
                     {t('common.refresh')}
                 </Button>
@@ -82,7 +86,16 @@ export const GrokSettingsManager: React.FC = () => {
                     <Typography variant='h6' sx={{ mb: 1 }}>
                         {label}
                     </Typography>
-                    <SettingsSection env={env} onNotify={notify} />
+                    <ProfileTabsShell
+                        agentId='grok'
+                        env={env}
+                        api={window.agentCliDevkit.grok.profile}
+                        notify={notify}
+                        reloadNonce={reloadNonce}
+                        tab={selection.get(env)}
+                        onTabChange={tabId => selection.set(env, tabId)}
+                        renderSettings={context => <SettingsSection env={env} onNotify={notify} profile={context} />}
+                    />
                 </Box>
             ))}
 
@@ -97,7 +110,18 @@ export const GrokSettingsManager: React.FC = () => {
                             <Typography variant='h6' sx={{ mb: 1 }}>
                                 {t('grok.settings.wslSection', { distro: label })}
                             </Typography>
-                            <SettingsSection env={env} onNotify={notify} />
+                            <ProfileTabsShell
+                                agentId='grok'
+                                env={env}
+                                api={window.agentCliDevkit.grok.profile}
+                                notify={notify}
+                                reloadNonce={reloadNonce}
+                                tab={selection.get(env)}
+                                onTabChange={tabId => selection.set(env, tabId)}
+                                renderSettings={context => (
+                                    <SettingsSection env={env} onNotify={notify} profile={context} />
+                                )}
+                            />
                         </Box>
                     ))}
                 </>

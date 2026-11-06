@@ -1,5 +1,7 @@
 import {
     CLAUDE_DIR,
+    CLAUDE_PROJECT_MEMORY_CLEANUP_KEY,
+    CLAUDE_PROJECT_RECORDS_CLEANUP_KEY,
     CLAUDE_PROJECTS_CLEANUP_KEY,
     CLAUDE_WSL_CLI_TEST,
     CLEANUP_CANDIDATES,
@@ -19,15 +21,27 @@ import {
 } from '../../../shared/agents/claude/types';
 import { createCleanupProbe, type CleanupProbe } from '../common/cleanup/CleanupProbe';
 import {
+    candidateTextKeys,
     deleteResolvedChildren,
     removeHomeTargets,
     resolveChildren,
     toResolvedCandidate,
 } from '../common/cleanup/resolvedCleanup';
+import { isSafePathSegment } from '../common/fs/archiveEntryPath';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { clearYamlList, countYamlListEntries, needsYamlListNormalize } from '../../utils/yamlPreserve';
-import { claudeTempResolvers, deleteClaudeProjects, resolveClaudeProjects } from './claudeTempCleanup';
+import {
+    claudeTempResolvers,
+    deleteClaudeProjectMemories,
+    deleteClaudeProjects,
+    deleteClaudeRecords,
+    prepareClaudeLayout,
+    resolveClaudeMemories,
+    resolveClaudeProjects,
+    resolveClaudeRecords,
+    type ClaudeCleanupContext,
+} from './claudeTempCleanup';
 
 const VALID_KEYS = new Set(CLEANUP_CANDIDATES.map(c => c.key));
 const OTHER_VALID_KEYS = new Set(OTHER_CLEANUP_ITEMS.map(i => i.key));
@@ -35,15 +49,18 @@ const OTHER_VALID_KEYS = new Set(OTHER_CLEANUP_ITEMS.map(i => i.key));
 /**
  * Claude Code (CLI) のデータディレクトリ（~/.claude 配下）と、~/.claude 外の一時物のクリーンアップを行う。
  * - 対象は履歴／キャッシュ／一時／ログのみ（CLEANUP_CANDIDATES）。
- * - projects はプロジェクト単位の子要素に、同じプロジェクトの一時物（OS の一時フォルダのセッション作業フォルダ・
- *   bash-edit-diff、MCP ログのキャッシュ）を含めて扱う。会話履歴が無く一時物だけが残ったプロジェクトも子要素にする。
+ * - projects はワークスペースのパス単位の子要素に、同じパスの一時物（OS の一時フォルダのセッション作業フォルダ・
+ *   bash-edit-diff、MCP ログのキャッシュ）を含めて扱う。自動メモリは含めない。会話履歴が無く一時物だけが残ったものも
+ *   子要素にする。パスを特定できないものはプロジェクト名の「パス不明」の子要素にする。
+ * - project-memory は自動メモリだけを、project-records は全体設定ファイルの projects のキーだけを消す。
+ *   どちらも使用中の判定をしない。
  * - claudeTempResolvers に登録した候補（bundled-skills・プロジェクトに紐づかない bash-edit-diff）は、
  *   リゾルバが使用中でないと判定した子要素だけを扱い、削除の直前に再判定する。
- * - 使用中かどうかは、~/.claude/sessions に実行中として登録されたセッション（登録した環境は問わない）と、
- *   会話記録が直近に更新されたセッションで判定し、プロセスは調べない。
- *   実行中のセッションがあるプロジェクトと、登録を読めずに実行中のセッションが分からないプロジェクトは、使用中の
- *   可能性があるプロジェクトとして、利用者が削除を承認したもの（CleanupSelection.approvedChildren）だけを
- *   会話記録・memory/・一時物ごと削除し、承認されていないものには触れない。
+ * - projects の使用中の判定は、~/.claude/sessions に実行中として登録されたセッション（登録した環境は問わない）と、
+ *   会話記録が直近に更新されたセッションで行い、プロセスは調べない。
+ *   実行中のセッションがある行と、登録を読めずに実行中のセッションが分からない行は、使用中の可能性がある行として、
+ *   利用者が削除を承認したもの（CleanupSelection.approvedChildren）だけを会話記録・一時物ごと削除し、
+ *   承認されていないものには触れない。
  * - 削除は OS のファイルロックなどで消せないものを飛ばして続け、残ったパスを CleanupEnvReport.failedPaths で報告する。
  * - リンク（シンボリックリンク・ジャンクション）の候補ディレクトリは、配下が管理対象の外にあり得るため扱わない。
  * - plans はファイル単位で個別 + 全体の両方を削除可能。それ以外はディレクトリごと削除（Claude Code が必要時に自動再作成する）。
@@ -72,7 +89,8 @@ export class ClaudeCleanupManager {
     }
 
     /** 管理対象の環境一覧（native + Claude 入り WSL distro）。 */
-    async getEnvironments(): Promise<{ env: ClaudeEnvironment; label: string }[]> {
+    async getEnvironments(refresh = false): Promise<{ env: ClaudeEnvironment; label: string }[]> {
+        if (refresh) this.detector.invalidate();
         const result: { env: ClaudeEnvironment; label: string }[] = [];
         result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         const distros = await this.detector.getDistrosWithTest(CLAUDE_WSL_CLI_TEST);
@@ -89,14 +107,22 @@ export class ClaudeCleanupManager {
             : null;
     }
 
-    /** projects 候補（プロジェクト単位の子要素。サイズ・件数はプロジェクトごとの全体の合計）。 */
+    /** スキャン 1 回・削除 1 回で共有する環境ごとの操作。 */
+    private contextFor(env: ClaudeEnvironment): ClaudeCleanupContext {
+        return {
+            probe: createCleanupProbe(env, this.detector),
+            hostProbe: this.hostProbeFor(env),
+            fs: this.fsFor(env),
+        };
+    }
+
+    /** projects 候補（パス単位の子要素。サイズ・件数は子要素ごとの全体の合計）。 */
     private async scanProjects(
         spec: CleanupCandidateSpec,
-        probe: CleanupProbe,
-        hostProbe: CleanupProbe | null,
+        context: ClaudeCleanupContext,
         env: ClaudeEnvironment
     ): Promise<CleanupCandidate> {
-        const children = await resolveClaudeProjects(probe, hostProbe, env);
+        const children = await resolveClaudeProjects(context, env);
         return {
             key: spec.key,
             exists: children.length > 0,
@@ -106,6 +132,7 @@ export class ClaudeCleanupManager {
             expandable: spec.expandable,
             childKind: spec.childKind,
             children,
+            ...candidateTextKeys(spec),
         };
     }
 
@@ -113,16 +140,23 @@ export class ClaudeCleanupManager {
      * 環境ごとのクリーンアップ候補をスキャンする（各ディレクトリの存在・サイズ・ファイル数）。
      */
     async scan(env: ClaudeEnvironment): Promise<CleanupEnvReport> {
-        const fs = this.fsFor(env);
-        const probe = createCleanupProbe(env, this.detector);
-        const hostProbe = this.hostProbeFor(env);
-        const resolvers = claudeTempResolvers(hostProbe);
+        const context = this.contextFor(env);
+        const { fs, probe } = context;
+        const resolvers = claudeTempResolvers(context);
         const label = env.kind === 'wsl' ? (env.distro ?? 'WSL') : this.nativeLabel();
         const candidates: CleanupCandidate[] = [];
 
         for (const spec of CLEANUP_CANDIDATES) {
             if (spec.key === CLAUDE_PROJECTS_CLEANUP_KEY) {
-                candidates.push(await this.scanProjects(spec, probe, hostProbe, env));
+                candidates.push(await this.scanProjects(spec, context, env));
+                continue;
+            }
+            if (spec.key === CLAUDE_PROJECT_MEMORY_CLEANUP_KEY) {
+                candidates.push(toResolvedCandidate(spec, await resolveClaudeMemories(context, env)));
+                continue;
+            }
+            if (spec.key === CLAUDE_PROJECT_RECORDS_CLEANUP_KEY) {
+                candidates.push(toResolvedCandidate(spec, await resolveClaudeRecords(context, env)));
                 continue;
             }
             const resolver = resolvers[spec.key];
@@ -147,6 +181,7 @@ export class ClaudeCleanupManager {
                 defaultChecked: spec.defaultChecked,
                 expandable: spec.expandable,
                 childKind: spec.childKind,
+                ...candidateTextKeys(spec),
             };
 
             // expandable 候補は子要素（plans=ファイル）を個別選択できるよう展開する。
@@ -176,32 +211,46 @@ export class ClaudeCleanupManager {
     }
 
     /**
-     * 選択されたディレクトリ／子要素（projects のプロジェクトと紐づく一時物、plans のファイル、
-     * 一時物の候補の子要素）を削除し、再スキャン結果を返す。
+     * 選択されたディレクトリ／子要素（projects のパスと紐づく一時物、project-memory の自動メモリ、
+     * project-records の記録、plans のファイル、一時物の候補の子要素）を削除し、再スキャン結果を返す。
      */
     async deleteSelected(env: ClaudeEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport> {
-        const fs = this.fsFor(env);
-        const probe = createCleanupProbe(env, this.detector);
-        const hostProbe = this.hostProbeFor(env);
+        const context = this.contextFor(env);
+        const { fs, probe } = context;
         const approved = this.approvedChildren(selection.approvedChildren?.[CLAUDE_PROJECTS_CLEANUP_KEY]);
-        const resolvers = claudeTempResolvers(hostProbe, approved);
+        // 候補の処理の順に関わらず、承認を反映した同じ構成を使う。
+        await prepareClaudeLayout(context, approved);
+        const resolvers = claudeTempResolvers(context, approved);
         // 削除しようとして完全には削除できなかった対象（OS のファイルロックなど）。例外は投げずにここへ集約して報告する。
         // 使用中の可能性があるため削除の対象にしなかったもの（承認されていないプロジェクトなど）は含めない。
         const skipped: string[] = [];
         // OS のファイルロックなどで削除できずに残ったパス
         const failedPaths: string[] = [];
+        // ファイルの削除ではなくパスや記録で行を特定する候補。専用の処理があれば実行して true を返す。
+        const removeSpecial = async (key: string, names: 'all' | string[]): Promise<boolean> => {
+            const run =
+                key === CLAUDE_PROJECTS_CLEANUP_KEY
+                    ? deleteClaudeProjects(context, key, env, names, approved)
+                    : key === CLAUDE_PROJECT_MEMORY_CLEANUP_KEY
+                      ? deleteClaudeProjectMemories(context, key, env, names)
+                      : key === CLAUDE_PROJECT_RECORDS_CLEANUP_KEY
+                        ? deleteClaudeRecords(context, key, env, names)
+                        : null;
+            if (!run) return false;
+            const result = await run;
+            skipped.push(...result.skipped);
+            failedPaths.push(...result.failedPaths);
+            return true;
+        };
 
         // dirs に含まれる候補はディレクトリごと削除（expandable 候補を全体指定した場合も含む）。
         // 稼働中の Claude Code がファイルを掴んでいても消せる分を消し、残ったものはスキップとして報告する
         // （例外は投げない）。不正キーは無視。
         for (const key of selection.dirs) {
-            if (!VALID_KEYS.has(key) || this.isUnsafeName(key)) {
+            if (!VALID_KEYS.has(key)) {
                 continue;
             }
-            if (key === CLAUDE_PROJECTS_CLEANUP_KEY) {
-                const result = await deleteClaudeProjects(probe, hostProbe, key, env, 'all', approved);
-                skipped.push(...result.skipped);
-                failedPaths.push(...result.failedPaths);
+            if (await removeSpecial(key, 'all')) {
                 continue;
             }
             const resolver = resolvers[key];
@@ -221,8 +270,8 @@ export class ClaudeCleanupManager {
             }
         }
 
-        // expandable 候補（projects=プロジェクト / plans=ファイル / 一時物の候補）の個別削除。
-        // 当該候補が dirs に含まれている（＝全体削除指定）場合はスキップする。
+        // expandable 候補（projects=パス / project-memory=自動メモリ / project-records=記録 / plans=ファイル /
+        // 一時物の候補）の個別削除。当該候補が dirs に含まれている（＝全体削除指定）場合はスキップする。
         const childSelections = selection.childSelections ?? {};
         for (const spec of CLEANUP_CANDIDATES) {
             if (!spec.expandable || !spec.childKind) {
@@ -235,10 +284,7 @@ export class ClaudeCleanupManager {
             if (!names || names.length === 0) {
                 continue;
             }
-            if (spec.key === CLAUDE_PROJECTS_CLEANUP_KEY) {
-                const result = await deleteClaudeProjects(probe, hostProbe, spec.key, env, names, approved);
-                skipped.push(...result.skipped);
-                failedPaths.push(...result.failedPaths);
+            if (await removeSpecial(spec.key, names)) {
                 continue;
             }
             const resolver = resolvers[spec.key];
@@ -255,7 +301,9 @@ export class ClaudeCleanupManager {
                       : await fs.listDirs(baseRel)
             );
             // ファイル単位（plans）・ディレクトリ単位の子要素は、消せないものを飛ばして削除し、残ったものを報告する。
-            const childNames = names.filter(name => !this.isUnsafeName(name) && existing.has(name));
+            // パスの 1 セグメントとして扱えない名前は削除せず、消せなかったものとして報告する。
+            const childNames = names.filter(name => isSafePathSegment(name) && existing.has(name));
+            skipped.push(...names.filter(name => !isSafePathSegment(name)));
             const removed = await removeHomeTargets(
                 probe,
                 env,
@@ -282,16 +330,9 @@ export class ClaudeCleanupManager {
         return report;
     }
 
-    /** 画面から渡された、利用者が削除を承認した子要素名を検証して返す（安全な名前の文字列だけを残す）。 */
+    /** 画面から渡された、利用者が削除を承認した子要素名を返す（文字列だけを残す。名前は一覧の行と照合して使う）。 */
     private approvedChildren(value: unknown): string[] {
-        return Array.isArray(value)
-            ? value.filter((name): name is string => typeof name === 'string' && !this.isUnsafeName(name))
-            : [];
-    }
-
-    /** パストラバーサル対策: 区切り文字や .. を含む名前を拒否する。 */
-    private isUnsafeName(name: string): boolean {
-        return name.includes('/') || name.includes('\\') || name.includes('..') || name.trim().length === 0;
+        return Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
     }
 
     // ===== 「その他のツール」クリーンアップ（Serena など、~/.claude 配下ではないもの）=====

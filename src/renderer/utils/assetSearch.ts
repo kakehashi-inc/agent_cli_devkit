@@ -18,6 +18,10 @@ export function filterAssetEntries(entries: AssetEntry[], query: string): AssetE
     return entries.filter(entry => {
         const name = normalizeSearchText(entry.frontmatter?.name ?? entry.name ?? '');
         const description = normalizeSearchText(entry.frontmatter?.description ?? '');
-        return terms.every(term => name.includes(term)) || terms.every(term => description.includes(term));
+        const relPath = normalizeSearchText(entry.relPath ?? '');
+        return (
+            terms.every(term => name.includes(term) || relPath.includes(term)) ||
+            terms.every(term => description.includes(term))
+        );
     });
 }

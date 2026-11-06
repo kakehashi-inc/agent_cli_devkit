@@ -7,6 +7,7 @@ import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { AppSettings } from './components/AppSettings';
 import { UpdateNotification } from './components/UpdateNotification';
+import { WslMissingCommandsNotice } from './components/WslMissingCommandsNotice';
 import { AGENT_MODULES } from './agents/index';
 
 const isDev = import.meta.env.DEV;
@@ -55,6 +56,12 @@ export const App: React.FC = () => {
                 palette: {
                     mode: theme,
                 },
+                // ボタンとタブは文言の大文字小文字のまま表示する。
+                typography: {
+                    button: {
+                        textTransform: 'none',
+                    },
+                },
             }),
         [theme]
     );
@@ -65,16 +72,22 @@ export const App: React.FC = () => {
 
     return (
         <ThemeProvider theme={muiTheme}>
-            <CssBaseline />
+            <CssBaseline enableColorScheme />
             <Router>
                 <Layout>
+                    <WslMissingCommandsNotice />
                     <Routes>
                         <Route path='/' element={<Dashboard />} />
                         <Route path='/app-settings' element={<AppSettings />} />
-                        {/* 各 agent の機能ルートは registry から生成する */}
+                        {/* 各 agent の機能ルートは registry から生成する。同じ部品を使う画面の間の移動でも状態を引き継がないよう、
+                            画面の要素にルートごとの key を付ける */}
                         {AGENT_MODULES.flatMap(module =>
                             module.features.map(feature => (
-                                <Route key={feature.path} path={feature.path} element={feature.element} />
+                                <Route
+                                    key={feature.path}
+                                    path={feature.path}
+                                    element={<React.Fragment key={feature.path}>{feature.element}</React.Fragment>}
+                                />
                             ))
                         )}
                     </Routes>

@@ -1,13 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Alert,
     Box,
     Button,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
     Divider,
     Snackbar,
     Table,
@@ -16,7 +12,6 @@ import {
     TableContainer,
     TableHead,
     TableRow,
-    TextField,
     Typography,
 } from '@mui/material';
 import {
@@ -27,33 +22,59 @@ import {
     KeyboardArrowRight as CollapseIcon,
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import type { AgentEnvironment, SettingsFieldSpec, SettingsFieldValue, SettingsValues } from '@shared/agents/types';
+import type {
+    AgentEnvironment,
+    SettingsFieldSpec,
+    SettingsFieldValue,
+    SettingsParseError,
+    SettingsValues,
+} from '@shared/agents/types';
 import { findInvalidSettingsValue } from '@shared/agents/settingsValue';
+import type { ProfileApi } from '@shared/agents/profile/types';
+import { DirectEditDialog, useDirectEdit } from '../settings/DirectEditDialog';
+import { SettingsConflictDialog } from '../settings/SettingsConflictDialog';
+import { SettingsFileBanner } from '../settings/SettingsFileBanner';
+import { directSaveErrorKey, tableSaveErrorKey } from '../settings/settingsFileMessage';
 import { SettingsValueEditor } from '../settings/SettingsValueEditor';
+import {
+    baseValuesOf,
+    overlayUnsavedValues,
+    useSettingsFieldLink,
+    useSettingsLoadEffect,
+    type SettingsLoadMode,
+    type SettingsTabContext,
+} from '../settings/settingsTabContext';
 import { settingsValueProblemMessage } from '../settings/settingsValueMessage';
+import { ProfileTabsShell } from '../profile/ProfileTabsShell';
+import { useProfileTabSelection } from '../profile/useProfileTabSelection';
 import { AssetSearchField } from '../assets/AssetSearchField';
 import { envId } from '../../utils/format';
 import { filterSettingsFields } from '../../utils/settingsSearch';
 import type { Notify, SettingsApi } from './types';
+import { useAgentEnvironments } from './useAgentEnvironments';
 
 interface Props {
     agentId: string;
     api: SettingsApi;
+    profileApi: ProfileApi;
 }
 
 /**
  * 1 環境分の設定編集セクション。
  * 折りたたみ可能なグループ見出し行を持つ 1 枚のテーブル、SettingsValueEditor による値編集
- * （directEdit 項目はテキスト表示のみ）、テーブル下の 保存 / キャンセル（左）と 直接編集（右端）で構成する。
- * 設定ファイル全体への注記があれば、テーブルの上に表示する。
+ * （directEdit 項目は編集先へのリンクか案内のテキスト）、テーブル下の 保存 / キャンセル（左）と 直接編集（右端）で構成する。
+ * 設定ファイル全体への注記があれば、テーブルの上に表示する。設定ファイルを読めない、または解釈できないときは、
+ * テーブルの代わりに理由を表示する。
  */
 const SettingsSection: React.FC<{
     agentId: string;
     api: SettingsApi;
     env: AgentEnvironment;
     notify: Notify;
-}> = ({ agentId, api, env, notify }) => {
+    profile: SettingsTabContext;
+}> = ({ agentId, api, env, notify, profile }) => {
     const { t } = useTranslation();
+    const fieldLink = useSettingsFieldLink(agentId, profile.selectTab);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [available, setAvailable] = useState(true);
@@ -64,8 +85,9 @@ const SettingsSection: React.FC<{
     const [notices, setNotices] = useState<Record<string, string>>({});
     const [fileNotice, setFileNotice] = useState<string | undefined>(undefined);
 
-    const [rawOpen, setRawOpen] = useState(false);
-    const [rawText, setRawText] = useState('');
+    // 設定ファイルを読めない、または解釈できない理由。
+    const [readFailed, setReadFailed] = useState<string | undefined>(undefined);
+    const [parseError, setParseError] = useState<SettingsParseError | undefined>(undefined);
 
     // 設定キー・表示名・説明に対するキーワードフィルター。
     const [searchQuery, setSearchQuery] = useState('');
@@ -126,17 +148,26 @@ const SettingsSection: React.FC<{
         return t(`${agentId}.settings.unset`);
     };
 
-    const load = async () => {
-        setLoading(true);
+    // テーブルの保存で、読み込んだ後に値が変わっていた項目の key。null の間は確認を出さない。
+    const [conflictKeys, setConflictKeys] = useState<string[] | null>(null);
+
+    const load = async (mode: SettingsLoadMode = 'replace', discard: readonly string[] = []) => {
+        if (mode === 'replace') setLoading(true);
         try {
             const result = await api.read(env);
             setAvailable(result.available);
+            setReadFailed(result.readFailed);
+            setParseError(result.parseError);
             setFields(result.fields);
             const next: Record<string, SettingsFieldValue> = {};
             for (const f of result.fields) {
                 next[f.key] = result.values[f.key];
             }
-            setEditValues(next);
+            setEditValues(
+                mode === 'overlay'
+                    ? previous => overlayUnsavedValues(result.fields, previous, originalValues, next, discard)
+                    : next
+            );
             setOriginalValues(next);
             setNotices(result.notices ?? {});
             setFileNotice(result.fileNotice);
@@ -148,11 +179,7 @@ const SettingsSection: React.FC<{
         }
     };
 
-    useEffect(() => {
-        void load();
-        // api and env are stable for this environment section.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    useSettingsLoadEffect(load, profile.docVersion, profile.reloadNonce);
 
     const collectValues = (): SettingsValues =>
         Object.fromEntries(
@@ -179,23 +206,15 @@ const SettingsSection: React.FC<{
         }
         setBusy(true);
         try {
-            const result = await api.write(env, values);
+            const result = await api.write(env, values, baseValuesOf(values, originalValues));
             if (result.ok) {
                 notify(t(`${agentId}.settings.saveSuccess`), 'success');
                 await load();
+                profile.onSaved();
+            } else if (result.message === 'conflict') {
+                setConflictKeys(result.conflictKeys ?? []);
             } else {
-                notify(
-                    t(
-                        `${agentId}.settings.${
-                            result.message === 'invalid-existing-json'
-                                ? 'invalidExisting'
-                                : result.message === 'verify-failed'
-                                  ? 'verifyFailed'
-                                  : 'saveError'
-                        }`
-                    ),
-                    'error'
-                );
+                notify(t(tableSaveErrorKey(`${agentId}.settings`, result.message, 'invalid-existing-json')), 'error');
             }
         } catch {
             notify(t(`${agentId}.settings.saveError`), 'error');
@@ -208,36 +227,20 @@ const SettingsSection: React.FC<{
         void load();
     };
 
-    const handleOpenRaw = async () => {
-        setBusy(true);
-        try {
-            const result = await api.read(env);
-            setRawText(result.raw ?? '');
-            setRawOpen(true);
-        } catch {
-            notify(t(`${agentId}.settings.readError`), 'error');
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    const handleSaveRaw = async () => {
-        setBusy(true);
-        try {
-            const result = await api.writeRaw(env, rawText);
-            if (result.ok) {
-                notify(t(`${agentId}.settings.saveSuccess`), 'success');
-                setRawOpen(false);
-                await load();
-            } else {
-                notify(t(`${agentId}.settings.invalidJson`), 'error');
-            }
-        } catch {
-            notify(t(`${agentId}.settings.saveError`), 'error');
-        } finally {
-            setBusy(false);
-        }
-    };
+    const directEditor = useDirectEdit({
+        read: () => api.readRaw(env),
+        writeRaw: (raw, baseRevision) => api.writeRaw(env, raw, baseRevision),
+        initialText: '',
+        setBusy,
+        onSaved: async () => {
+            notify(t(`${agentId}.settings.saveSuccess`), 'success');
+            await load();
+            profile.onSaved();
+        },
+        onReadFailed: () => notify(t(`${agentId}.settings.readError`), 'error'),
+        onSaveFailed: message =>
+            notify(t(directSaveErrorKey(`${agentId}.settings`, message, 'invalid-json', 'invalidJson')), 'error'),
+    });
 
     const setValue = (key: string, value: SettingsFieldValue) => {
         setEditValues(prev => ({ ...prev, [key]: value }));
@@ -255,22 +258,36 @@ const SettingsSection: React.FC<{
         return <Alert severity='info'>{t(`${agentId}.settings.unavailable`)}</Alert>;
     }
 
+    // 値を確定できないあいだは、未設定に見える表と保存の操作を出さない。
+    const blocked = readFailed !== undefined || parseError !== undefined;
+
     return (
         <Box>
+            <SettingsFileBanner
+                readFailed={readFailed}
+                parseError={parseError}
+                parseErrorKey='common.settingsFile.parseError'
+            />
             {fileNotice && (
                 <Alert severity='info' sx={{ mb: 2 }}>
                     {t(`${agentId}.settings.${fileNotice}`)}
                 </Alert>
             )}
-            <AssetSearchField value={searchQuery} onChange={setSearchQuery} label={t('common.settingsSearchLabel')} />
+            {!blocked && (
+                <AssetSearchField
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    label={t('common.settingsSearchLabel')}
+                />
+            )}
 
-            {searching && groupedFields.length === 0 ? (
+            {blocked ? null : searching && groupedFields.length === 0 ? (
                 <Typography color='text.secondary' sx={{ py: 1 }}>
                     {t('common.noSearchResults')}
                 </Typography>
             ) : (
                 <TableContainer>
-                    <Table size='small'>
+                    <Table size='small' sx={{ tableLayout: 'fixed' }}>
                         <TableHead>
                             <TableRow>
                                 <TableCell sx={{ width: '40%' }}>{t(`${agentId}.settings.item`)}</TableCell>
@@ -310,7 +327,9 @@ const SettingsSection: React.FC<{
                                         {groupExpanded &&
                                             items.map(f => (
                                                 <TableRow key={f.key}>
-                                                    <TableCell sx={{ verticalAlign: 'top', pl: 3 }}>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', pl: 3, overflowWrap: 'anywhere' }}
+                                                    >
                                                         <Typography variant='body2' sx={{ fontWeight: 600 }}>
                                                             {t(`${agentId}.settings.field.${f.key}.label`)}
                                                         </Typography>
@@ -336,6 +355,7 @@ const SettingsSection: React.FC<{
                                                                 ),
                                                             }))}
                                                             onChange={value => setValue(f.key, value)}
+                                                            {...fieldLink(f)}
                                                         />
                                                         {notices[f.key] && (
                                                             <Typography
@@ -359,108 +379,76 @@ const SettingsSection: React.FC<{
 
             {/* テーブル下部: 左に 保存 / キャンセル、右端に 直接編集 */}
             <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'center' }}>
-                <Button variant='contained' size='small' startIcon={<SaveIcon />} disabled={busy} onClick={handleSave}>
-                    {t(`${agentId}.settings.save`)}
-                </Button>
-                <Button
-                    variant='outlined'
-                    size='small'
-                    startIcon={<CloseIcon />}
-                    disabled={busy}
-                    onClick={handleCancel}
-                >
-                    {t(`${agentId}.settings.cancel`)}
-                </Button>
+                {!blocked && (
+                    <>
+                        <Button
+                            variant='contained'
+                            size='small'
+                            startIcon={<SaveIcon />}
+                            disabled={busy}
+                            onClick={handleSave}
+                        >
+                            {t(`${agentId}.settings.save`)}
+                        </Button>
+                        <Button
+                            variant='outlined'
+                            size='small'
+                            startIcon={<CloseIcon />}
+                            disabled={busy}
+                            onClick={handleCancel}
+                        >
+                            {t(`${agentId}.settings.cancel`)}
+                        </Button>
+                    </>
+                )}
                 <Box sx={{ flexGrow: 1 }} />
                 <Button
                     variant='outlined'
                     size='small'
                     startIcon={<CodeIcon />}
-                    disabled={busy}
-                    onClick={handleOpenRaw}
+                    disabled={busy || readFailed !== undefined}
+                    onClick={() => void directEditor.start()}
                 >
                     {t(`${agentId}.settings.directEdit`)}
                 </Button>
             </Box>
 
-            {/* 直接編集ダイアログ */}
-            <Dialog
-                open={rawOpen}
-                onClose={() => !busy && setRawOpen(false)}
-                maxWidth='md'
-                fullWidth
-                // ダイアログを固定高にし、スクロールはテキストエリア内の 1 本のみにする
-                slotProps={{ paper: { sx: { height: '85vh' } } }}
-            >
-                <DialogTitle>{t(`${agentId}.settings.directTitle`)}</DialogTitle>
-                <DialogContent sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <Typography variant='body2' color='text.secondary' sx={{ mb: 1.5, flexShrink: 0 }}>
-                        {t(`${agentId}.settings.directDesc`)}
-                    </Typography>
-                    <TextField
-                        multiline
-                        fullWidth
-                        value={rawText}
-                        onChange={e => setRawText(e.target.value)}
-                        sx={{ flexGrow: 1, minHeight: 0 }}
-                        slotProps={{
-                            input: {
-                                sx: {
-                                    fontFamily: 'monospace',
-                                    fontSize: '0.85rem',
-                                    height: '100%',
-                                    alignItems: 'flex-start',
-                                    // TextareaAutosize の自動高さを無効化し、固定高＋内部スクロールにする
-                                    '& textarea': {
-                                        height: '100% !important',
-                                        overflow: 'auto !important',
-                                    },
-                                },
-                            },
-                        }}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setRawOpen(false)} disabled={busy}>
-                        {t(`${agentId}.settings.cancel`)}
-                    </Button>
-                    <Button variant='contained' startIcon={<SaveIcon />} onClick={handleSaveRaw} disabled={busy}>
-                        {t(`${agentId}.settings.save`)}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <SettingsConflictDialog
+                labels={conflictKeys?.map(key => t(`${agentId}.settings.field.${key}.label`)) ?? null}
+                busy={busy}
+                onBack={() => setConflictKeys(null)}
+                onReload={() => {
+                    const keys = conflictKeys ?? [];
+                    setConflictKeys(null);
+                    void load('overlay', keys);
+                }}
+            />
+
+            <DirectEditDialog
+                editor={directEditor}
+                busy={busy}
+                title={t(`${agentId}.settings.directTitle`)}
+                description={t(`${agentId}.settings.directDesc`)}
+                cancelLabel={t(`${agentId}.settings.cancel`)}
+                saveLabel={t(`${agentId}.settings.save`)}
+            />
         </Box>
     );
 };
 
-export const SettingsManagerView: React.FC<Props> = ({ agentId, api }) => {
+export const SettingsManagerView: React.FC<Props> = ({ agentId, api, profileApi }) => {
     const { t } = useTranslation();
-    const [environments, setEnvironments] = useState<{ env: AgentEnvironment; label: string }[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [reload, setReload] = useState(0);
+    const { environments, loading, reloadNonce, load } = useAgentEnvironments(
+        agentId,
+        api,
+        'Failed to load settings environments:'
+    );
+    const selection = useProfileTabSelection(agentId);
     const [snackbar, setSnackbar] = useState<{
         open: boolean;
         message: string;
         severity: 'success' | 'error' | 'warning';
     }>({ open: false, message: '', severity: 'success' });
-
-    const load = async (refresh = false) => {
-        setLoading(true);
-        try {
-            setEnvironments(await api.getEnvironments(refresh));
-            setReload(value => value + 1);
-        } catch (error) {
-            console.error('Failed to load settings environments:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        void load();
-        // api is a stable preload bridge.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     const notify: Notify = (message, severity) => setSnackbar({ open: true, message, severity });
 
@@ -490,7 +478,7 @@ export const SettingsManagerView: React.FC<Props> = ({ agentId, api }) => {
                     variant='outlined'
                     startIcon={<RefreshIcon />}
                     onClick={() => void load(true)}
-                    sx={{ textTransform: 'none', flexShrink: 0 }}
+                    sx={{ flexShrink: 0 }}
                 >
                     {t('common.refresh')}
                 </Button>
@@ -502,11 +490,28 @@ export const SettingsManagerView: React.FC<Props> = ({ agentId, api }) => {
                 </Alert>
             )}
             {nativeEnvs.map(item => (
-                <Box key={`${envId(item.env)}-${reload}`} sx={{ mb: 4 }}>
+                <Box key={`${agentId}:${envId(item.env)}`} sx={{ mb: 4 }}>
                     <Typography variant='h6' sx={{ mb: 1 }}>
                         {item.label}
                     </Typography>
-                    <SettingsSection agentId={agentId} api={api} env={item.env} notify={notify} />
+                    <ProfileTabsShell
+                        agentId={agentId}
+                        env={item.env}
+                        api={profileApi}
+                        notify={notify}
+                        reloadNonce={reloadNonce}
+                        tab={selection.get(item.env)}
+                        onTabChange={tabId => selection.set(item.env, tabId)}
+                        renderSettings={context => (
+                            <SettingsSection
+                                agentId={agentId}
+                                api={api}
+                                env={item.env}
+                                notify={notify}
+                                profile={context}
+                            />
+                        )}
+                    />
                 </Box>
             ))}
 
@@ -517,11 +522,28 @@ export const SettingsManagerView: React.FC<Props> = ({ agentId, api }) => {
                         WSL
                     </Typography>
                     {wslEnvs.map(item => (
-                        <Box key={`${envId(item.env)}-${reload}`} sx={{ mb: 4 }}>
+                        <Box key={`${agentId}:${envId(item.env)}`} sx={{ mb: 4 }}>
                             <Typography variant='h6' sx={{ mb: 1 }}>
                                 {t(`${agentId}.settings.wslSection`, { distro: item.label })}
                             </Typography>
-                            <SettingsSection agentId={agentId} api={api} env={item.env} notify={notify} />
+                            <ProfileTabsShell
+                                agentId={agentId}
+                                env={item.env}
+                                api={profileApi}
+                                notify={notify}
+                                reloadNonce={reloadNonce}
+                                tab={selection.get(item.env)}
+                                onTabChange={tabId => selection.set(item.env, tabId)}
+                                renderSettings={context => (
+                                    <SettingsSection
+                                        agentId={agentId}
+                                        api={api}
+                                        env={item.env}
+                                        notify={notify}
+                                        profile={context}
+                                    />
+                                )}
+                            />
                         </Box>
                     ))}
                 </>

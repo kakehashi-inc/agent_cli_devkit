@@ -17,8 +17,11 @@ import type {
     SettingsValues,
 } from '../../shared/agents/claude/types';
 import type { ClaudeIpcApi } from '../../shared/agents/claude/ipc';
+import { profileChannels } from '../../shared/agents/profile/channels';
+import { createProfileApi } from './profileApi';
 
 export const claudeApi: ClaudeIpcApi = {
+    profile: createProfileApi(profileChannels('claude')),
     desktop: {
         getInfo: () => ipcRenderer.invoke(CLAUDE_DESKTOP_CHANNELS.GET_INFO),
         getMCPServers: () => ipcRenderer.invoke(CLAUDE_DESKTOP_CHANNELS.GET_MCP_SERVERS),
@@ -30,7 +33,7 @@ export const claudeApi: ClaudeIpcApi = {
         restart: () => ipcRenderer.invoke(CLAUDE_DESKTOP_CHANNELS.RESTART),
     },
     code: {
-        getEnvironments: () => ipcRenderer.invoke(CLAUDE_CODE_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CLAUDE_CODE_CHANNELS.GET_ENVIRONMENTS, refresh),
         getMCPServers: (env: ClaudeEnvironment) => ipcRenderer.invoke(CLAUDE_CODE_CHANNELS.GET_MCP_SERVERS, env),
         enableMCPServer: (env: ClaudeEnvironment, serverName: string) =>
             ipcRenderer.invoke(CLAUDE_CODE_CHANNELS.ENABLE, env, serverName),
@@ -42,7 +45,7 @@ export const claudeApi: ClaudeIpcApi = {
             ipcRenderer.invoke(CLAUDE_CODE_CHANNELS.REORDER_DISABLED, env, serverNames),
     },
     cleanup: {
-        getEnvironments: () => ipcRenderer.invoke(CLAUDE_CLEANUP_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CLAUDE_CLEANUP_CHANNELS.GET_ENVIRONMENTS, refresh),
         scan: (env: ClaudeEnvironment) => ipcRenderer.invoke(CLAUDE_CLEANUP_CHANNELS.SCAN, env),
         delete: (env: ClaudeEnvironment, selection: CleanupSelection) =>
             ipcRenderer.invoke(CLAUDE_CLEANUP_CHANNELS.DELETE, env, selection),
@@ -52,7 +55,7 @@ export const claudeApi: ClaudeIpcApi = {
             ipcRenderer.invoke(CLAUDE_CLEANUP_CHANNELS.DELETE_OTHER, env, selection),
     },
     asset: {
-        getEnvironments: () => ipcRenderer.invoke(CLAUDE_ASSET_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CLAUDE_ASSET_CHANNELS.GET_ENVIRONMENTS, refresh),
         list: (env: ClaudeEnvironment, kind: AssetKind) => ipcRenderer.invoke(CLAUDE_ASSET_CHANNELS.LIST, env, kind),
         readEntry: (env: ClaudeEnvironment, kind: AssetKind, relPath: string) =>
             ipcRenderer.invoke(CLAUDE_ASSET_CHANNELS.READ_ENTRY, env, kind, relPath),
@@ -74,12 +77,13 @@ export const claudeApi: ClaudeIpcApi = {
             ipcRenderer.invoke(CLAUDE_ASSET_CHANNELS.IMPORT_OFFICIAL_SKILLS, env, relPaths),
     },
     settings: {
-        getEnvironments: () => ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.GET_ENVIRONMENTS, refresh),
         read: (env: ClaudeEnvironment) => ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.READ, env),
-        write: (env: ClaudeEnvironment, values: SettingsValues) =>
-            ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.WRITE, env, values),
-        writeRaw: (env: ClaudeEnvironment, rawJson: string) =>
-            ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.WRITE_RAW, env, rawJson),
+        readRaw: (env: ClaudeEnvironment) => ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.READ_RAW, env),
+        write: (env: ClaudeEnvironment, values: SettingsValues, base: SettingsValues) =>
+            ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.WRITE, env, values, base),
+        writeRaw: (env: ClaudeEnvironment, rawJson: string, baseRevision: string) =>
+            ipcRenderer.invoke(CLAUDE_SETTINGS_CHANNELS.WRITE_RAW, env, rawJson, baseRevision),
     },
     plugin: {
         getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CLAUDE_PLUGIN_CHANNELS.GET_ENVIRONMENTS, refresh),

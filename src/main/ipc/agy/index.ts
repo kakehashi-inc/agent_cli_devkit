@@ -14,6 +14,10 @@ import { AgyPluginManager } from '../../services/agy/AgyPluginManager';
 import { AgySettingsManager } from '../../services/agy/AgySettingsManager';
 import { AgentCliRunner } from '../../services/common/cli/AgentCliRunner';
 import { WslDetector } from '../../services/common/wsl/WslDetector';
+import { profileChannels } from '../../../shared/agents/profile/channels';
+import { AGY_PROFILE_SPEC } from '../../../shared/agents/agy/profileTabs';
+import { ProfileManager } from '../../services/common/profile/ProfileManager';
+import { registerProfileHandlers } from '../common/profileHandlers';
 
 export function registerAgyIpcHandlers(
     detector: WslDetector,
@@ -88,11 +92,13 @@ export function registerAgyIpcHandlers(
         listEnvironments(refresh, () => settings.getEnvironments())
     );
     ipcMain.handle(AGY_SETTINGS_CHANNELS.READ, (_, env: AgyEnvironment) => settings.read(env));
-    ipcMain.handle(AGY_SETTINGS_CHANNELS.WRITE, (_, env: AgyEnvironment, values: SettingsValues) =>
-        settings.write(env, values)
+    ipcMain.handle(AGY_SETTINGS_CHANNELS.READ_RAW, (_, env: AgyEnvironment) => settings.readRaw(env));
+    ipcMain.handle(
+        AGY_SETTINGS_CHANNELS.WRITE,
+        (_, env: AgyEnvironment, values: SettingsValues, base: SettingsValues) => settings.write(env, values, base)
     );
-    ipcMain.handle(AGY_SETTINGS_CHANNELS.WRITE_RAW, (_, env: AgyEnvironment, raw: string) =>
-        settings.writeRaw(env, raw)
+    ipcMain.handle(AGY_SETTINGS_CHANNELS.WRITE_RAW, (_, env: AgyEnvironment, raw: string, baseRevision: string) =>
+        settings.writeRaw(env, raw, baseRevision)
     );
 
     const plugin = new AgyPluginManager(detector, runner);
@@ -116,4 +122,5 @@ export function registerAgyIpcHandlers(
     ipcMain.handle(AGY_PLUGIN_CHANNELS.REMOVE_MARKETPLACE, (_, env: AgyEnvironment, name: string) =>
         plugin.removeMarketplace(env, name)
     );
+    registerProfileHandlers(profileChannels('agy'), new ProfileManager(detector, AGY_PROFILE_SPEC), getMainWindow);
 }

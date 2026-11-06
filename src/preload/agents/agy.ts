@@ -8,8 +8,11 @@ import {
 } from '../../shared/agents/agy/constants';
 import type { AgyIpcApi } from '../../shared/agents/agy/ipc';
 import type { AgyEnvironment, AssetKind, CleanupSelection, SettingsValues } from '../../shared/agents/agy/types';
+import { profileChannels } from '../../shared/agents/profile/channels';
+import { createProfileApi } from './profileApi';
 
 export const agyApi: AgyIpcApi = {
+    profile: createProfileApi(profileChannels('agy')),
     mcp: {
         getEnvironments: refresh => ipcRenderer.invoke(AGY_MCP_CHANNELS.GET_ENVIRONMENTS, refresh),
         getMCPServers: env => ipcRenderer.invoke(AGY_MCP_CHANNELS.GET_MCP_SERVERS, env),
@@ -40,9 +43,11 @@ export const agyApi: AgyIpcApi = {
     settings: {
         getEnvironments: refresh => ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.GET_ENVIRONMENTS, refresh),
         read: env => ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.READ, env),
-        write: (env: AgyEnvironment, values: SettingsValues) =>
-            ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.WRITE, env, values),
-        writeRaw: (env, raw) => ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.WRITE_RAW, env, raw),
+        readRaw: env => ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.READ_RAW, env),
+        write: (env: AgyEnvironment, values: SettingsValues, base: SettingsValues) =>
+            ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.WRITE, env, values, base),
+        writeRaw: (env, raw, baseRevision) =>
+            ipcRenderer.invoke(AGY_SETTINGS_CHANNELS.WRITE_RAW, env, raw, baseRevision),
     },
     plugin: {
         getEnvironments: refresh => ipcRenderer.invoke(AGY_PLUGIN_CHANNELS.GET_ENVIRONMENTS, refresh),

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Autocomplete, MenuItem, Select, TextField, Typography } from '@mui/material';
+import { Autocomplete, Link, MenuItem, Select, TextField, Typography } from '@mui/material';
 import { settingsValueProblem } from '@shared/agents/settingsValue';
 import type { SettingsFieldSpec, SettingsFieldValue } from '@shared/agents/types';
 
@@ -14,6 +14,9 @@ interface Props {
     // type='enum' のとき: 型付き候補を i18n 解決したラベル付きで渡す。
     enumOptions?: { value: SettingsFieldValue; label: string }[];
     onChange: (value: SettingsFieldValue) => void;
+    // directEdit の項目の編集先へのリンク。無ければ直接編集の案内を表示する。
+    linkLabel?: string;
+    onLink?: () => void;
 }
 
 /** enum 候補の値を Select 用の一意な文字列キーへ変換する（型を含めて識別する）。 */
@@ -73,7 +76,7 @@ const NumberValueInput: React.FC<{
     );
 };
 
-/** Shared value cell for editable scalar settings and direct-edit-only structural settings. */
+/** Shared value cell for editable scalar settings, link rows, and direct-edit-only structural settings. */
 export const SettingsValueEditor: React.FC<Props> = ({
     field,
     value,
@@ -84,8 +87,17 @@ export const SettingsValueEditor: React.FC<Props> = ({
     unknownValueLabel,
     enumOptions,
     onChange,
+    linkLabel,
+    onLink,
 }) => {
     if (field.type === 'directEdit') {
+        if (linkLabel !== undefined && onLink) {
+            return (
+                <Link component='button' type='button' variant='body2' onClick={onLink} sx={{ textAlign: 'left' }}>
+                    {linkLabel}
+                </Link>
+            );
+        }
         return (
             <Typography variant='body2' color='text.secondary'>
                 {directEditLabel}
@@ -185,7 +197,11 @@ export const SettingsValueEditor: React.FC<Props> = ({
                 onInputChange={(_event, next, reason) => {
                     if (reason === 'input' || reason === 'clear') onChange(next || undefined);
                 }}
-                renderOption={(props, option) => <li {...props}>{option ? option : <em>{unsetLabel}</em>}</li>}
+                renderOption={({ key, ...props }, option) => (
+                    <li key={key} {...props}>
+                        {option ? option : <em>{unsetLabel}</em>}
+                    </li>
+                )}
                 renderInput={params => <TextField {...params} size='small' />}
                 sx={{ minWidth: 300 }}
             />

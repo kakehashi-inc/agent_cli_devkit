@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Box,
@@ -23,12 +23,14 @@ import {
     CloudDownloadOutlined as CloudDownloadIcon,
 } from '@mui/icons-material';
 import type { AssetEntry, AssetKind, AssetListReport, CodexEnvironment } from '@shared/agents/codex/types';
+import { AssetListNotices } from '../../components/assets/AssetEntryMarks';
 import { AssetSearchField } from '../../components/assets/AssetSearchField';
+import { canDeleteAsset, canDownloadAsset, canSelectAsset, nestedAssetsOf } from '../../utils/assetEntry';
 import { filterAssetEntries } from '../../utils/assetSearch';
-import { AssetEntriesTable, computeFitWidth, type FmColumn } from './AssetEntriesTable';
+import { AssetEntriesTable, computeFitWidth, fitColumnLimit, type FmColumn } from './AssetEntriesTable';
 import type { DetailKey } from '../../components/assets/assetColumns';
 
-// セクションのタブ値: エージェント / スキル（AssetKind）に加え、設定タブを持つ。
+// セクションのタブ値: エージェント / スキル（AssetKind）。
 type SectionTab = AssetKind;
 // 単体ファイルアップロードの種別（zip 以外）。skills=md、agents=toml。
 type UploadKind = 'zip' | 'md' | 'toml';
@@ -36,6 +38,8 @@ type UploadKind = 'zip' | 'md' | 'toml';
 interface Props {
     env: CodexEnvironment;
     onNotify: (message: string, severity: 'success' | 'error' | 'warning') => void;
+    // 更新のたびに変わる値。変わると一覧を読み直す（タブと検索語は保ち、選択は解除する）。
+    reloadNonce: number;
 }
 
 // エージェント一覧の説明列の下に補足表示する TOML キー（記載順）。features は無効化した機能の一覧。
@@ -59,12 +63,23 @@ const FRONTMATTER_COLUMNS: Record<AssetKind, FmColumn[]> = {
 // 公式スキルダイアログの一覧は skills 列構成（name + description）を使う。
 const OFFICIAL_COLUMNS: FmColumn[] = FRONTMATTER_COLUMNS.skills;
 
+/** アップロード失敗のメッセージコードを表示用の i18n キーに変換する。 */
+function uploadErrorKey(message?: string): string {
+    if (message === 'md-no-name') {
+        return 'codex.assetManager.mdNoName';
+    }
+    if (message === 'invalid-archive') {
+        return 'codex.assetManager.invalidArchive';
+    }
+    return 'codex.assetManager.uploadError';
+}
+
 /**
  * 1 環境分の Agent・Skill 管理セクション。
- * 「エージェント」「スキル」「設定」をタブで分離する。
+ * 「エージェント」「スキル」をタブで分離する。
  * スキルタブでは公式スキル（openai/skills）の取り込みも行える（git が必要）。
  */
-export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
+export const AssetManagerSection: React.FC<Props> = ({ env, onNotify, reloadNonce }) => {
     const { t } = useTranslation();
     const [tab, setTab] = useState<SectionTab>('agents');
     const kind: AssetKind = tab;
@@ -85,11 +100,13 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     const [confirm, setConfirm] = useState<{
         srcPath: string;
         conflicts: string[];
+        nestedReplaced: string[];
         uploadKind: UploadKind;
     } | null>(null);
     const [kindWarn, setKindWarn] = useState<{
         srcPath: string;
         conflicts: string[];
+        nestedReplaced: string[];
         uploadKind: UploadKind;
         reason: string;
     } | null>(null);
@@ -137,12 +154,18 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         return () => window.removeEventListener('resize', onResize);
     }, []);
 
+    // 最後に始めた読み込みだけを画面に反映する。
+    const loadRequest = useRef(0);
     const load = async () => {
+        const request = ++loadRequest.current;
         try {
             const [agents, skills] = await Promise.all([
                 window.agentCliDevkit.codex.asset.list(env, 'agents').catch(() => null),
                 window.agentCliDevkit.codex.asset.list(env, 'skills').catch(() => null),
             ]);
+            if (request !== loadRequest.current) {
+                return;
+            }
             setReports({ agents, skills });
             setChecked({ agents: new Set(), skills: new Set() });
         } finally {
@@ -152,11 +175,15 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
 
     useEffect(() => {
         load();
+        // env は安定参照（親で固定）。マウント時と更新のたびにロードする。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [reloadNonce]);
+
+    useEffect(() => {
         window.agentCliDevkit.codex.asset
             .isGitAvailable()
             .then(setGitAvailable)
             .catch(() => setGitAvailable(false));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const report = reports[kind];
@@ -170,9 +197,8 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         if (!fitCol) {
             return 0;
         }
-        const maxWidthPx = Math.round(windowWidth * (fitCol.maxWidthPct ?? 0.25));
-        return computeFitWidth(filteredEntries, maxWidthPx, true);
-    }, [columns, filteredEntries, windowWidth]);
+        return computeFitWidth(filteredEntries, fitColumnLimit(columns, windowWidth, kind === 'skills'), true);
+    }, [columns, filteredEntries, kind, windowWidth]);
     const officialFitWidth = useMemo(() => {
         const fitCol = OFFICIAL_COLUMNS.find(c => c.fit);
         if (!fitCol) {
@@ -184,7 +210,10 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     // ファイル数列は skills のみ表示（agents は 1 ファイル固定なので不要）。
     const showFileCount = kind === 'skills';
     const selectedEntries = filteredEntries.filter(entry => checkedKeys.has(entry.relPath));
-    const someChecked = selectedEntries.length > 0;
+    const downloadableEntries = selectedEntries.filter(canDownloadAsset);
+    const deletableEntries = selectedEntries.filter(canDeleteAsset);
+    // 検索で隠れている行も、選んだフォルダーと一緒に消えるので一覧全体から探す。
+    const nestedDeletions = kind === 'skills' ? nestedAssetsOf(deletableEntries, entries) : [];
 
     const setKindSearchQuery = (query: string) => {
         setSearchQueries(prev => ({ ...prev, [kind]: query }));
@@ -204,10 +233,11 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         setKindChecked(next);
     };
 
-    const allChecked = filteredEntries.length > 0 && filteredEntries.every(e => checkedKeys.has(e.relPath));
+    const selectableEntries = filteredEntries.filter(canSelectAsset);
+    const allChecked = selectableEntries.length > 0 && selectableEntries.every(e => checkedKeys.has(e.relPath));
     const toggleAll = () => {
         const next = new Set(checkedKeys);
-        for (const entry of filteredEntries) {
+        for (const entry of selectableEntries) {
             if (allChecked) {
                 next.delete(entry.relPath);
             } else {
@@ -218,7 +248,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     };
 
     const handleDownload = async () => {
-        const relPaths = selectedEntries.map(entry => entry.relPath);
+        const relPaths = downloadableEntries.map(entry => entry.relPath);
         if (relPaths.length === 0) {
             return;
         }
@@ -248,15 +278,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 return;
             }
             if (!result.ok) {
-                const msg = result.message ?? '';
-                if (msg.startsWith('kind-block-')) {
-                    onNotify(t(`codex.assetManager.kindBlock.${msg.slice('kind-block-'.length)}`), 'error');
-                } else {
-                    onNotify(
-                        t(msg === 'md-no-name' ? 'codex.assetManager.mdNoName' : 'codex.assetManager.uploadError'),
-                        'error'
-                    );
-                }
+                onNotify(t(uploadErrorKey(result.message)), 'error');
                 return;
             }
             const uploadKind = (result.uploadKind ?? 'zip') as UploadKind;
@@ -266,11 +288,12 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 return;
             }
             const conflicts = result.conflicts ?? [];
+            const nestedReplaced = result.nestedReplaced ?? [];
             if (result.kindCheck === 'warn') {
-                setKindWarn({ srcPath, conflicts, uploadKind, reason: result.kindMessage ?? '' });
+                setKindWarn({ srcPath, conflicts, nestedReplaced, uploadKind, reason: result.kindMessage ?? '' });
                 return;
             }
-            await proceedUpload(srcPath, uploadKind, conflicts);
+            await proceedUpload(srcPath, uploadKind, conflicts, nestedReplaced);
         } catch {
             onNotify(t('codex.assetManager.uploadError'), 'error');
         } finally {
@@ -278,9 +301,14 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         }
     };
 
-    const proceedUpload = async (srcPath: string, uploadKind: UploadKind, conflicts: string[]) => {
+    const proceedUpload = async (
+        srcPath: string,
+        uploadKind: UploadKind,
+        conflicts: string[],
+        nestedReplaced: string[]
+    ) => {
         if (conflicts.length > 0) {
-            setConfirm({ srcPath, conflicts, uploadKind });
+            setConfirm({ srcPath, conflicts, nestedReplaced, uploadKind });
             return;
         }
         await runUpload(srcPath, uploadKind, false);
@@ -290,11 +318,11 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         if (!kindWarn) {
             return;
         }
-        const { srcPath, uploadKind, conflicts } = kindWarn;
+        const { srcPath, uploadKind, conflicts, nestedReplaced } = kindWarn;
         setKindWarn(null);
         setBusy(true);
         try {
-            await proceedUpload(srcPath, uploadKind, conflicts);
+            await proceedUpload(srcPath, uploadKind, conflicts, nestedReplaced);
         } catch {
             onNotify(t('codex.assetManager.uploadError'), 'error');
         } finally {
@@ -311,10 +339,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
             onNotify(t('codex.assetManager.uploadSuccess', { count: result.importedCount ?? 0 }), 'success');
             await load();
         } else {
-            onNotify(
-                t(result.message === 'md-no-name' ? 'codex.assetManager.mdNoName' : 'codex.assetManager.uploadError'),
-                'error'
-            );
+            onNotify(t(uploadErrorKey(result.message)), 'error');
         }
     };
 
@@ -336,7 +361,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
 
     const handleConfirmDelete = async () => {
         setDeleteConfirmOpen(false);
-        const relPaths = selectedEntries.map(entry => entry.relPath);
+        const relPaths = deletableEntries.map(entry => entry.relPath);
         if (relPaths.length === 0) {
             return;
         }
@@ -454,7 +479,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 variant='contained'
                                 size='small'
                                 startIcon={<DownloadIcon />}
-                                disabled={busy || !someChecked}
+                                disabled={busy || downloadableEntries.length === 0}
                                 onClick={handleDownload}
                             >
                                 {t('codex.assetManager.download')}
@@ -473,7 +498,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 color='error'
                                 size='small'
                                 startIcon={<DeleteIcon />}
-                                disabled={busy || !someChecked}
+                                disabled={busy || deletableEntries.length === 0}
                                 onClick={() => setDeleteConfirmOpen(true)}
                             >
                                 {t('codex.assetManager.delete')}
@@ -498,6 +523,8 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                             )}
                         </Box>
 
+                        <AssetListNotices report={report} i18nPrefix='codex.assetManager' />
+
                         <AssetSearchField value={searchQuery} onChange={setKindSearchQuery} />
 
                         {entries.length === 0 ? (
@@ -520,6 +547,9 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 onToggleAll={toggleAll}
                                 onView={setViewEntry}
                                 onReveal={handleReveal}
+                                revealDisabledReason={
+                                    report?.revealUnavailable ? t('common.revealUnavailable') : undefined
+                                }
                                 onViewFull={handleViewFull}
                             />
                         )}
@@ -553,6 +583,11 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                             names: (confirm?.conflicts ?? []).join(', '),
                         })}
                     </DialogContentText>
+                    {(confirm?.nestedReplaced.length ?? 0) > 0 && (
+                        <Alert severity='warning' sx={{ mt: 2, overflowWrap: 'anywhere' }}>
+                            {t('common.assetOverwriteNested', { names: confirm?.nestedReplaced.join(', ') })}
+                        </Alert>
+                    )}
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setConfirm(null)}>{t('codex.assetManager.cancel')}</Button>
@@ -567,8 +602,15 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 <DialogTitle>{t('codex.assetManager.deleteConfirmTitle')}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        {t('codex.assetManager.deleteConfirmBody', { count: selectedEntries.length })}
+                        {t('codex.assetManager.deleteConfirmBody', { count: deletableEntries.length })}
                     </DialogContentText>
+                    {nestedDeletions.length > 0 && (
+                        <Alert severity='warning' sx={{ mt: 2, overflowWrap: 'anywhere' }}>
+                            {t('codex.assetManager.deleteNestedNotice', {
+                                names: nestedDeletions.map(entry => entry.relPath).join(', '),
+                            })}
+                        </Alert>
+                    )}
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setDeleteConfirmOpen(false)}>{t('codex.assetManager.cancel')}</Button>

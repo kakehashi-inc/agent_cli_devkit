@@ -201,6 +201,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@bufbuild/protobuf@npm:2.17.0":
+  version: 2.17.0
+  resolution: "@bufbuild/protobuf@npm:2.17.0"
+  checksum: 10c0/29140e179408e9ed8601843f6c423658bd130e5cc2e4da470b7a305e4500054872f6f5f62884dc8a1652e85beed19bd5ba6d9482c323e773db84a6c26c183957
+  languageName: node
+  linkType: hard
+
 "@electron-internal/extract-zip@npm:^1.0.1":
   version: 1.0.4
   resolution: "@electron-internal/extract-zip@npm:1.0.4"
@@ -1531,10 +1538,12 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "agent-cli-devkit@workspace:."
   dependencies:
+    "@bufbuild/protobuf": "npm:2.17.0"
     "@emotion/react": "npm:^11.14.0"
     "@emotion/styled": "npm:^11.14.1"
     "@mui/icons-material": "npm:^9.5.0"
     "@mui/material": "npm:^9.5.0"
+    "@noble/hashes": "npm:^1.8.0"
     "@types/adm-zip": "npm:^0.6.0"
     "@types/archiver": "npm:^7.0.0"
     "@types/node": "npm:^22.20.5"

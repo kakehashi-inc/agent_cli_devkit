@@ -4,8 +4,8 @@ import { GrokEnvironment } from '../../../shared/agents/grok/types';
 import { GrokMcpManager } from '../../services/grok/GrokMcpManager';
 
 export function registerGrokMcpHandlers(manager: GrokMcpManager): void {
-    ipcMain.handle(GROK_MCP_CHANNELS.GET_ENVIRONMENTS, () => {
-        return manager.getEnvironments();
+    ipcMain.handle(GROK_MCP_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) => {
+        return manager.getEnvironments(refresh === true);
     });
 
     ipcMain.handle(GROK_MCP_CHANNELS.GET_MCP_SERVERS, (_, env: GrokEnvironment) => {

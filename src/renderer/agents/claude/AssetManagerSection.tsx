@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import {
     Box,
     Paper,
@@ -23,17 +24,22 @@ import {
     CloudDownloadOutlined as CloudDownloadIcon,
 } from '@mui/icons-material';
 import type { AssetEntry, AssetKind, AssetListReport, ClaudeEnvironment } from '@shared/agents/claude/types';
+import { AssetListNotices } from '../../components/assets/AssetEntryMarks';
 import { AssetSearchField } from '../../components/assets/AssetSearchField';
+import { ProfileAssetTab } from '../../components/profile/ProfileAssetTab';
+import { canDeleteAsset, canDownloadAsset, canSelectAsset } from '../../utils/assetEntry';
 import { filterAssetEntries } from '../../utils/assetSearch';
-import { AssetEntriesTable, computeFitWidth, type FmColumn } from './AssetEntriesTable';
+import { AssetEntriesTable, computeFitWidth, fitColumnLimit, type FmColumn } from './AssetEntriesTable';
 import type { DetailKey } from '../../components/assets/assetColumns';
 
-// セクションのタブ値: エージェント / スキル（AssetKind）に加え、設定タブを持つ。
-type SectionTab = AssetKind;
+// セクションのタブ値: エージェント / スキル（AssetKind）に加え、コマンドのタブを持つ。
+type SectionTab = AssetKind | 'commands';
 
 interface Props {
     env: ClaudeEnvironment;
     onNotify: (message: string, severity: 'success' | 'error' | 'warning') => void;
+    // 更新のたびに変わる値。変わると一覧を読み直す（タブと検索語は保ち、選択は解除する）。
+    reloadNonce: number;
 }
 
 // エージェント一覧の説明列の下に補足表示する frontmatter キー。使えるツールと権限の扱いに絞る。
@@ -82,12 +88,15 @@ function uploadErrorKey(message?: string): string {
  * スキルタブでは公式スキル（anthropics/skills）の取り込みも行える（git が必要）。
  * 各エントリの frontmatter（ヘッダー部）を固定列で展開表示し、「参照」で生のヘッダー部全体を見られる。
  */
-export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
+export const AssetManagerSection: React.FC<Props> = ({ env, onNotify, reloadNonce }) => {
     const { t } = useTranslation();
     // 表示中のタブ（エージェント / スキル）。
-    const [tab, setTab] = useState<SectionTab>('agents');
+    const [searchParams] = useSearchParams();
+    const [tab, setTab] = useState<SectionTab>(() => (searchParams.get('tab') === 'commands' ? 'commands' : 'agents'));
+    // コマンドのタブは一度開いたらマウントしたままにする。
+    const [commandsVisited, setCommandsVisited] = useState(tab === 'commands');
     // 資産（エージェント/スキル）操作で使う種別。
-    const kind: AssetKind = tab;
+    const kind: AssetKind = tab === 'commands' ? 'agents' : tab;
     const [reports, setReports] = useState<Record<AssetKind, AssetListReport | null>>({
         agents: null,
         skills: null,
@@ -106,12 +115,14 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     const [confirm, setConfirm] = useState<{
         srcPath: string;
         conflicts: string[];
+        nestedReplaced: string[];
         uploadKind: 'zip' | 'md';
     } | null>(null);
     // 種別不一致の警告（続行 / キャンセル）。続行時は通常フロー（衝突確認 → アップロード）へ進む。
     const [kindWarn, setKindWarn] = useState<{
         srcPath: string;
         conflicts: string[];
+        nestedReplaced: string[];
         uploadKind: 'zip' | 'md';
         reason: string;
     } | null>(null);
@@ -160,12 +171,18 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         return () => window.removeEventListener('resize', onResize);
     }, []);
 
+    // 最後に始めた読み込みだけを画面に反映する。
+    const loadRequest = useRef(0);
     const load = async () => {
+        const request = ++loadRequest.current;
         try {
             const [agents, skills] = await Promise.all([
                 window.agentCliDevkit.claude.asset.list(env, 'agents').catch(() => null),
                 window.agentCliDevkit.claude.asset.list(env, 'skills').catch(() => null),
             ]);
+            if (request !== loadRequest.current) {
+                return;
+            }
             setReports({ agents, skills });
             setChecked({ agents: new Set(), skills: new Set() });
         } finally {
@@ -175,13 +192,16 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
 
     useEffect(() => {
         load();
+        // env は安定参照（親で固定）。マウント時と更新のたびにロードする。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [reloadNonce]);
+
+    useEffect(() => {
         // git の利用可否を判定（公式スキルインポートボタンの活性に使う）。
         window.agentCliDevkit.claude.asset
             .isGitAvailable()
             .then(setGitAvailable)
             .catch(() => setGitAvailable(false));
-        // env は安定参照（親で固定）。マウント時に一度ロードする。
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const report = reports[kind];
@@ -196,9 +216,8 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         if (!fitCol) {
             return 0;
         }
-        const maxWidthPx = Math.round(windowWidth * (fitCol.maxWidthPct ?? 0.25));
-        return computeFitWidth(filteredEntries, maxWidthPx, true);
-    }, [columns, filteredEntries, windowWidth]);
+        return computeFitWidth(filteredEntries, fitColumnLimit(columns, windowWidth, kind === 'skills'), true);
+    }, [columns, filteredEntries, kind, windowWidth]);
     // 公式ダイアログ用の fit 幅（skills 列構成）。
     const officialFitWidth = useMemo(() => {
         const fitCol = OFFICIAL_COLUMNS.find(c => c.fit);
@@ -211,7 +230,8 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     // ファイル数列は skills のみ表示（agents は 1 ファイル固定なので不要）。
     const showFileCount = kind === 'skills';
     const selectedEntries = filteredEntries.filter(entry => checkedKeys.has(entry.relPath));
-    const someChecked = selectedEntries.length > 0;
+    const downloadableEntries = selectedEntries.filter(canDownloadAsset);
+    const deletableEntries = selectedEntries.filter(canDeleteAsset);
 
     const setKindSearchQuery = (query: string) => {
         setSearchQueries(prev => ({ ...prev, [kind]: query }));
@@ -231,10 +251,11 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         setKindChecked(next);
     };
 
-    const allChecked = filteredEntries.length > 0 && filteredEntries.every(e => checkedKeys.has(e.relPath));
+    const selectableEntries = filteredEntries.filter(canSelectAsset);
+    const allChecked = selectableEntries.length > 0 && selectableEntries.every(e => checkedKeys.has(e.relPath));
     const toggleAll = () => {
         const next = new Set(checkedKeys);
-        for (const entry of filteredEntries) {
+        for (const entry of selectableEntries) {
             if (allChecked) {
                 next.delete(entry.relPath);
             } else {
@@ -245,7 +266,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     };
 
     const handleDownload = async () => {
-        const relPaths = selectedEntries.map(entry => entry.relPath);
+        const relPaths = downloadableEntries.map(entry => entry.relPath);
         if (relPaths.length === 0) {
             return;
         }
@@ -293,12 +314,13 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 return;
             }
             const conflicts = result.conflicts ?? [];
+            const nestedReplaced = result.nestedReplaced ?? [];
             // 種別不一致の疑い → 続行/キャンセルの確認を先に挟む。
             if (result.kindCheck === 'warn') {
-                setKindWarn({ srcPath, conflicts, uploadKind, reason: result.kindMessage ?? '' });
+                setKindWarn({ srcPath, conflicts, nestedReplaced, uploadKind, reason: result.kindMessage ?? '' });
                 return;
             }
-            await proceedUpload(srcPath, uploadKind, conflicts);
+            await proceedUpload(srcPath, uploadKind, conflicts, nestedReplaced);
         } catch {
             onNotify(t('claude.assetManager.uploadError'), 'error');
         } finally {
@@ -307,9 +329,14 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
     };
 
     // 検査後の通常フロー: 衝突があれば上書き確認、無ければそのまま取り込む。
-    const proceedUpload = async (srcPath: string, uploadKind: 'zip' | 'md', conflicts: string[]) => {
+    const proceedUpload = async (
+        srcPath: string,
+        uploadKind: 'zip' | 'md',
+        conflicts: string[],
+        nestedReplaced: string[]
+    ) => {
         if (conflicts.length > 0) {
-            setConfirm({ srcPath, conflicts, uploadKind });
+            setConfirm({ srcPath, conflicts, nestedReplaced, uploadKind });
             return;
         }
         await runUpload(srcPath, uploadKind, false);
@@ -320,11 +347,11 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         if (!kindWarn) {
             return;
         }
-        const { srcPath, uploadKind, conflicts } = kindWarn;
+        const { srcPath, uploadKind, conflicts, nestedReplaced } = kindWarn;
         setKindWarn(null);
         setBusy(true);
         try {
-            await proceedUpload(srcPath, uploadKind, conflicts);
+            await proceedUpload(srcPath, uploadKind, conflicts, nestedReplaced);
         } catch {
             onNotify(t('claude.assetManager.uploadError'), 'error');
         } finally {
@@ -363,7 +390,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
 
     const handleConfirmDelete = async () => {
         setDeleteConfirmOpen(false);
-        const relPaths = selectedEntries.map(entry => entry.relPath);
+        const relPaths = deletableEntries.map(entry => entry.relPath);
         if (relPaths.length === 0) {
             return;
         }
@@ -467,14 +494,18 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
         <Paper variant='outlined' sx={{ mb: 3 }}>
             <Tabs
                 value={tab}
-                onChange={(_, v: SectionTab) => setTab(v)}
+                onChange={(_, v: SectionTab) => {
+                    setTab(v);
+                    if (v === 'commands') setCommandsVisited(true);
+                }}
                 sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
                 <Tab value='agents' label={t('claude.assetManager.tabAgents')} />
                 <Tab value='skills' label={t('claude.assetManager.tabSkills')} />
+                <Tab value='commands' label={t('claude.profile.tab.commands')} />
             </Tabs>
 
-            <Box sx={{ p: 2 }}>
+            <Box sx={{ p: 2, display: tab === 'commands' ? 'none' : 'block' }}>
                 {report && !report.available ? (
                     <Alert severity='info'>{t('claude.assetManager.unavailable')}</Alert>
                 ) : (
@@ -484,7 +515,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 variant='contained'
                                 size='small'
                                 startIcon={<DownloadIcon />}
-                                disabled={busy || !someChecked}
+                                disabled={busy || downloadableEntries.length === 0}
                                 onClick={handleDownload}
                             >
                                 {t('claude.assetManager.download')}
@@ -503,7 +534,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 color='error'
                                 size='small'
                                 startIcon={<DeleteIcon />}
-                                disabled={busy || !someChecked}
+                                disabled={busy || deletableEntries.length === 0}
                                 onClick={() => setDeleteConfirmOpen(true)}
                             >
                                 {t('claude.assetManager.delete')}
@@ -529,6 +560,8 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                             )}
                         </Box>
 
+                        <AssetListNotices report={report} i18nPrefix='claude.assetManager' />
+
                         <AssetSearchField value={searchQuery} onChange={setKindSearchQuery} />
 
                         {entries.length === 0 ? (
@@ -551,12 +584,28 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                                 onToggleAll={toggleAll}
                                 onView={setViewEntry}
                                 onReveal={handleReveal}
+                                revealDisabledReason={
+                                    report?.revealUnavailable ? t('common.revealUnavailable') : undefined
+                                }
                                 onViewFull={handleViewFull}
                             />
                         )}
                     </>
                 )}
             </Box>
+
+            {commandsVisited && (
+                <Box sx={{ p: 2, display: tab === 'commands' ? 'block' : 'none' }}>
+                    <ProfileAssetTab
+                        agentId='claude'
+                        env={env}
+                        api={window.agentCliDevkit.claude.profile}
+                        notify={onNotify}
+                        tabId='commands'
+                        reloadNonce={reloadNonce}
+                    />
+                </Box>
+            )}
 
             {/* 種別不一致の警告ダイアログ（続行 / キャンセル） */}
             <Dialog open={kindWarn !== null} onClose={() => setKindWarn(null)}>
@@ -584,6 +633,11 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                             names: (confirm?.conflicts ?? []).join(', '),
                         })}
                     </DialogContentText>
+                    {(confirm?.nestedReplaced.length ?? 0) > 0 && (
+                        <Alert severity='warning' sx={{ mt: 2, overflowWrap: 'anywhere' }}>
+                            {t('common.assetOverwriteNested', { names: confirm?.nestedReplaced.join(', ') })}
+                        </Alert>
+                    )}
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setConfirm(null)}>{t('claude.assetManager.cancel')}</Button>
@@ -598,7 +652,7 @@ export const AssetManagerSection: React.FC<Props> = ({ env, onNotify }) => {
                 <DialogTitle>{t('claude.assetManager.deleteConfirmTitle')}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        {t('claude.assetManager.deleteConfirmBody', { count: selectedEntries.length })}
+                        {t('claude.assetManager.deleteConfirmBody', { count: deletableEntries.length })}
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>

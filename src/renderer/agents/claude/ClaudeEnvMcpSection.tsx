@@ -16,11 +16,15 @@ import {
     Tooltip,
 } from '@mui/material';
 import { ToggleOn as EnableIcon, ToggleOff as DisableIcon, DragIndicator as DragIcon } from '@mui/icons-material';
-import type { ClaudeCodeEnvInfo, MCPServerInfo } from '@shared/agents/claude/types';
+import type { ClaudeCodeEnvInfo, McpFileProblem, MCPServerInfo, MCPServers } from '@shared/agents/claude/types';
+import { McpFileProblems, McpServerNotes } from '../../components/agent/McpServerParts';
+import { operationErrorText } from '../../utils/configFileFailure';
 
 interface Props {
     info: ClaudeCodeEnvInfo;
     onNotify: (message: string, severity: 'success' | 'error') => void;
+    // 更新のたびに変わる値。変わると一覧を読み直す。
+    reloadNonce: number;
 }
 
 /**
@@ -28,20 +32,25 @@ interface Props {
  * 有効/無効の 2 テーブル、ドラッグ並べ替え、有効化/無効化トグルを提供する。
  * 状態はセクション内ローカルで完結させる。
  */
-export const ClaudeEnvMcpSection: React.FC<Props> = ({ info, onNotify }) => {
+export const ClaudeEnvMcpSection: React.FC<Props> = ({ info, onNotify, reloadNonce }) => {
     const { t } = useTranslation();
     const { env } = info;
     const [enabledServers, setEnabledServers] = useState<MCPServerInfo[]>([]);
     const [disabledServers, setDisabledServers] = useState<MCPServerInfo[]>([]);
+    const [problems, setProblems] = useState<McpFileProblem[]>([]);
     const [loading, setLoading] = useState(true);
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
     const [draggedDisabledIndex, setDraggedDisabledIndex] = useState<number | null>(null);
 
+    const applyServers = (servers: MCPServers) => {
+        setEnabledServers(servers.enabled);
+        setDisabledServers(servers.disabled);
+        setProblems(servers.problems ?? []);
+    };
+
     const loadData = async () => {
         try {
-            const servers = await window.agentCliDevkit.claude.code.getMCPServers(env);
-            setEnabledServers(servers.enabled);
-            setDisabledServers(servers.disabled);
+            applyServers(await window.agentCliDevkit.claude.code.getMCPServers(env));
         } catch (error) {
             console.error('Failed to load Claude Code MCP servers:', error);
         } finally {
@@ -52,27 +61,25 @@ export const ClaudeEnvMcpSection: React.FC<Props> = ({ info, onNotify }) => {
     useEffect(() => {
         loadData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [info.configPath]);
+    }, [info.configPath, reloadNonce]);
 
     const handleDisable = async (serverName: string) => {
         try {
-            const result = await window.agentCliDevkit.claude.code.disableMCPServer(env, serverName);
-            setEnabledServers(result.enabled);
-            setDisabledServers(result.disabled);
+            applyServers(await window.agentCliDevkit.claude.code.disableMCPServer(env, serverName));
             onNotify(t('common.success'), 'success');
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : t('common.error'), 'error');
+            onNotify(operationErrorText(t, error), 'error');
+            await loadData();
         }
     };
 
     const handleEnable = async (serverName: string) => {
         try {
-            const result = await window.agentCliDevkit.claude.code.enableMCPServer(env, serverName);
-            setEnabledServers(result.enabled);
-            setDisabledServers(result.disabled);
+            applyServers(await window.agentCliDevkit.claude.code.enableMCPServer(env, serverName));
             onNotify(t('common.success'), 'success');
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : t('common.error'), 'error');
+            onNotify(operationErrorText(t, error), 'error');
+            await loadData();
         }
     };
 
@@ -93,10 +100,10 @@ export const ClaudeEnvMcpSection: React.FC<Props> = ({ info, onNotify }) => {
         if (draggedIndex === null) return;
         try {
             const names = enabledServers.map(s => s.name);
-            await window.agentCliDevkit.claude.code.reorderMCPServers(env, names);
+            applyServers(await window.agentCliDevkit.claude.code.reorderMCPServers(env, names));
             onNotify(t('common.success'), 'success');
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : t('common.error'), 'error');
+            onNotify(operationErrorText(t, error), 'error');
             await loadData();
         } finally {
             setDraggedIndex(null);
@@ -120,10 +127,10 @@ export const ClaudeEnvMcpSection: React.FC<Props> = ({ info, onNotify }) => {
         if (draggedDisabledIndex === null) return;
         try {
             const names = disabledServers.map(s => s.name);
-            await window.agentCliDevkit.claude.code.reorderDisabledMCPServers(env, names);
+            applyServers(await window.agentCliDevkit.claude.code.reorderDisabledMCPServers(env, names));
             onNotify(t('common.success'), 'success');
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : t('common.error'), 'error');
+            onNotify(operationErrorText(t, error), 'error');
             await loadData();
         } finally {
             setDraggedDisabledIndex(null);
@@ -154,19 +161,17 @@ export const ClaudeEnvMcpSection: React.FC<Props> = ({ info, onNotify }) => {
                     {servers.map((server, index) => (
                         <TableRow
                             key={server.name}
-                            draggable
+                            draggable={!server.readOnly}
                             onDragStart={() => onDragStart(index)}
                             onDragOver={e => onDragOver(e, index)}
                             onDragEnd={onDragEnd}
                             sx={{
-                                cursor: 'move',
+                                cursor: server.readOnly ? 'default' : 'move',
                                 opacity: draggingIndex === index ? 0.5 : 1,
                                 '&:hover': { bgcolor: 'action.hover' },
                             }}
                         >
-                            <TableCell>
-                                <DragIcon sx={{ color: 'action.disabled' }} />
-                            </TableCell>
+                            <TableCell>{!server.readOnly && <DragIcon sx={{ color: 'action.disabled' }} />}</TableCell>
                             <TableCell>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                                     <Typography variant='body2' sx={{ fontWeight: 'medium', wordBreak: 'break-all' }}>
@@ -176,27 +181,42 @@ export const ClaudeEnvMcpSection: React.FC<Props> = ({ info, onNotify }) => {
                                         <Chip label={server.config.type} size='small' variant='outlined' />
                                     )}
                                 </Box>
+                                <McpServerNotes server={server} />
                             </TableCell>
                             <TableCell>
                                 {variant === 'enabled' ? (
-                                    <Tooltip title={t('claude.claudeCode.disable')}>
-                                        <IconButton
-                                            size='large'
-                                            color='success'
-                                            onClick={() => handleDisable(server.name)}
-                                        >
-                                            <EnableIcon sx={{ fontSize: 40 }} />
-                                        </IconButton>
+                                    <Tooltip
+                                        title={
+                                            server.readOnly ? t('common.mcpReadOnly') : t('claude.claudeCode.disable')
+                                        }
+                                    >
+                                        <span>
+                                            <IconButton
+                                                size='large'
+                                                color='success'
+                                                disabled={server.readOnly}
+                                                onClick={() => handleDisable(server.name)}
+                                            >
+                                                <EnableIcon sx={{ fontSize: 40 }} />
+                                            </IconButton>
+                                        </span>
                                     </Tooltip>
                                 ) : (
-                                    <Tooltip title={t('claude.claudeCode.enable')}>
-                                        <IconButton
-                                            size='large'
-                                            color='error'
-                                            onClick={() => handleEnable(server.name)}
-                                        >
-                                            <DisableIcon sx={{ fontSize: 40 }} />
-                                        </IconButton>
+                                    <Tooltip
+                                        title={
+                                            server.readOnly ? t('common.mcpReadOnly') : t('claude.claudeCode.enable')
+                                        }
+                                    >
+                                        <span>
+                                            <IconButton
+                                                size='large'
+                                                color='error'
+                                                disabled={server.readOnly}
+                                                onClick={() => handleEnable(server.name)}
+                                            >
+                                                <DisableIcon sx={{ fontSize: 40 }} />
+                                            </IconButton>
+                                        </span>
                                     </Tooltip>
                                 )}
                             </TableCell>
@@ -227,6 +247,8 @@ export const ClaudeEnvMcpSection: React.FC<Props> = ({ info, onNotify }) => {
                     {t('claude.claudeCode.disabledConfigPath')}: {info.disabledConfigPath}
                 </Typography>
             </Paper>
+
+            <McpFileProblems problems={problems} />
 
             {loading ? (
                 <Typography sx={{ px: 1 }}>{t('common.loading')}</Typography>

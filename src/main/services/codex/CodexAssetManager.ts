@@ -4,7 +4,6 @@ import { tmpdir } from 'os';
 import { basename, extname, join } from 'path';
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
-import { parse } from 'smol-toml';
 import {
     ASSET_PARENT_REL,
     OFFICIAL_SKILLS_REPO_BRANCH,
@@ -26,7 +25,16 @@ import { WslDetector } from '../common/wsl/WslDetector';
 import { GitRunner } from '../common/git/GitRunner';
 import { revealAssetPath } from '../common/assets/revealAssetPath';
 import { assetArchiveFileName } from '../common/assets/archiveFileName';
-import { extractArchiveEntries, installStaged, writeTextFile } from '../common/assets/stagedInstall';
+import { installFiles, stagedFilesOfArchive } from '../common/assets/stagedInstall';
+import { RECURSIVE_ASSET_MAX_DEPTH, scanDirAssets, scanFileAssets, type AssetScan } from '../common/assets/assetScan';
+import {
+    nestedReplacedOf,
+    readEntryFile,
+    removeAssetEntry,
+    resolveZipSources,
+    writeAssetZip,
+} from '../common/assets/assetEntryOps';
+import { InspectedUploads } from '../common/assets/inspectedUploads';
 import {
     archiveTopLevelDirs,
     archiveTopLevelNames,
@@ -34,11 +42,17 @@ import {
     normalizedArchiveEntries,
 } from '../common/fs/archiveEntryPath';
 import { parseFrontmatter, parseYamlScalars } from '../../utils/frontmatter';
+import { parseToml } from '../../utils/tomlSubtree';
 import { fileMtimeMs, zipArchiveOptions } from '../../utils/fileTime';
 import { recursiveDirStats } from '../../utils/fsSize';
 
-// agents/ サブディレクトリを再帰探索する深さの上限（暴走防止）。
-const AGENT_SCAN_MAX_DEPTH = 5;
+const SKILL_ENTRY_FILE = 'SKILL.md';
+
+// Codex がスキルを探すフォルダーの階層の上限（CLI の MAX_SCAN_DEPTH。ルートを 0 として 6 階層目のフォルダーまで読む）。
+const SKILL_SCAN_MAX_LEVELS = 6;
+
+// 作業用ディレクトリは Codex が再帰で読むルートの外に作る。
+const OUTSIDE_ROOT_STAGING = { stagingOutsideDest: true };
 
 // 公式スキルリポジトリ配下を探索する深さの上限（ネストしたスキルを拾うため）。
 const OFFICIAL_SKILLS_SCAN_MAX_DEPTH = 3;
@@ -50,15 +64,20 @@ const AGENT_META_KEYS = ['name', 'description', 'model', 'model_reasoning_effort
  * Codex CLI の ~/.codex/agents（*.toml）・~/.agents/skills（<skill>/SKILL.md）を管理する。
  *
  * 一覧の単位は種別で異なる:
- * - skills: skills/ 直下の各サブディレクトリ（frontmatter は <skill>/SKILL.md から読む）。
+ * - skills: SKILL.md を持つフォルダー（スキルの中のスキルを含むネストも読む。frontmatter は <skill>/SKILL.md から読む）。
+ *           '.' で始まるフォルダーは読み込まれない行として出す。新規の配置は skills/ 直下。
  * - agents: agents/ 直下および再帰サブディレクトリの .toml ファイル。1 ファイル = 1 エージェント。
  *           メタは TOML の name/description/model/model_reasoning_effort フィールドから読む。
  *
+ * リンクも一覧に出して印を付ける。削除はリンクだけを外し、リンク先のフォルダーの中のものは削除しない。
+ *
  * DL/UL は ZIP で行う。単体ファイル UL は skills=.md（SKILL.md 化）、agents=.toml（そのまま配置）。
- * ZIP 圧縮・解凍は実 OS パス（native 絶対パス / WSL UNC パス）に対する通常の fs で行う。
- * WSL でコマンドモードへフォールバックする（UNC 到達不可）環境では操作不可（available:false）。
+ * ZIP の作成と取り込みは native は通常の fs で、WSL は distro のスクリプトで本文を受け渡して行う。
+ * ファイルマネージャーでの表示だけは OS のプロセスから見えるパスが要るので、UNC に届かない WSL では使えない。
  */
 export class CodexAssetManager {
+    // ファイル選択ダイアログで選ばれたファイル（環境と種別ごと）。取り込みはこのファイルだけを受け付ける。
+    private readonly inspectedUploads = new InspectedUploads();
     private readonly detector: WslDetector;
     private readonly git: GitRunner;
 
@@ -112,7 +131,8 @@ export class CodexAssetManager {
     }
 
     /** 管理対象の環境一覧（native + Codex 入り WSL distro）。 */
-    async getEnvironments(): Promise<{ env: CodexEnvironment; label: string }[]> {
+    async getEnvironments(refresh = false): Promise<{ env: CodexEnvironment; label: string }[]> {
+        if (refresh) this.detector.invalidate();
         const result: { env: CodexEnvironment; label: string }[] = [];
         result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         const distros = await this.detector.getDistrosWithTest(CODEX_WSL_CLI_TEST);
@@ -124,98 +144,58 @@ export class CodexAssetManager {
 
     /**
      * 指定環境・種別の一覧を返す。
-     * 実 OS パスに到達できない（UNC 不可）場合は available:false で空一覧。
+     * 環境のファイルに届かない場合は available:false で空一覧。
      */
     async list(env: CodexEnvironment, kind: AssetKind): Promise<AssetListReport> {
         const label = env.kind === 'wsl' ? (env.distro ?? '') : this.nativeLabel();
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
 
-        const real = await fs.resolveRealPath(parentRel);
-        if (real === null) {
-            // WSL コマンドモード（UNC 不可）: ZIP 操作不可
+        if (!(await fs.isReachable())) {
             return { env, label, kind, available: false, entries: [] };
         }
+        const canReveal = (await fs.resolveRealPath(parentRel)) !== null;
 
-        const entries = kind === 'skills' ? await this.listSkills(fs, parentRel) : await this.listAgents(fs, parentRel);
-        entries.sort((a, b) => a.name.localeCompare(b.name));
-        return { env, label, kind, available: true, entries };
+        const scan = kind === 'skills' ? await this.scanSkills(fs, parentRel) : await this.scanAgents(fs, parentRel);
+        scan.entries.sort((a, b) => a.name.localeCompare(b.name));
+        return {
+            env,
+            label,
+            kind,
+            available: true,
+            entries: scan.entries,
+            ...(canReveal ? {} : { revealUnavailable: true }),
+            ...(scan.truncated ? { truncatedDepth: RECURSIVE_ASSET_MAX_DEPTH } : {}),
+            ...(scan.incomplete ? { incomplete: true } : {}),
+        };
     }
 
     /**
-     * skills/: 直下サブディレクトリを 1 件とし、<skill>/SKILL.md の frontmatter を読む。
-     * <skill>/agents/openai.yaml があれば、その呼び出しポリシー（policy.*）もメタへ加える。
+     * skills/: SKILL.md を持つフォルダーを 1 件とする（Codex の探索の深さまで。SKILL.md のあるフォルダーの下も読む）。
+     * Codex は '.' で始まるフォルダーを飛ばすので、そこに SKILL.md があれば読み込まれない行にする。
+     * <skill>/agents/openai.yaml があれば、その呼び出しポリシー（policy.*）もメタへ加える。リンクも対象にする。
      */
-    private async listSkills(fs: HomeFs, parentRel: string): Promise<AssetEntry[]> {
-        const entries: AssetEntry[] = [];
-        const dirs = await fs.listDirs(parentRel);
-        for (const name of dirs) {
-            if (this.isUnsafeName(name)) {
-                continue;
-            }
-            const dirRel = `${parentRel}/${name}`;
-            const md = await fs.readText(`${dirRel}/SKILL.md`);
-            // SKILL.md を持たない隠しディレクトリ（.trash/ など）はスキルではない。
-            if (md === null && name.startsWith('.')) {
-                continue;
-            }
-            // skills はファイル数のみ表示する（サイズは取得・保持しない）。
-            const stats = await fs.dirStats(dirRel);
-            const fm = parseFrontmatter(md);
-            const policy = this.parseSkillPolicy(await fs.readText(`${dirRel}/agents/openai.yaml`));
-            entries.push({
-                name,
-                relPath: name,
-                isFile: false,
-                fileCount: stats.fileCount,
-                frontmatter: { ...(fm?.fields ?? {}), ...policy },
-                frontmatterRaw: fm?.raw ?? null,
-                // フォルダ単位: 配下ファイルの最終更新日時の最大値。
-                mtimeMs: stats.mtimeMs,
-            });
-        }
-        return entries;
+    private scanSkills(fs: HomeFs, parentRel: string): Promise<AssetScan> {
+        return scanDirAssets(fs, parentRel, {
+            entryFile: SKILL_ENTRY_FILE,
+            maxLevels: SKILL_SCAN_MAX_LEVELS,
+            walkBelowEntry: true,
+            hiddenNotLoaded: true,
+            listWithoutEntry: true,
+            extraMeta: async dirRel => this.parseSkillPolicy(await fs.readText(`${dirRel}/agents/openai.yaml`)),
+        });
     }
 
     /**
-     * agents/: 直下および再帰サブディレクトリの .toml ファイルを 1 件ずつ展開する。
+     * agents/: 配下の .toml ファイルを再帰で 1 件ずつ展開する。リンクも対象にする。
      * メタは TOML の name/description/model/model_reasoning_effort から読む。
      */
-    private async listAgents(fs: HomeFs, parentRel: string): Promise<AssetEntry[]> {
-        const entries: AssetEntry[] = [];
-
-        const walk = async (relDir: string, depth: number): Promise<void> => {
-            const files = await fs.listFiles(relDir);
-            for (const file of files) {
-                if (!file.toLowerCase().endsWith('.toml') || this.isUnsafeName(file)) {
-                    continue;
-                }
-                const fileRel = `${relDir}/${file}`;
-                const relPath = fileRel.slice(parentRel.length + 1); // 親からの相対
-                const raw = await fs.readText(fileRel);
-                const stats = await fs.fileStats(fileRel);
-                entries.push({
-                    name: file.replace(/\.toml$/i, ''),
-                    relPath,
-                    isFile: true,
-                    frontmatter: this.parseAgentMeta(raw),
-                    frontmatterRaw: raw,
-                    mtimeMs: stats.mtimeMs,
-                });
-            }
-            if (depth < AGENT_SCAN_MAX_DEPTH) {
-                const subdirs = await fs.listDirs(relDir);
-                for (const sub of subdirs) {
-                    if (this.isUnsafeName(sub)) {
-                        continue;
-                    }
-                    await walk(`${relDir}/${sub}`, depth + 1);
-                }
-            }
-        };
-
-        await walk(parentRel, 0);
-        return entries;
+    private scanAgents(fs: HomeFs, parentRel: string): Promise<AssetScan> {
+        return scanFileAssets(fs, parentRel, {
+            extension: '.toml',
+            maxDepth: RECURSIVE_ASSET_MAX_DEPTH,
+            describe: raw => ({ frontmatter: this.parseAgentMeta(raw), frontmatterRaw: raw }),
+        });
     }
 
     /** agents/openai.yaml のテキストから policy.* のスカラー値だけを抽出する。 */
@@ -236,7 +216,7 @@ export class CodexAssetManager {
         }
         let data: unknown;
         try {
-            data = parse(raw);
+            data = parseToml(raw);
         } catch {
             return {};
         }
@@ -273,10 +253,6 @@ export class CodexAssetManager {
     }
 
     /**
-     * 選択したエントリ（relPaths）を 1 つの ZIP にまとめて保存する。
-     * relPaths は list() が返した AssetEntry.relPath（skills=ディレクトリ名 / agents=.toml の相対パス）。
-     */
-    /**
      * 1 エントリの内容全体を読み取る（参照ダイアログの「全体」表示用）。
      * - agents: relPath のファイルそのもの
      * - skills: <relPath>/SKILL.md
@@ -287,8 +263,10 @@ export class CodexAssetManager {
         }
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const fileRel = kind === 'skills' ? `${parentRel}/${relPath}/SKILL.md` : `${parentRel}/${relPath}`;
-        const content = await fs.readText(fileRel);
+        const content =
+            kind === 'skills'
+                ? await readEntryFile(fs, `${parentRel}/${relPath}`, SKILL_ENTRY_FILE)
+                : await fs.readText(`${parentRel}/${relPath}`);
         if (content === null) {
             return { ok: false, message: 'not-found' };
         }
@@ -308,6 +286,10 @@ export class CodexAssetManager {
         return revealAssetPath(join(parentReal, relPath), kind === 'skills');
     }
 
+    /**
+     * 選択したエントリ（relPaths）を 1 つの ZIP にまとめて保存する。複数選択でも 1 ファイルにまとめ、保存先はダイアログで指定する。
+     * リンクはリンク先の内容を入れ、リンク切れは含めない。relPaths は list() が返した AssetEntry.relPath。
+     */
     async download(
         env: CodexEnvironment,
         kind: AssetKind,
@@ -316,13 +298,16 @@ export class CodexAssetManager {
     ): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
         const safe = relPaths.filter(p => !this.isUnsafeRelPath(p));
-        if (safe.length === 0) {
+        const sources = await resolveZipSources(
+            fs,
+            safe.map(rel => ({ rootRel: parentRel, rel }))
+        );
+        if (sources.length === 0) {
             return { ok: false, message: 'no-selection' };
         }
 
@@ -348,38 +333,12 @@ export class CodexAssetManager {
         }
 
         try {
-            await this.zipEntries(parentReal, safe, kind, saveResult.filePath);
+            await writeAssetZip(fs, sources, saveResult.filePath);
             return { ok: true };
         } catch (error) {
             console.error(`Failed to create archive (${JSON.stringify(env)}, ${kind}):`, error);
             return { ok: false, message: 'download-failed' };
         }
-    }
-
-    /**
-     * 選択エントリを ZIP に追加する。
-     * - skills（ディレクトリ）: <name>/ としてディレクトリごと追加。
-     * - agents（.toml ファイル）: 親からの相対パスを保持して追加（サブディレクトリ構造を維持）。
-     */
-    private zipEntries(parentReal: string, relPaths: string[], kind: AssetKind, destZip: string): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const output = createWriteStream(destZip);
-            const archive = archiver('zip', zipArchiveOptions());
-            output.on('close', () => resolve());
-            output.on('error', reject);
-            archive.on('error', reject);
-            archive.pipe(output);
-            for (const rel of relPaths) {
-                const zipPath = rel.replace(/\\/g, '/');
-                const sourceAbs = join(parentReal, rel);
-                if (kind === 'skills') {
-                    archive.directory(sourceAbs, zipPath);
-                } else {
-                    archive.file(sourceAbs, { name: zipPath });
-                }
-            }
-            archive.finalize();
-        });
     }
 
     /**
@@ -389,8 +348,7 @@ export class CodexAssetManager {
     async inspectUpload(env: CodexEnvironment, kind: AssetKind, window: BrowserWindow | null): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
@@ -410,8 +368,9 @@ export class CodexAssetManager {
         }
 
         const srcPath = openResult.filePaths[0];
+        this.inspectedUploads.remember(env, kind, srcPath);
         if (extname(srcPath).toLowerCase() !== '.zip') {
-            return this.inspectFileUpload(fs, parentRel, kind, srcPath);
+            return this.inspectFileUpload(env, fs, parentRel, kind, srcPath);
         }
 
         let zip: AdmZip;
@@ -422,18 +381,29 @@ export class CodexAssetManager {
             return { ok: false, message: 'invalid-archive' };
         }
         // パストラバーサル対策: 不正なエントリ名を含む ZIP は拒否する。
-        if (normalizedArchiveEntries(zip) === null) {
+        const normalized = normalizedArchiveEntries(zip);
+        if (normalized === null) {
+            return { ok: false, message: 'invalid-archive' };
+        }
+        // OS の管理用エントリだけの ZIP は空として扱う。
+        if (normalized.length === 0) {
+            return { ok: false, message: 'empty-archive' };
+        }
+
+        if (this.uploadItems(zip, kind).length === 0) {
             return { ok: false, message: 'invalid-archive' };
         }
 
         const cls = this.classifyZipKind(zip, kind);
         const conflicts = await this.computeConflicts(fs, parentRel, zip, kind);
         const warn = cls.verdict === 'warn' ? { kindCheck: 'warn' as const, kindMessage: cls.reason } : {};
-        return { ok: true, uploadKind: 'zip', zipPath: srcPath, conflicts, ...warn };
+        const nested = await nestedReplacedOf(kind, conflicts, () => this.list(env, kind));
+        return { ok: true, uploadKind: 'zip', zipPath: srcPath, conflicts, ...warn, ...nested };
     }
 
     /** 単体ファイル UL の前検査。取り込み先の名前を算出し、既存との衝突を返す。 */
     private async inspectFileUpload(
+        env: CodexEnvironment,
         fs: HomeFs,
         parentRel: string,
         kind: AssetKind,
@@ -449,7 +419,8 @@ export class CodexAssetManager {
         const cls = this.classifyFileKind(kind, filePath);
         const warn = cls.verdict === 'warn' ? { kindCheck: 'warn' as const, kindMessage: cls.reason } : {};
         const uploadKind = kind === 'skills' ? ('md' as const) : ('toml' as const);
-        return { ok: true, uploadKind, srcPath: filePath, targetName: target.name, conflicts, ...warn };
+        const nested = await nestedReplacedOf(kind, conflicts, () => this.list(env, kind));
+        return { ok: true, uploadKind, srcPath: filePath, targetName: target.name, conflicts, ...warn, ...nested };
     }
 
     /**
@@ -502,6 +473,7 @@ export class CodexAssetManager {
      * - skills: <dir>/SKILL.md として配置。overwrite 時は既存の <dir> を丸ごと置き換える。
      * - agents: 元ファイル名のまま .codex/agents 直下へ配置。overwrite 時は既存のファイルを置き換える。
      * 既にある取り込み先は overwrite=true のときだけ置き換える。書き込みに失敗した場合は取り込み前の状態に戻す。
+     * 検査で選ばれたファイル以外は受け付けない。
      */
     async uploadFile(
         env: CodexEnvironment,
@@ -509,10 +481,10 @@ export class CodexAssetManager {
         filePath: string,
         overwrite: boolean
     ): Promise<AssetOpResult> {
+        if (!this.inspectedUploads.accepts(env, kind, filePath)) return { ok: false, message: 'invalid-input' };
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
@@ -535,9 +507,15 @@ export class CodexAssetManager {
         const relPath = target.relPath;
 
         try {
-            installStaged(parentReal, [item], new Set(overwrite ? [item] : []), dir =>
-                writeTextFile(dir, relPath, content, srcMtimeMs)
+            await installFiles(
+                fs,
+                parentRel,
+                [item],
+                new Set(overwrite ? [item] : []),
+                [{ relPath, bytes: Buffer.from(content, 'utf8'), mtimeMs: srcMtimeMs }],
+                OUTSIDE_ROOT_STAGING
             );
+            this.inspectedUploads.forget(env, kind);
             return { ok: true, importedCount: 1 };
         } catch (error) {
             console.error(`Failed to upload file (${JSON.stringify(env)}, ${kind}):`, error);
@@ -549,13 +527,13 @@ export class CodexAssetManager {
      * ZIP を対象フォルダへ展開する。
      * 取り込み対象のうち既にあるもの（computeConflicts）は、overwrite=true のときだけ丸ごと置き換え
      * （skills=トップレベルのディレクトリ / agents=ファイル）、overwrite=false のときは何も変えずに conflict を返す。
-     * 展開は作業用ディレクトリで行い、失敗した場合は取り込み前の状態に戻す。
+     * 展開は作業用ディレクトリで行い、失敗した場合は取り込み前の状態に戻す。検査で選ばれたファイル以外は受け付けない。
      */
     async upload(env: CodexEnvironment, kind: AssetKind, zipPath: string, overwrite: boolean): Promise<AssetOpResult> {
+        if (!this.inspectedUploads.accepts(env, kind, zipPath)) return { ok: false, message: 'invalid-input' };
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
@@ -577,6 +555,15 @@ export class CodexAssetManager {
             console.error(`Rejected archive with unsafe entry: ${zipPath}`);
             return { ok: false, message: 'invalid-archive' };
         }
+        // OS の管理用エントリだけの ZIP は空として扱う。
+        if (entries.length === 0) {
+            return { ok: false, message: 'empty-archive' };
+        }
+
+        const items = this.uploadItems(zip, kind);
+        if (items.length === 0) {
+            return { ok: false, message: 'invalid-archive' };
+        }
 
         try {
             // リンクのスキルディレクトリには展開しない（リンク先の管理対象外のファイルを書き換えないため）。
@@ -588,11 +575,16 @@ export class CodexAssetManager {
             if (conflicts.length > 0 && !overwrite) {
                 return { ok: false, message: 'conflict', conflicts };
             }
-            installStaged(parentReal, this.uploadItems(zip, kind), new Set(conflicts), dir =>
-                extractArchiveEntries(entries, dir)
+            await installFiles(
+                fs,
+                parentRel,
+                items,
+                new Set(conflicts),
+                stagedFilesOfArchive(entries),
+                OUTSIDE_ROOT_STAGING
             );
-            const importedCount =
-                kind === 'skills' ? this.zipTopLevelDirsFrom(zip).length : this.zipFileEntries(zip).length;
+            this.inspectedUploads.forget(env, kind);
+            const importedCount = kind === 'skills' ? this.zipTopLevelDirsFrom(zip).length : items.length;
             return { ok: true, importedCount };
         } catch (error) {
             console.error(`Failed to extract archive (${JSON.stringify(env)}, ${kind}):`, error);
@@ -742,8 +734,7 @@ export class CodexAssetManager {
 
         const fs = this.fsFor(env);
         const parentRel = this.parentRel('skills');
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
@@ -768,7 +759,7 @@ export class CodexAssetManager {
                 throw new Error('Archive contains an unsafe entry name');
             }
             const dirs = archiveTopLevelDirs(entries);
-            installStaged(parentReal, dirs, new Set(dirs), dir => extractArchiveEntries(entries, dir));
+            await installFiles(fs, parentRel, dirs, new Set(dirs), stagedFilesOfArchive(entries), OUTSIDE_ROOT_STAGING);
             return { ok: true, importedCount: targets.length };
         } catch (error) {
             console.error(`Failed to import official skills (${JSON.stringify(env)}):`, error);
@@ -806,8 +797,7 @@ export class CodexAssetManager {
     async deleteSelected(env: CodexEnvironment, kind: AssetKind, relPaths: string[]): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
@@ -819,18 +809,11 @@ export class CodexAssetManager {
         const skipped: string[] = [];
         let deletedCount = 0;
         for (const rel of safe) {
-            const target = `${parentRel}/${rel}`;
             try {
-                if (kind === 'skills') {
-                    const { removedAll } = await fs.removeDirBestEffort(target);
-                    if (removedAll) {
-                        deletedCount++;
-                    } else {
-                        skipped.push(rel);
-                    }
-                } else {
-                    await fs.deleteFile(target);
+                if (await removeAssetEntry(fs, parentRel, rel, kind === 'skills')) {
                     deletedCount++;
+                } else {
+                    skipped.push(rel);
                 }
             } catch (error) {
                 console.error(`Failed to delete ${rel} (${JSON.stringify(env)}, ${kind}):`, error);
@@ -841,9 +824,12 @@ export class CodexAssetManager {
         return { ok: skipped.length === 0, deletedCount, skipped: skipped.length > 0 ? skipped : undefined };
     }
 
-    /** ZIP の取り込み対象（skills=トップレベルの名前 / agents=ファイルの相対パス）。 */
+    /** ZIP の取り込み対象（skills=トップレベルの名前 / agents=.toml ファイルの相対パス）。 */
     private uploadItems(zip: AdmZip, kind: AssetKind): string[] {
-        return kind === 'skills' ? this.zipTopLevelNamesFrom(zip) : this.zipFileEntries(zip);
+        if (kind === 'skills') {
+            return this.zipTopLevelNamesFrom(zip);
+        }
+        return this.zipFileEntries(zip).filter(path => path.toLowerCase().endsWith('.toml'));
     }
 
     /**
@@ -905,9 +891,6 @@ export class CodexAssetManager {
         }
         if (kind === 'skills' && !hasSkillDir && hasToml) {
             return { verdict: 'warn', reason: 'agents-into-skills' };
-        }
-        if (kind === 'agents' && hasSkillDir && !hasToml) {
-            return { verdict: 'warn', reason: 'skills-into-agents' };
         }
         return { verdict: 'ok' };
     }

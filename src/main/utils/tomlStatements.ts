@@ -12,16 +12,19 @@ export interface TomlAssignment {
     valueEnd: number;
     // 値がインラインテーブルのときの `{` の位置
     inlineOpen: number | null;
-    // 行単位の代入のときの所属テーブル（見出しのパス）と行の終端（改行の直後。最終行なら末尾）。
-    // インラインテーブルの内側の代入は null。
+    // 行単位の代入のときの所属テーブル（見出しのパス）、行頭（1 行目は BOM の直後）、
+    // 行の終端（改行の直後。最終行なら末尾）。インラインテーブルの内側の代入は null。
     table: string[] | null;
+    start: number | null;
     lineEnd: number | null;
 }
 
-// テーブル見出し（`[a.b]` / `[[a.b]]`）。lineEnd は行の終端（改行の直後。最終行なら末尾）。
+// テーブル見出し（`[a.b]` / `[[a.b]]`）。start は行頭（1 行目は BOM の直後）、
+// lineEnd は行の終端（改行の直後。最終行なら末尾）。
 export interface TomlHeader {
     path: string[];
     array: boolean;
+    start: number;
     lineEnd: number;
 }
 
@@ -57,11 +60,13 @@ export function scanTomlStatements(text: string): TomlStatements {
 
 class TomlStatementScanner {
     private pos: number;
+    private readonly bomEnd: number;
     private readonly headers: TomlHeader[] = [];
     private readonly assignments: TomlAssignment[] = [];
 
     constructor(private readonly text: string) {
-        this.pos = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+        this.bomEnd = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+        this.pos = this.bomEnd;
     }
 
     scan(): TomlStatements {
@@ -71,15 +76,17 @@ class TomlStatementScanner {
             if (this.pos >= this.text.length) {
                 return { headers: this.headers, assignments: this.assignments };
             }
+            const start = this.lineStart();
             if (this.text[this.pos] === '[') {
                 const array = this.text[this.pos + 1] === '[';
                 this.pos += array ? 2 : 1;
                 const path = this.key();
                 this.expect(array ? ']]' : ']');
                 table = path;
-                this.headers.push({ path, array, lineEnd: this.lineEnd() });
+                this.headers.push({ path, array, start, lineEnd: this.lineEnd() });
             } else {
                 const assignment = this.assignment(table, table);
+                assignment.start = start;
                 assignment.lineEnd = this.lineEnd();
             }
         }
@@ -87,6 +94,11 @@ class TomlStatementScanner {
 
     private fail(message: string): never {
         throw new Error(`${message} at offset ${this.pos}`);
+    }
+
+    /** 現在位置を含む行の行頭（1 行目は BOM の直後）を返す。 */
+    private lineStart(): number {
+        return Math.max(this.text.lastIndexOf('\n', this.pos - 1) + 1, this.bomEnd);
     }
 
     private skipSpaces(): void {
@@ -249,6 +261,7 @@ class TomlStatementScanner {
             valueEnd: this.pos,
             inlineOpen,
             table: table === null ? null : [...table],
+            start: null,
             lineEnd: null,
         };
         this.assignments.push(assignment);

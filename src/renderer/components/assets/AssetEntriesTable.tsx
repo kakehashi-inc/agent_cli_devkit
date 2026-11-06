@@ -15,28 +15,57 @@ import {
 } from '@mui/material';
 import { Visibility as ViewIcon, Article as FullViewIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import type { AssetEntry } from '@shared/agents/types';
+import { canRevealAsset, canSelectAsset, canViewAsset } from '../../utils/assetEntry';
 import { formatCount, formatDateTime, isRecent, relativeTimeParts } from '../../utils/format';
+import { AssetEntryMarks } from './AssetEntryMarks';
 import { AssetDetails, ColumnValue, EffortLine, resolveColumnValue, type FmColumn } from './assetColumns';
 
 export type { FmColumn };
 
-// name（fit 列）の最小幅と、1 文字あたりの概算 px（幅見積り用）。
+// relPath の先頭の読み取り元の識別子と、相対パスの区切り。
+const ORIGIN_SEPARATOR = '::';
+
+// name（fit 列）の最小幅と、文字の種類ごとの概算 px（幅見積り用）。
 const NAME_MIN_WIDTH = 80;
-const NAME_CHAR_PX = 8;
+const CHAR_PX = 8;
+const UPPER_CHAR_PX = 10;
+const WIDE_CHAR_PX = 14;
+// セルの左右の余白、表示アイコン、チップの左右の余白の px。
+const CELL_PADDING_PX = 32;
+const REVEAL_ACTION_PX = 24;
+const CHIP_PADDING_PX = 24;
+
+/** テキストの表示幅の概算（px）。 */
+function estimateTextWidth(text: string): number {
+    let width = 0;
+    for (const char of text) {
+        if (char.charCodeAt(0) > 0x2e7f) width += WIDE_CHAR_PX;
+        else width += /[A-Z]/.test(char) ? UPPER_CHAR_PX : CHAR_PX;
+    }
+    return width;
+}
 
 /**
- * fit 列（name）の幅を実データから見積もる。名前とサブパスの長い方の文字数を基準に、
+ * fit 列（name）の幅を実データから見積もる。名前とサブパスの長い方と、名前の下に並ぶチップ（chipLabels）の長い方を基準に、
  * [NAME_MIN_WIDTH, maxWidthPx] の範囲へクランプする。
  */
-export function computeFitWidth(entries: AssetEntry[], maxWidthPx: number, includeRevealAction = false): number {
-    let maxChars = 0;
+export function computeFitWidth(
+    entries: AssetEntry[],
+    maxWidthPx: number,
+    includeRevealAction = false,
+    chipLabels?: (entry: AssetEntry) => readonly string[]
+): number {
+    let maxWidth = 0;
     for (const e of entries) {
-        const nameLen = (e.frontmatter?.name ?? e.name ?? '').length;
-        const subLen = relSubDir(e.relPath).length;
-        maxChars = Math.max(maxChars, nameLen, subLen);
+        const nameWidth = estimateTextWidth(e.frontmatter?.name ?? e.name ?? '');
+        const subWidth = estimateTextWidth(relSubDir(e.relPath));
+        const chipWidth = Math.max(
+            0,
+            ...(chipLabels?.(e) ?? []).map(label => estimateTextWidth(label) + CHIP_PADDING_PX)
+        );
+        maxWidth = Math.max(maxWidth, nameWidth + (includeRevealAction ? REVEAL_ACTION_PX : 0), subWidth, chipWidth);
     }
-    const px = maxChars * NAME_CHAR_PX + 24 + (includeRevealAction ? 24 : 0); // パディングと表示アイコン分
-    return Math.min(Math.max(px, NAME_MIN_WIDTH), maxWidthPx);
+    return Math.min(Math.max(maxWidth + CELL_PADDING_PX, NAME_MIN_WIDTH), maxWidthPx);
 }
 
 /** 列の幅指定を sx 用に解決する。fit 列は事前計算した fitWidth を使う。 */
@@ -51,12 +80,15 @@ function colWidthSx(col: FmColumn, fitWidth: number): { width?: number | string 
 }
 
 /**
- * relPath（asset 親からの相対パス）のうち、サブディレクトリ部分（最後の '/' より前）を返す。
+ * relPath（読み取り元のルートからの相対パス）のうち、サブディレクトリ部分（最後の '/' より前）を返す。
+ * 先頭の読み取り元の識別子（「<識別子>::」）は含めない。
  * 例: 'c-suite/cbdo.md' → 'c-suite/'、'foo.md' / 'apple-design' → ''（サブディレクトリなし）。
  */
 export function relSubDir(relPath: string): string {
-    const idx = relPath.lastIndexOf('/');
-    return idx <= 0 ? '' : relPath.slice(0, idx + 1);
+    const separator = relPath.indexOf(ORIGIN_SEPARATOR);
+    const rel = separator === -1 ? relPath : relPath.slice(separator + ORIGIN_SEPARATOR.length);
+    const idx = rel.lastIndexOf('/');
+    return idx <= 0 ? '' : rel.slice(0, idx + 1);
 }
 
 interface Props {
@@ -74,12 +106,40 @@ interface Props {
     onView: (entry: AssetEntry) => void;
     // OS 標準のファイルマネージャーで対象を表示。未指定なら名前横の表示アイコンを出さない。
     onReveal?: (entry: AssetEntry) => void;
+    // ファイルマネージャーで開けない理由。あれば行のアイコンを無効にして、この理由を表示する。
+    revealDisabledReason?: string;
     // 「全体」参照（ファイル内容全体の表示）。未指定なら「全体」ボタンを表示しない。
     onViewFull?: (entry: AssetEntry) => void;
+    // true ならヘッダの参照ボタンを出さない。
+    hideHeaderView?: boolean;
+    // name 列の下に追加で表示する内容を返す。
+    renderNameExtra?: (entry: AssetEntry) => React.ReactNode;
 }
 
 // 最終更新日時列の幅（px）。'YYYY-MM-DD HH:mm' ＋ NEW バッジが収まる固定幅。
 const LAST_MODIFIED_WIDTH = 140;
+// 操作列の幅（px）。アイコン付きの参照ボタンがセルの余白の内側に収まる固定幅。
+const ACTIONS_WIDTH = 120;
+// 選択列の幅（px）。
+const CHECKBOX_WIDTH = 48;
+// ファイル数列の幅（px）。
+const FILE_COUNT_WIDTH = 72;
+// ウィンドウの幅のうち、一覧の外側の余白とスクロールバーが使う幅（px）。
+const TABLE_MARGIN_PX = 97;
+// 残り幅を使う列に確保する幅（px）。見出しの「Description」が省略されない幅。
+const FLEX_MIN_WIDTH = 110;
+
+/**
+ * fit 列の幅の上限を返す。ウィンドウ幅に対する割合を基本にし、狭いウィンドウでは残り幅を使う列の幅を確保できるよう抑える。
+ */
+export function fitColumnLimit(columns: readonly FmColumn[], windowWidth: number, showFileCount: boolean): number {
+    const ratio = columns.find(col => col.fit)?.maxWidthPct ?? 0.25;
+    const fixedColumns = columns.reduce((sum, col) => sum + (col.width ?? 0), 0);
+    const otherColumns =
+        CHECKBOX_WIDTH + LAST_MODIFIED_WIDTH + ACTIONS_WIDTH + (showFileCount ? FILE_COUNT_WIDTH : 0) + fixedColumns;
+    const room = windowWidth - TABLE_MARGIN_PX - otherColumns - FLEX_MIN_WIDTH;
+    return Math.max(NAME_MIN_WIDTH, Math.min(Math.round(windowWidth * ratio), room));
+}
 
 /**
  * Agent・Skill の一覧テーブル（agent 非依存の共通実装）。
@@ -97,18 +157,22 @@ export const AssetEntriesTable: React.FC<Props> = ({
     onToggleAll,
     onView,
     onReveal,
+    revealDisabledReason,
     onViewFull,
+    hideHeaderView = false,
+    renderNameExtra,
 }) => {
     const { t } = useTranslation();
-    const allChecked = entries.length > 0 && entries.every(e => checkedKeys.has(e.relPath));
-    const someChecked = entries.some(e => checkedKeys.has(e.relPath));
+    const selectable = entries.filter(canSelectAsset);
+    const allChecked = selectable.length > 0 && selectable.every(e => checkedKeys.has(e.relPath));
+    const someChecked = selectable.some(e => checkedKeys.has(e.relPath));
 
     return (
         <TableContainer>
             <Table size='small' sx={{ tableLayout: 'fixed', width: '100%' }}>
                 <TableHead>
                     <TableRow>
-                        <TableCell padding='checkbox' sx={{ width: 48 }}>
+                        <TableCell padding='checkbox' sx={{ width: CHECKBOX_WIDTH }}>
                             <Checkbox
                                 indeterminate={someChecked && !allChecked}
                                 checked={allChecked}
@@ -134,11 +198,11 @@ export const AssetEntriesTable: React.FC<Props> = ({
                             </TableCell>
                         )}
                         {showFileCount && (
-                            <TableCell align='right' sx={{ width: 72, whiteSpace: 'nowrap' }}>
+                            <TableCell align='right' sx={{ width: FILE_COUNT_WIDTH, whiteSpace: 'nowrap' }}>
                                 {t(`${i18nPrefix}.columnFiles`)}
                             </TableCell>
                         )}
-                        <TableCell align='center' sx={{ width: 96, whiteSpace: 'nowrap' }}>
+                        <TableCell align='center' sx={{ width: ACTIONS_WIDTH, whiteSpace: 'nowrap' }}>
                             {t(`${i18nPrefix}.columnView`)}
                         </TableCell>
                     </TableRow>
@@ -155,9 +219,10 @@ export const AssetEntriesTable: React.FC<Props> = ({
                             : '';
                         return (
                             <TableRow key={entry.relPath} hover>
-                                <TableCell padding='checkbox' sx={{ width: 48 }}>
+                                <TableCell padding='checkbox' sx={{ width: CHECKBOX_WIDTH }}>
                                     <Checkbox
                                         checked={checkedKeys.has(entry.relPath)}
+                                        disabled={!canSelectAsset(entry)}
                                         onChange={() => onToggle(entry.relPath)}
                                     />
                                 </TableCell>
@@ -165,14 +230,10 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                     const { value, effort } = resolveColumnValue(entry, col);
                                     // name 列のみ: 親からの相対サブパスがあれば名前の下に控えめな色で表示。
                                     const subPath = col.key === 'name' ? relSubDir(entry.relPath) : '';
-                                    // name（fit 列）は 1 行で内容フィット＋maxWidth 超過を省略。
+                                    // name（fit 列）は省略せず、列に収まらなければ折り返す。
                                     // その他の列は最大 2 行まで表示して超過を省略する。
                                     const valueSx = col.fit
-                                        ? {
-                                              whiteSpace: 'nowrap' as const,
-                                              overflow: 'hidden',
-                                              textOverflow: 'ellipsis',
-                                          }
+                                        ? { overflowWrap: 'anywhere' as const }
                                         : {
                                               display: '-webkit-box',
                                               WebkitBoxOrient: 'vertical' as const,
@@ -188,7 +249,7 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                                 verticalAlign: 'top',
                                             }}
                                         >
-                                            {col.key === 'name' && onReveal ? (
+                                            {col.key === 'name' && onReveal && canRevealAsset(entry) ? (
                                                 <Box
                                                     sx={{
                                                         display: 'flex',
@@ -200,15 +261,20 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                                     <Tooltip title={value} disableHoverListener={!value}>
                                                         <Box sx={{ ...valueSx, minWidth: 0 }}>{value}</Box>
                                                     </Tooltip>
-                                                    <Tooltip title={t('common.revealInFileManager')}>
-                                                        <IconButton
-                                                            size='small'
-                                                            aria-label={t('common.revealInFileManager')}
-                                                            onClick={() => onReveal(entry)}
-                                                            sx={{ p: 0.25, flexShrink: 0 }}
-                                                        >
-                                                            <OpenInNewIcon sx={{ fontSize: 16 }} />
-                                                        </IconButton>
+                                                    <Tooltip
+                                                        title={revealDisabledReason ?? t('common.revealInFileManager')}
+                                                    >
+                                                        <span>
+                                                            <IconButton
+                                                                size='small'
+                                                                aria-label={t('common.revealInFileManager')}
+                                                                disabled={revealDisabledReason !== undefined}
+                                                                onClick={() => onReveal(entry)}
+                                                                sx={{ p: 0.25, flexShrink: 0 }}
+                                                            >
+                                                                <OpenInNewIcon sx={{ fontSize: 16 }} />
+                                                            </IconButton>
+                                                        </span>
                                                     </Tooltip>
                                                 </Box>
                                             ) : (
@@ -223,15 +289,17 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                                             fontSize: '0.75rem',
                                                             lineHeight: 1.3,
                                                             color: 'text.secondary',
-                                                            whiteSpace: 'nowrap',
-                                                            overflow: 'hidden',
-                                                            textOverflow: 'ellipsis',
+                                                            overflowWrap: 'anywhere',
                                                         }}
                                                     >
                                                         {subPath}
                                                     </Box>
                                                 </Tooltip>
                                             )}
+                                            {col.key === 'name' && (
+                                                <AssetEntryMarks entry={entry} i18nPrefix={i18nPrefix} />
+                                            )}
+                                            {col.key === 'name' && renderNameExtra?.(entry)}
                                             {effort && <EffortLine effort={effort} />}
                                             {col.detailKeys && (
                                                 <AssetDetails frontmatter={entry.frontmatter} keys={col.detailKeys} />
@@ -284,30 +352,39 @@ export const AssetEntriesTable: React.FC<Props> = ({
                                 {showFileCount && (
                                     <TableCell
                                         align='right'
-                                        sx={{ width: 72, whiteSpace: 'nowrap', verticalAlign: 'top' }}
+                                        sx={{ width: FILE_COUNT_WIDTH, whiteSpace: 'nowrap', verticalAlign: 'top' }}
                                     >
                                         {formatCount(entry.fileCount ?? 0)}
                                     </TableCell>
                                 )}
                                 <TableCell
                                     align='center'
-                                    sx={{ width: 96, whiteSpace: 'nowrap', verticalAlign: 'top' }}
+                                    sx={{ width: ACTIONS_WIDTH, whiteSpace: 'nowrap', verticalAlign: 'top' }}
                                 >
-                                    <Button
-                                        size='small'
-                                        startIcon={<ViewIcon />}
-                                        disabled={!entry.frontmatterRaw}
-                                        onClick={() => onView(entry)}
-                                        sx={{ display: 'flex', mx: 'auto', py: 0, minWidth: 0 }}
-                                    >
-                                        {t(`${i18nPrefix}.viewHeader`)}
-                                    </Button>
+                                    {!hideHeaderView && (
+                                        <Button
+                                            size='small'
+                                            startIcon={<ViewIcon />}
+                                            disabled={!entry.frontmatterRaw}
+                                            onClick={() => onView(entry)}
+                                            sx={{ display: 'flex', mx: 'auto', py: 0, minWidth: 0 }}
+                                        >
+                                            {t(`${i18nPrefix}.viewHeader`)}
+                                        </Button>
+                                    )}
                                     {onViewFull && (
                                         <Button
                                             size='small'
                                             startIcon={<FullViewIcon />}
+                                            disabled={!canViewAsset(entry)}
                                             onClick={() => onViewFull(entry)}
-                                            sx={{ display: 'flex', mx: 'auto', py: 0, minWidth: 0, mt: 0.5 }}
+                                            sx={{
+                                                display: 'flex',
+                                                mx: 'auto',
+                                                py: 0,
+                                                minWidth: 0,
+                                                mt: hideHeaderView ? 0 : 0.5,
+                                            }}
                                         >
                                             {t(`${i18nPrefix}.viewFull`)}
                                         </Button>

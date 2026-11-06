@@ -19,6 +19,11 @@ import { OpenCodeCleanupManager } from '../../services/opencode/OpenCodeCleanupM
 import { OpenCodeMcpManager } from '../../services/opencode/OpenCodeMcpManager';
 import { OpenCodePluginManager } from '../../services/opencode/OpenCodePluginManager';
 import { OpenCodeSettingsManager } from '../../services/opencode/OpenCodeSettingsManager';
+import { profileChannels } from '../../../shared/agents/profile/channels';
+import { OPENCODE_PROFILE_SPEC } from '../../../shared/agents/opencode/profileTabs';
+import { ProfileManager } from '../../services/common/profile/ProfileManager';
+import { registerProfileHandlers } from '../common/profileHandlers';
+import { resolveOpenCodeSettingsRel } from '../../services/opencode/openCodeConfigFile';
 
 export function registerOpenCodeIpcHandlers(
     detector: WslDetector,
@@ -100,11 +105,14 @@ export function registerOpenCodeIpcHandlers(
         listEnvironments(refresh, () => settings.getEnvironments())
     );
     ipcMain.handle(OPENCODE_SETTINGS_CHANNELS.READ, (_, env: OpenCodeEnvironment) => settings.read(env));
-    ipcMain.handle(OPENCODE_SETTINGS_CHANNELS.WRITE, (_, env: OpenCodeEnvironment, values: SettingsValues) =>
-        settings.write(env, values)
+    ipcMain.handle(OPENCODE_SETTINGS_CHANNELS.READ_RAW, (_, env: OpenCodeEnvironment) => settings.readRaw(env));
+    ipcMain.handle(
+        OPENCODE_SETTINGS_CHANNELS.WRITE,
+        (_, env: OpenCodeEnvironment, values: SettingsValues, base: SettingsValues) => settings.write(env, values, base)
     );
-    ipcMain.handle(OPENCODE_SETTINGS_CHANNELS.WRITE_RAW, (_, env: OpenCodeEnvironment, raw: string) =>
-        settings.writeRaw(env, raw)
+    ipcMain.handle(
+        OPENCODE_SETTINGS_CHANNELS.WRITE_RAW,
+        (_, env: OpenCodeEnvironment, raw: string, baseRevision: string) => settings.writeRaw(env, raw, baseRevision)
     );
 
     const plugin = new OpenCodePluginManager(detector, runner);
@@ -130,5 +138,10 @@ export function registerOpenCodeIpcHandlers(
     );
     ipcMain.handle(OPENCODE_PLUGIN_CHANNELS.REMOVE_MARKETPLACE, (_, env: OpenCodeEnvironment, name: string) =>
         plugin.removeMarketplace(env, name)
+    );
+    registerProfileHandlers(
+        profileChannels('opencode'),
+        new ProfileManager(detector, OPENCODE_PROFILE_SPEC, resolveOpenCodeSettingsRel),
+        getMainWindow
     );
 }

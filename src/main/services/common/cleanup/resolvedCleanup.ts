@@ -3,9 +3,12 @@ import type {
     CleanupCandidate,
     CleanupCandidateSpec,
     CleanupChild,
+    CleanupChildBadge,
     CleanupInUseSession,
+    CleanupRelatedChild,
 } from '../../../../shared/agents/types';
 import type { CleanupProbe } from './CleanupProbe';
+import type { CleanupBlock } from './handledCleanup';
 
 /**
  * 子要素を削除しない理由。
@@ -17,21 +20,41 @@ export type ChildExclusion = 'in-use' | 'ineligible';
 
 /** リゾルバが解決した子要素（環境内の実パス付き）。 */
 export interface ResolvedChild {
-    // 表示名兼識別子（候補内で一意）
+    // 候補内で一意の識別子
     name: string;
+    // 画面に表示する名前（無ければ name を表示する）
+    displayName?: string;
+    // 対応するワークスペースのパスを特定できない子要素
+    pathUnknown?: boolean;
+    // 名前の横に添える状態の表示
+    badges?: CleanupChildBadge[];
     // 環境内の絶対パス
     path: string;
-    type: 'file' | 'dir';
+    // 削除のしかた（'link' はリンク自体だけを外す）
+    type: 'file' | 'dir' | 'link';
     size: number;
     fileCount: number;
     excluded?: ChildExclusion;
 }
 
 /** 画面表示用の候補に組み立てる子要素（リゾルバ・ハンドラーが返したもの）。 */
-type CandidateSource = Pick<ResolvedChild, 'name' | 'size' | 'fileCount' | 'excluded'> & {
+export type CandidateSource = Pick<
+    ResolvedChild,
+    'name' | 'displayName' | 'pathUnknown' | 'badges' | 'size' | 'fileCount' | 'excluded'
+> & {
     sizeUnknown?: boolean;
     // 使用中の可能性があると判定した根拠（あれば、承認されたときに削除する）
     inUseSessions?: CleanupInUseSession[];
+    // 中身のうち使用中の可能性があるものの件数
+    inUseParts?: number;
+    // 本体が既に無く、付随する一時物だけが残っている子要素
+    orphan?: boolean;
+    // パス不明の印に使う文言の i18n キー
+    pathUnknownLabelKey?: string;
+    // この子要素を共有している複数のパス
+    sharedPaths?: string[];
+    // 削除の確認で一緒に削除するかを選べる、同じ候補の子要素
+    relatedChildren?: CleanupRelatedChild[];
 };
 
 /**
@@ -77,6 +100,35 @@ export async function resolveChildren(
     }
 }
 
+/** 候補の定義のうち、画面の表示に使う文言のキーと種類を候補へ引き継ぐ。 */
+export function candidateTextKeys(
+    spec: CleanupCandidateSpec
+): Pick<CleanupCandidate, 'confirmWarningKey' | 'noticeKey' | 'editsFileOnly' | 'kind'> {
+    return {
+        ...(spec.confirmWarningKey ? { confirmWarningKey: spec.confirmWarningKey } : {}),
+        ...(spec.noticeKey ? { noticeKey: spec.noticeKey } : {}),
+        ...(spec.editsFileOnly ? { editsFileOnly: true } : {}),
+        ...(spec.kind ? { kind: spec.kind } : {}),
+    };
+}
+
+/** この環境で使えない候補を組み立てる。行と注記を表示し、選択できない。 */
+export function toBlockedCandidate(spec: CleanupCandidateSpec, block: CleanupBlock): CleanupCandidate {
+    return {
+        key: spec.key,
+        exists: false,
+        size: 0,
+        fileCount: 0,
+        defaultChecked: false,
+        expandable: spec.expandable,
+        childKind: spec.childKind,
+        ...candidateTextKeys(spec),
+        noticeKey: block.noticeKey,
+        ...(block.noticeParams ? { noticeParams: block.noticeParams } : {}),
+        blocked: true,
+    };
+}
+
 /**
  * 解決済みの子要素から画面表示用の候補を組み立てる。
  * サイズ・件数は削除できる子要素だけの合計とし、使用中の子要素は inUse を付けて表示する。
@@ -91,10 +143,18 @@ export function toResolvedCandidate(
     const children: CleanupChild[] = visible
         .map(child => ({
             name: child.name,
+            ...(child.displayName ? { displayName: child.displayName } : {}),
+            ...(child.pathUnknown ? { pathUnknown: true } : {}),
+            ...(child.pathUnknownLabelKey ? { pathUnknownLabelKey: child.pathUnknownLabelKey } : {}),
+            ...(child.badges?.length ? { badges: child.badges } : {}),
+            ...(child.sharedPaths?.length ? { sharedPaths: child.sharedPaths } : {}),
+            ...(child.relatedChildren?.length ? { relatedChildren: child.relatedChildren } : {}),
             size: child.size,
             fileCount: child.fileCount,
             ...(child.sizeUnknown ? { sizeUnknown: true } : {}),
+            ...(child.orphan ? { orphan: true } : {}),
             ...(child.excluded === 'in-use' ? { inUse: true } : {}),
+            ...(child.excluded === 'in-use' && child.inUseParts ? { inUseParts: child.inUseParts } : {}),
             ...(child.excluded === 'in-use' && child.inUseSessions?.length
                 ? { inUseSessions: child.inUseSessions }
                 : {}),
@@ -110,6 +170,7 @@ export function toResolvedCandidate(
         childKind: spec.childKind,
         children,
         ...(children.length > 0 && children.every(child => child.sizeUnknown) ? { sizeUnknown: true } : {}),
+        ...candidateTextKeys(spec),
     };
 }
 

@@ -16,7 +16,7 @@ import { Cleanup } from './Cleanup';
 // ダッシュボードのカード・タイトルバーのアイコン・ルートはこの配列から生成される。
 export const codexModule: AgentModule = {
     id: 'codex',
-    label: 'Codex',
+    labelKey: 'codex.nav.group',
     features: [
         {
             path: '/codex/mcp',

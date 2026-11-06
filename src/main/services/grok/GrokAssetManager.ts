@@ -1,22 +1,23 @@
 import { BrowserWindow, dialog } from 'electron';
-import { createWriteStream, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { basename, extname, join } from 'path';
-import archiver from 'archiver';
 import AdmZip from 'adm-zip';
-import { GROK_DIR, GROK_WSL_CLI_TEST } from '../../../shared/agents/grok/constants';
-import {
-    AssetEntry,
-    AssetKind,
-    AssetListReport,
-    AssetOpResult,
-    GrokEnvironment,
-    OSType,
-} from '../../../shared/agents/grok/types';
+import { ASSET_PARENT_REL, GROK_WSL_CLI_TEST } from '../../../shared/agents/grok/constants';
+import { AssetKind, AssetListReport, AssetOpResult, GrokEnvironment, OSType } from '../../../shared/agents/grok/types';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { revealAssetPath } from '../common/assets/revealAssetPath';
 import { assetArchiveFileName } from '../common/assets/archiveFileName';
-import { extractArchiveEntries, installStaged, writeTextFile } from '../common/assets/stagedInstall';
+import { installFiles, stagedFilesOfArchive } from '../common/assets/stagedInstall';
+import { RECURSIVE_ASSET_MAX_DEPTH, scanDirAssets, scanFileAssets, type AssetScan } from '../common/assets/assetScan';
+import {
+    nestedReplacedOf,
+    readEntryFile,
+    removeAssetEntry,
+    resolveZipSources,
+    writeAssetZip,
+} from '../common/assets/assetEntryOps';
+import { InspectedUploads } from '../common/assets/inspectedUploads';
 import {
     archiveTopLevelDirs,
     archiveTopLevelNames,
@@ -24,31 +25,39 @@ import {
     normalizedArchiveEntries,
 } from '../common/fs/archiveEntryPath';
 import { parseFrontmatter } from '../../utils/frontmatter';
-import { fileMtimeMs, zipArchiveOptions } from '../../utils/fileTime';
+import { fileMtimeMs } from '../../utils/fileTime';
 
-// agents/ サブディレクトリを再帰探索する深さの上限（暴走防止）。
-// Grok はエージェント定義を ~/.grok/agents 直下の .md のみ認識する（サブディレクトリは探索しない）。
-// 実機の grok inspect で確認済み。再帰探索は行わない。
-const AGENT_SCAN_MAX_DEPTH = 0;
+const SKILL_ENTRY_FILE = 'SKILL.md';
+
+// Grok の探索の深さの定数（CLI の MAX_SKILL_WALK_DEPTH）。CLI は深さ 0 のルートから、深さがこの値以下のフォルダーの子を調べる。
+const GROK_SKILL_WALK_DEPTH = 5;
+// スキルを探すフォルダーの階層の上限。ルート直下を 1 とするので定数より 1 つ大きい。
+const SKILL_SCAN_MAX_LEVELS = GROK_SKILL_WALK_DEPTH + 1;
+
+// 作業用ディレクトリは Grok が再帰で読むルートの外に作る。
+const OUTSIDE_ROOT_STAGING = { stagingOutsideDest: true };
 
 /**
  * Grok (CLI) の ~/.grok/agents・~/.grok/skills を管理する。
  *
  * 一覧の単位は種別で異なる:
- * - skills: skills/ 直下の各サブディレクトリ（frontmatter は <skill>/SKILL.md から読む）。
- * - agents: agents/ 直下の .md ファイル、およびサブディレクトリ配下の .md ファイル（再帰）。
- *           ディレクトリ自体はエージェントではなく、その配下の .md を 1 件ずつ展開する。
+ * - skills: SKILL.md を持つフォルダー（スキルの中のスキルを含むネストも読む。frontmatter は <skill>/SKILL.md から読む）。
+ *           新規の配置は skills/ 直下。
+ * - agents: agents/ 直下の .md ファイルのみ（Grok はサブディレクトリを読まない）。
  *
  * いずれも先頭の YAML frontmatter（--- で囲まれたヘッダー部）を読み取り、UI で展開・参照できる。
+ * リンクも一覧に出して印を付ける。削除はリンクだけを外し、リンク先のフォルダーの中のものは削除しない。
  *
  * DL/UL は ZIP で行う:
  * - 選択した各エントリ（skills=ディレクトリ / agents=.md ファイル）を 1 つの ZIP にまとめる。
  * - アップロードは ZIP を対象フォルダへ解凍・展開する（同名は確認後に丸ごと置換）。
  *
- * ZIP 圧縮・解凍は実 OS パス（native 絶対パス / WSL UNC パス）に対する通常の fs で行う。
- * WSL でコマンドモードへフォールバックする（UNC 到達不可）環境では操作不可（available:false）。
+ * ZIP の作成と取り込みは native は通常の fs で、WSL は distro のスクリプトで本文を受け渡して行う。
+ * ファイルマネージャーでの表示だけは OS のプロセスから見えるパスが要るので、UNC に届かない WSL では使えない。
  */
 export class GrokAssetManager {
+    // ファイル選択ダイアログで選ばれたファイル（環境と種別ごと）。取り込みはこのファイルだけを受け付ける。
+    private readonly inspectedUploads = new InspectedUploads();
     private readonly detector: WslDetector;
 
     constructor(detector: WslDetector) {
@@ -68,7 +77,7 @@ export class GrokAssetManager {
 
     /** agents/ skills/ の HOME 相対パス（'.grok/agents' など）。 */
     private parentRel(kind: AssetKind): string {
-        return `${GROK_DIR}/${kind}`;
+        return ASSET_PARENT_REL[kind];
     }
 
     /** パストラバーサル対策: 区切り文字・'.'・'..' を含む名前や、別の場所を指し得る名前を拒否する。 */
@@ -100,7 +109,8 @@ export class GrokAssetManager {
     }
 
     /** 管理対象の環境一覧（native + Grok 入り WSL distro）。 */
-    async getEnvironments(): Promise<{ env: GrokEnvironment; label: string }[]> {
+    async getEnvironments(refresh = false): Promise<{ env: GrokEnvironment; label: string }[]> {
+        if (refresh) this.detector.invalidate();
         const result: { env: GrokEnvironment; label: string }[] = [];
         result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         const distros = await this.detector.getDistrosWithTest(GROK_WSL_CLI_TEST);
@@ -112,107 +122,48 @@ export class GrokAssetManager {
 
     /**
      * 指定環境・種別の一覧を返す。
-     * 実 OS パスに到達できない（UNC 不可）場合は available:false で空一覧。
+     * 環境のファイルに届かない場合は available:false で空一覧。
      */
     async list(env: GrokEnvironment, kind: AssetKind): Promise<AssetListReport> {
         const label = env.kind === 'wsl' ? (env.distro ?? '') : this.nativeLabel();
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
 
-        const real = await fs.resolveRealPath(parentRel);
-        if (real === null) {
-            // WSL コマンドモード（UNC 不可）: ZIP 操作不可
+        if (!(await fs.isReachable())) {
             return { env, label, kind, available: false, entries: [] };
         }
+        const canReveal = (await fs.resolveRealPath(parentRel)) !== null;
 
-        const entries = kind === 'skills' ? await this.listSkills(fs, parentRel) : await this.listAgents(fs, parentRel);
-        entries.sort((a, b) => a.name.localeCompare(b.name));
-        return { env, label, kind, available: true, entries };
-    }
-
-    /** skills/: 直下サブディレクトリを 1 件とし、<skill>/SKILL.md の frontmatter を読む。 */
-    private async listSkills(fs: HomeFs, parentRel: string): Promise<AssetEntry[]> {
-        const entries: AssetEntry[] = [];
-        const dirs = await fs.listDirs(parentRel);
-        for (const name of dirs) {
-            if (this.isUnsafeName(name)) {
-                continue;
-            }
-            const dirRel = `${parentRel}/${name}`;
-            const md = await fs.readText(`${dirRel}/SKILL.md`);
-            // SKILL.md を持たない隠しディレクトリ（.trash/ など）はスキルではない。
-            if (md === null && name.startsWith('.')) {
-                continue;
-            }
-            // skills はファイル数のみ表示する（サイズは取得・保持しない）。
-            const stats = await fs.dirStats(dirRel);
-            const fm = parseFrontmatter(md);
-            entries.push({
-                name,
-                relPath: name,
-                isFile: false,
-                fileCount: stats.fileCount,
-                frontmatter: fm?.fields ?? {},
-                frontmatterRaw: fm?.raw ?? null,
-                // フォルダ単位: 配下ファイルの最終更新日時の最大値。
-                mtimeMs: stats.mtimeMs,
-            });
-        }
-        return entries;
-    }
-
-    /**
-     * agents/: 直下の .md ファイル、およびサブディレクトリ配下の .md ファイル（再帰）を 1 件ずつ展開。
-     * ディレクトリ自体は対象にせず、その配下の .md を対象とする。
-     */
-    private async listAgents(fs: HomeFs, parentRel: string): Promise<AssetEntry[]> {
-        const entries: AssetEntry[] = [];
-
-        const walk = async (relDir: string, depth: number): Promise<void> => {
-            // 直下の .md ファイル
-            const files = await fs.listFiles(relDir);
-            for (const file of files) {
-                if (!file.toLowerCase().endsWith('.md') || this.isUnsafeName(file)) {
-                    continue;
-                }
-                const fileRel = `${relDir}/${file}`;
-                const relPath = fileRel.slice(parentRel.length + 1); // 親からの相対
-                // agents は 1 ファイル固定でサイズ・ファイル数を表示しないため取得しない。
-                // 最終更新日時のみファイル単位で取得する。
-                const md = await fs.readText(fileRel);
-                const fm = parseFrontmatter(md);
-                const stats = await fs.fileStats(fileRel);
-                entries.push({
-                    name: file.replace(/\.md$/i, ''),
-                    relPath,
-                    isFile: true,
-                    frontmatter: fm?.fields ?? {},
-                    frontmatterRaw: fm?.raw ?? null,
-                    // ファイル単位: その .md ファイルの最終更新日時。
-                    mtimeMs: stats.mtimeMs,
-                });
-            }
-            // サブディレクトリを再帰
-            if (depth < AGENT_SCAN_MAX_DEPTH) {
-                const subdirs = await fs.listDirs(relDir);
-                for (const sub of subdirs) {
-                    if (this.isUnsafeName(sub)) {
-                        continue;
-                    }
-                    await walk(`${relDir}/${sub}`, depth + 1);
-                }
-            }
+        const scan = kind === 'skills' ? await this.scanSkills(fs, parentRel) : await this.scanAgents(fs, parentRel);
+        scan.entries.sort((a, b) => a.name.localeCompare(b.name));
+        return {
+            env,
+            label,
+            kind,
+            available: true,
+            entries: scan.entries,
+            ...(canReveal ? {} : { revealUnavailable: true }),
+            ...(scan.truncated ? { truncatedDepth: RECURSIVE_ASSET_MAX_DEPTH } : {}),
+            ...(scan.incomplete ? { incomplete: true } : {}),
         };
-
-        await walk(parentRel, 0);
-        return entries;
     }
 
-    /**
-     * 選択したエントリ（relPaths）を 1 つの ZIP にまとめて保存する。
-     * 複数選択でも 1 ファイルにまとめる。保存先はダイアログで指定。
-     * relPaths は list() が返した AssetEntry.relPath（skills=ディレクトリ名 / agents=.md の相対パス）。
-     */
+    /** skills/: SKILL.md を持つフォルダーを 1 件とする（Grok の探索の深さまで。SKILL.md のあるフォルダーの下も読む）。リンクも対象にする。 */
+    private scanSkills(fs: HomeFs, parentRel: string): Promise<AssetScan> {
+        return scanDirAssets(fs, parentRel, {
+            entryFile: SKILL_ENTRY_FILE,
+            maxLevels: SKILL_SCAN_MAX_LEVELS,
+            walkBelowEntry: true,
+            listWithoutEntry: true,
+            walkHidden: true,
+        });
+    }
+
+    /** agents/: 直下の .md ファイルだけを 1 件ずつ展開する（Grok はサブディレクトリを読まない）。リンクも対象にする。 */
+    private scanAgents(fs: HomeFs, parentRel: string): Promise<AssetScan> {
+        return scanFileAssets(fs, parentRel, { extension: '.md', maxDepth: 0 });
+    }
+
     /**
      * 1 エントリの内容全体を読み取る（参照ダイアログの「全体」表示用）。
      * - agents: relPath のファイルそのもの
@@ -224,8 +175,10 @@ export class GrokAssetManager {
         }
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const fileRel = kind === 'skills' ? `${parentRel}/${relPath}/SKILL.md` : `${parentRel}/${relPath}`;
-        const content = await fs.readText(fileRel);
+        const content =
+            kind === 'skills'
+                ? await readEntryFile(fs, `${parentRel}/${relPath}`, SKILL_ENTRY_FILE)
+                : await fs.readText(`${parentRel}/${relPath}`);
         if (content === null) {
             return { ok: false, message: 'not-found' };
         }
@@ -245,6 +198,10 @@ export class GrokAssetManager {
         return revealAssetPath(join(parentReal, relPath), kind === 'skills');
     }
 
+    /**
+     * 選択したエントリ（relPaths）を 1 つの ZIP にまとめて保存する。複数選択でも 1 ファイルにまとめ、保存先はダイアログで指定する。
+     * リンクはリンク先の内容を入れ、リンク切れは含めない。relPaths は list() が返した AssetEntry.relPath。
+     */
     async download(
         env: GrokEnvironment,
         kind: AssetKind,
@@ -253,13 +210,16 @@ export class GrokAssetManager {
     ): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
         const safe = relPaths.filter(p => !this.isUnsafeRelPath(p));
-        if (safe.length === 0) {
+        const sources = await resolveZipSources(
+            fs,
+            safe.map(rel => ({ rootRel: parentRel, rel }))
+        );
+        if (sources.length === 0) {
             return { ok: false, message: 'no-selection' };
         }
 
@@ -285,39 +245,12 @@ export class GrokAssetManager {
         }
 
         try {
-            await this.zipEntries(parentReal, safe, kind, saveResult.filePath);
+            await writeAssetZip(fs, sources, saveResult.filePath);
             return { ok: true };
         } catch (error) {
             console.error(`Failed to create archive (${JSON.stringify(env)}, ${kind}):`, error);
             return { ok: false, message: 'download-failed' };
         }
-    }
-
-    /**
-     * 選択エントリを ZIP に追加する。
-     * - skills（ディレクトリ）: <name>/ としてディレクトリごと追加。
-     * - agents（.md ファイル）: 親からの相対パスを保持して追加（サブディレクトリ構造を維持）。
-     */
-    private zipEntries(parentReal: string, relPaths: string[], kind: AssetKind, destZip: string): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const output = createWriteStream(destZip);
-            const archive = archiver('zip', zipArchiveOptions());
-            output.on('close', () => resolve());
-            output.on('error', reject);
-            archive.on('error', reject);
-            archive.pipe(output);
-            for (const rel of relPaths) {
-                // ZIP 内のパスは agents ディレクトリからの相対パスを '/' 区切りで維持する。
-                const zipPath = rel.replace(/\\/g, '/');
-                const sourceAbs = join(parentReal, rel);
-                if (kind === 'skills') {
-                    archive.directory(sourceAbs, zipPath);
-                } else {
-                    archive.file(sourceAbs, { name: zipPath });
-                }
-            }
-            archive.finalize();
-        });
     }
 
     /**
@@ -327,8 +260,7 @@ export class GrokAssetManager {
     async inspectUpload(env: GrokEnvironment, kind: AssetKind, window: BrowserWindow | null): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
@@ -347,8 +279,9 @@ export class GrokAssetManager {
         }
 
         const srcPath = openResult.filePaths[0];
+        this.inspectedUploads.remember(env, kind, srcPath);
         if (extname(srcPath).toLowerCase() === '.md') {
-            return this.inspectMdUpload(fs, parentRel, kind, srcPath);
+            return this.inspectMdUpload(env, fs, parentRel, kind, srcPath);
         }
 
         let zip: AdmZip;
@@ -359,8 +292,13 @@ export class GrokAssetManager {
             return { ok: false, message: 'invalid-archive' };
         }
         // パストラバーサル対策: 不正なエントリ名を含む ZIP は拒否する。
-        if (normalizedArchiveEntries(zip) === null) {
+        const normalized = normalizedArchiveEntries(zip);
+        if (normalized === null) {
             return { ok: false, message: 'invalid-archive' };
+        }
+        // OS の管理用エントリだけの ZIP は空として扱う。
+        if (normalized.length === 0) {
+            return { ok: false, message: 'empty-archive' };
         }
 
         // 種別整合チェック（エージェント / スキルの誤アップロード防止）。
@@ -370,14 +308,15 @@ export class GrokAssetManager {
         }
 
         // Grok はエージェント定義を agents 直下の .md しか認識しない（サブディレクトリは無視される）。
-        // ネストした構成の ZIP を展開すると UI からも CLI からも見えない孤児ファイルになるため拒否する。
-        if (kind === 'agents' && this.zipFileEntries(zip).some(f => f.includes('/'))) {
+        // ネストした .md を展開すると UI からも CLI からも見えない孤児ファイルになるため拒否する。
+        if (kind === 'agents' && this.uploadItems(zip, kind).some(f => f.includes('/'))) {
             return { ok: false, message: 'kind-block-agent-nested-dirs' };
         }
 
         const conflicts = await this.computeConflicts(fs, parentRel, zip, kind);
         const warn = cls.verdict === 'warn' ? { kindCheck: 'warn' as const, kindMessage: cls.reason } : {};
-        return { ok: true, uploadKind: 'zip', zipPath: srcPath, conflicts, ...warn };
+        const nested = await nestedReplacedOf(kind, conflicts, () => this.list(env, kind));
+        return { ok: true, uploadKind: 'zip', zipPath: srcPath, conflicts, ...warn, ...nested };
     }
 
     /**
@@ -388,6 +327,7 @@ export class GrokAssetManager {
      * - agents: 元ファイル名そのままで .grok/agents 直下へ配置。衝突判定は同名ファイルの存在。
      */
     private async inspectMdUpload(
+        env: GrokEnvironment,
         fs: HomeFs,
         parentRel: string,
         kind: AssetKind,
@@ -405,8 +345,9 @@ export class GrokAssetManager {
         const verdict = kind === 'skills' ? cls.skills : cls.agents;
         const reason = kind === 'skills' ? cls.reasonSkills : 'skillmd-into-agent';
         const warn = verdict === 'warn' ? { kindCheck: 'warn' as const, kindMessage: reason } : {};
+        const nested = await nestedReplacedOf(kind, conflicts, () => this.list(env, kind));
 
-        return { ok: true, uploadKind: 'md', srcPath: mdPath, targetName: target.name, conflicts, ...warn };
+        return { ok: true, uploadKind: 'md', srcPath: mdPath, targetName: target.name, conflicts, ...warn, ...nested };
     }
 
     /**
@@ -456,12 +397,13 @@ export class GrokAssetManager {
      * - skills: <dir>/SKILL.md（大文字固定）として配置。overwrite 時は既存の <dir> を丸ごと置き換える。
      * - agents: 元ファイル名のまま .grok/agents 直下へ配置。overwrite 時は既存のファイルを置き換える。
      * 既にある取り込み先は overwrite=true のときだけ置き換える。書き込みに失敗した場合は取り込み前の状態に戻す。
+     * 検査で選ばれたファイル以外は受け付けない。
      */
     async uploadMd(env: GrokEnvironment, kind: AssetKind, mdPath: string, overwrite: boolean): Promise<AssetOpResult> {
+        if (!this.inspectedUploads.accepts(env, kind, mdPath)) return { ok: false, message: 'invalid-input' };
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
@@ -484,9 +426,15 @@ export class GrokAssetManager {
         const relPath = target.relPath;
 
         try {
-            installStaged(parentReal, [item], new Set(overwrite ? [item] : []), dir =>
-                writeTextFile(dir, relPath, content, srcMtimeMs)
+            await installFiles(
+                fs,
+                parentRel,
+                [item],
+                new Set(overwrite ? [item] : []),
+                [{ relPath, bytes: Buffer.from(content, 'utf8'), mtimeMs: srcMtimeMs }],
+                OUTSIDE_ROOT_STAGING
             );
+            this.inspectedUploads.forget(env, kind);
             return { ok: true, importedCount: 1 };
         } catch (error) {
             console.error(`Failed to upload md (${JSON.stringify(env)}, ${kind}):`, error);
@@ -498,13 +446,13 @@ export class GrokAssetManager {
      * ZIP を対象フォルダへ展開する。
      * 取り込み対象のうち既にあるもの（computeConflicts）は、overwrite=true のときだけ丸ごと置き換え
      * （skills=トップレベルのディレクトリ / agents=ファイル）、overwrite=false のときは何も変えずに conflict を返す。
-     * 展開は作業用ディレクトリで行い、失敗した場合は取り込み前の状態に戻す。
+     * 展開は作業用ディレクトリで行い、失敗した場合は取り込み前の状態に戻す。検査で選ばれたファイル以外は受け付けない。
      */
     async upload(env: GrokEnvironment, kind: AssetKind, zipPath: string, overwrite: boolean): Promise<AssetOpResult> {
+        if (!this.inspectedUploads.accepts(env, kind, zipPath)) return { ok: false, message: 'invalid-input' };
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
@@ -526,9 +474,14 @@ export class GrokAssetManager {
             console.error(`Rejected archive with unsafe entry: ${zipPath}`);
             return { ok: false, message: 'invalid-archive' };
         }
+        // OS の管理用エントリだけの ZIP は空として扱う。
+        if (entries.length === 0) {
+            return { ok: false, message: 'empty-archive' };
+        }
 
-        // 防御的チェック: agents はネスト構成の ZIP を受け付けない（inspectUpload と同条件）。
-        if (kind === 'agents' && this.zipFileEntries(zip).some(f => f.includes('/'))) {
+        const items = this.uploadItems(zip, kind);
+        // 防御的チェック: agents はネストした .md を受け付けない（inspectUpload と同条件）。
+        if (items.length === 0 || (kind === 'agents' && items.some(f => f.includes('/')))) {
             return { ok: false, message: 'invalid-archive' };
         }
 
@@ -542,11 +495,16 @@ export class GrokAssetManager {
             if (conflicts.length > 0 && !overwrite) {
                 return { ok: false, message: 'conflict', conflicts };
             }
-            installStaged(parentReal, this.uploadItems(zip, kind), new Set(conflicts), dir =>
-                extractArchiveEntries(entries, dir)
+            await installFiles(
+                fs,
+                parentRel,
+                items,
+                new Set(conflicts),
+                stagedFilesOfArchive(entries),
+                OUTSIDE_ROOT_STAGING
             );
-            const importedCount =
-                kind === 'skills' ? this.zipTopLevelDirsFrom(zip).length : this.zipFileEntries(zip).length;
+            this.inspectedUploads.forget(env, kind);
+            const importedCount = kind === 'skills' ? this.zipTopLevelDirsFrom(zip).length : items.length;
             return { ok: true, importedCount };
         } catch (error) {
             console.error(`Failed to extract archive (${JSON.stringify(env)}, ${kind}):`, error);
@@ -563,8 +521,7 @@ export class GrokAssetManager {
     async deleteSelected(env: GrokEnvironment, kind: AssetKind, relPaths: string[]): Promise<AssetOpResult> {
         const fs = this.fsFor(env);
         const parentRel = this.parentRel(kind);
-        const parentReal = await fs.resolveRealPath(parentRel);
-        if (parentReal === null) {
+        if (!(await fs.isReachable())) {
             return { ok: false, message: 'unavailable' };
         }
 
@@ -576,18 +533,11 @@ export class GrokAssetManager {
         const skipped: string[] = [];
         let deletedCount = 0;
         for (const rel of safe) {
-            const target = `${parentRel}/${rel}`;
             try {
-                if (kind === 'skills') {
-                    const { removedAll } = await fs.removeDirBestEffort(target);
-                    if (removedAll) {
-                        deletedCount++;
-                    } else {
-                        skipped.push(rel);
-                    }
-                } else {
-                    await fs.deleteFile(target);
+                if (await removeAssetEntry(fs, parentRel, rel, kind === 'skills')) {
                     deletedCount++;
+                } else {
+                    skipped.push(rel);
                 }
             } catch (error) {
                 console.error(`Failed to delete ${rel} (${JSON.stringify(env)}, ${kind}):`, error);
@@ -598,9 +548,12 @@ export class GrokAssetManager {
         return { ok: skipped.length === 0, deletedCount, skipped: skipped.length > 0 ? skipped : undefined };
     }
 
-    /** ZIP の取り込み対象（skills=トップレベルの名前 / agents=ファイルの相対パス）。 */
+    /** ZIP の取り込み対象（skills=トップレベルの名前 / agents=.md ファイルの相対パス）。 */
     private uploadItems(zip: AdmZip, kind: AssetKind): string[] {
-        return kind === 'skills' ? this.zipTopLevelNamesFrom(zip) : this.zipFileEntries(zip);
+        if (kind === 'skills') {
+            return this.zipTopLevelNamesFrom(zip);
+        }
+        return this.zipFileEntries(zip).filter(path => path.toLowerCase().endsWith('.md'));
     }
 
     /**
@@ -645,7 +598,7 @@ export class GrokAssetManager {
 
     /**
      * ZIP の構造的な特徴を抽出する。
-     * - hasSkillDir:  トップレベルディレクトリ配下に SKILL.md（大小無視）を持つものがある（= スキル構造）。
+     * - hasSkillDir:  トップレベルディレクトリの配下に SKILL.md（大小無視）を持つものがある（= スキル構造）。
      * - hasTopLevelMd: トップレベル（ディレクトリ配下でない）に .md ファイルが直置きされている（= エージェント構造）。
      * - hasAnyMd:     どこかに .md ファイルがある。
      */
@@ -671,8 +624,8 @@ export class GrokAssetManager {
             if (isMd && segments.length === 1) {
                 hasTopLevelMd = true;
             }
-            // <topdir>/SKILL.md（大小無視）。深さは問わずトップレベルディレクトリ直下を見る。
-            if (segments.length === 2 && base.toLowerCase() === 'skill.md') {
+            // <topdir>/.../SKILL.md（大小無視）。Grok はネストしたスキルも読むので深さは問わない。
+            if (segments.length >= 2 && base.toLowerCase() === 'skill.md') {
                 hasSkillDir = true;
             }
         }

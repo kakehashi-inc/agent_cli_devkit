@@ -1,6 +1,6 @@
 {
   "name": "agent-cli-devkit",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "description": "GUI for managing Claude, Codex, Agy, Grok, and OpenCode CLI environments.",
   "main": "dist/main/index.js",
   "engines": {
@@ -56,10 +56,12 @@
     "wait-on": "^9.5.1"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "2.17.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^9.5.0",
     "@mui/material": "^9.5.0",
+    "@noble/hashes": "^1.8.0",
     "adm-zip": "^0.6.1",
     "archiver": "^7.0.1",
     "electron-updater": "^6.8.12",

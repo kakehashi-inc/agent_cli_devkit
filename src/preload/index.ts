@@ -3,7 +3,13 @@
 // agent 固有の API は preload/agents/<agent>.ts から取り込む。
 // agent を追加する場合は preload/agents/<agent>.ts を作成し、ここに 1 行追加する。
 import { contextBridge, ipcRenderer } from 'electron';
-import { APP_SETTINGS_CHANNELS, SYSTEM_CHANNELS, UPDATER_CHANNELS, WINDOW_CHANNELS } from '../shared/constants';
+import {
+    APP_SETTINGS_CHANNELS,
+    SYSTEM_CHANNELS,
+    UPDATER_CHANNELS,
+    WINDOW_CHANNELS,
+    WSL_CHANNELS,
+} from '../shared/constants';
 import type { IpcApi } from '../shared/ipc';
 import type { AppSettingsData, UpdateState } from '../shared/types';
 import { agyApi } from './agents/agy';
@@ -22,6 +28,9 @@ const api: IpcApi = {
     appSettings: {
         read: () => ipcRenderer.invoke(APP_SETTINGS_CHANNELS.READ),
         write: (patch: AppSettingsData) => ipcRenderer.invoke(APP_SETTINGS_CHANNELS.WRITE, patch),
+    },
+    wsl: {
+        getMissingCommands: () => ipcRenderer.invoke(WSL_CHANNELS.GET_MISSING_COMMANDS),
     },
     window: {
         minimize: () => ipcRenderer.invoke(WINDOW_CHANNELS.MINIMIZE),

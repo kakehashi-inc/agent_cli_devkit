@@ -9,6 +9,7 @@ import { registerOpenCodeIpcHandlers } from './opencode/index';
 import { registerAppSettingsHandlers } from './appSettingsHandlers';
 import { registerSystemHandlers } from './systemHandlers';
 import { registerWindowHandlers } from './windowHandlers';
+import { registerWslHandlers } from './wslHandlers';
 import { registerUpdaterIpcHandlers } from './updater';
 
 /**
@@ -31,6 +32,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null) {
     registerSystemHandlers();
     registerAppSettingsHandlers();
     registerWindowHandlers();
+    registerWslHandlers(detector);
 
     // 自動アップデート関連の IPC ハンドラ
     registerUpdaterIpcHandlers();

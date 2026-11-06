@@ -24,11 +24,11 @@ export interface AgentFeature {
 export interface AgentModule {
     // 識別子（'claude' / 'codex' など）
     id: string;
-    // グループ表示名（固有名詞のため翻訳しない）
-    label: string;
-    // ダッシュボード見出し用の表示名（省略時は label を使う）。
-    // タイトルバーは幅が限られるため短い label のままにし、こちらだけ補足を付けられる。
-    dashboardLabel?: string;
+    // グループ表示名の i18n キー。
+    labelKey: string;
+    // ダッシュボード見出し用の表示名の i18n キー（省略時は labelKey を使う）。
+    // タイトルバーは幅が限られるため短い表示名のままにし、こちらだけ補足を付けられる。
+    dashboardLabelKey?: string;
     // 提供する機能一覧（ダッシュボード・タイトルバー・ルートに表示順で並ぶ）
     features: AgentFeature[];
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Box,
     Button,
@@ -42,6 +42,12 @@ export const TitleBar: React.FC = () => {
     const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
     // バーガーメニューでホバー中の agent グループのサブメニュー（カスケード表示）。
     const [subMenu, setSubMenu] = useState<{ anchorEl: HTMLElement; agentId: string } | null>(null);
+    // 展開中のグループの先頭と末尾の要素。幅が足りないときに見える位置へスクロールする。
+    const expandedGroupStart = useRef<HTMLButtonElement | null>(null);
+    const expandedGroupEnd = useRef<HTMLButtonElement | null>(null);
+    // アプリ名が省略されて表示されているか。省略されているときだけ、ツールチップで全文を出せるようにする。
+    const appNameRef = useRef<HTMLParagraphElement | null>(null);
+    const [appNameClipped, setAppNameClipped] = useState(false);
 
     // 現在のルートが属するグループを自動展開する（ダッシュボードやメニューからの遷移に追従）。
     useEffect(() => {
@@ -49,7 +55,27 @@ export const TitleBar: React.FC = () => {
         if (owner) {
             setExpandedAgentId(owner.id);
         }
+        // 画面を移動したらバーガーメニューとサブメニューを閉じる。
+        setMenuAnchor(null);
+        setSubMenu(null);
     }, [location.pathname]);
+
+    useEffect(() => {
+        const element = appNameRef.current;
+        if (!element || typeof ResizeObserver === 'undefined') return undefined;
+        const update = () => setAppNameClipped(element.scrollWidth > element.clientWidth);
+        const observer = new ResizeObserver(update);
+        observer.observe(element);
+        update();
+        return () => observer.disconnect();
+    }, []);
+
+    // 展開したグループ全体を、できるだけ見える位置へスクロールする（代表ボタンを優先する）。
+    useEffect(() => {
+        const nearest: ScrollIntoViewOptions = { block: 'nearest', inline: 'nearest' };
+        expandedGroupEnd.current?.scrollIntoView?.(nearest);
+        expandedGroupStart.current?.scrollIntoView?.(nearest);
+    }, [expandedAgentId]);
 
     // 代表ボタンのクリック: 同じグループなら閉じる、別グループならそちらを展開（他は閉じる）。
     const toggleAgentGroup = (id: string) => {
@@ -93,6 +119,11 @@ export const TitleBar: React.FC = () => {
         setSubMenu(null);
     };
 
+    // メニューが開いているときだけサブメニューを開く。閉じるアニメーションの間にポインターの下へ来た行では開かない。
+    const openSubMenu = (anchorEl: HTMLElement, agentId: string) => {
+        if (menuAnchor) setSubMenu({ anchorEl, agentId });
+    };
+
     const handleExit = () => {
         handleMenuClose();
         window.agentCliDevkit.window.close();
@@ -109,6 +140,8 @@ export const TitleBar: React.FC = () => {
         <Box
             sx={{
                 height: 48,
+                flexShrink: 0,
+                minWidth: 0,
                 bgcolor: 'background.paper',
                 display: 'flex',
                 alignItems: 'center',
@@ -118,23 +151,46 @@ export const TitleBar: React.FC = () => {
                 userSelect: 'none',
             }}
         >
-            {/* タイトル */}
-            <Box sx={{ flexGrow: 1, ml: 2, display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                <Typography
-                    variant='body1'
-                    sx={{
-                        fontWeight: 500,
-                        fontSize: '0.95rem',
-                    }}
+            {/* タイトル（幅が足りないときは省略する。ウィンドウをドラッグできる幅は残す） */}
+            <Box
+                sx={{
+                    flex: '1 1 0',
+                    minWidth: 72,
+                    mx: 2,
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    gap: 1,
+                    overflow: 'hidden',
+                }}
+            >
+                <Tooltip
+                    title={appVersion ? `${t('app.title')} v${appVersion}` : t('app.title')}
+                    disableHoverListener={!appNameClipped}
                 >
-                    {t('app.title')}
-                </Typography>
+                    <Typography
+                        ref={appNameRef}
+                        variant='body1'
+                        noWrap
+                        sx={{
+                            fontWeight: 500,
+                            fontSize: '0.95rem',
+                            // ウィンドウのドラッグ領域はポインターの移動を受け取らないので、省略時だけ外す。
+                            ...(appNameClipped ? { WebkitAppRegion: 'no-drag' } : {}),
+                        }}
+                    >
+                        {t('app.title')}
+                    </Typography>
+                </Tooltip>
                 {appVersion && (
                     <Typography
                         variant='caption'
+                        noWrap
                         sx={{
                             color: 'text.secondary',
                             fontSize: '0.75rem',
+                            // 幅が足りないときはアプリ名より先に縮める。
+                            flexShrink: 100,
+                            minWidth: 0,
                         }}
                     >
                         v{appVersion}
@@ -142,8 +198,24 @@ export const TitleBar: React.FC = () => {
                 )}
             </Box>
 
-            {/* 右側：ツールメニュー */}
-            <Box sx={{ display: 'flex', alignItems: 'center', WebkitAppRegion: 'no-drag' }}>
+            {/* 画面の切り替え。幅が足りないときはこの範囲だけを横にスクロールする */}
+            <Box
+                onWheel={event => {
+                    if (event.deltaY !== 0) event.currentTarget.scrollLeft += event.deltaY;
+                }}
+                sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    flex: '0 1 auto',
+                    minWidth: 0,
+                    overflowX: 'auto',
+                    overflowY: 'hidden',
+                    scrollbarWidth: 'none',
+                    '&::-webkit-scrollbar': { display: 'none' },
+                    '& > *': { flexShrink: 0 },
+                    WebkitAppRegion: 'no-drag',
+                }}
+            >
                 {/* ダッシュボード */}
                 <Tooltip title={t('nav.dashboard')}>
                     <IconButton size='medium' onClick={() => navigate('/')} sx={navIconSx(location.pathname === '/')}>
@@ -160,13 +232,14 @@ export const TitleBar: React.FC = () => {
                         <React.Fragment key={module.id}>
                             <Divider orientation='vertical' flexItem sx={{ mx: 0.5, my: 1.25 }} />
                             <Button
+                                ref={expanded ? expandedGroupStart : undefined}
                                 size='small'
                                 onClick={() => toggleAgentGroup(module.id)}
                                 endIcon={expanded ? <CollapseGroupIcon /> : <ExpandGroupIcon />}
                                 sx={{
                                     minWidth: 0,
                                     px: 1,
-                                    textTransform: 'none',
+                                    whiteSpace: 'nowrap',
                                     fontSize: '0.85rem',
                                     fontWeight: groupActive ? 600 : 400,
                                     color: groupActive ? 'primary.main' : 'text.secondary',
@@ -175,14 +248,20 @@ export const TitleBar: React.FC = () => {
                                     '& .MuiButton-endIcon': { ml: 0.25 },
                                 }}
                             >
-                                {module.label}
+                                {t(module.labelKey)}
                             </Button>
                             {expanded &&
-                                module.features.map(feature => {
+                                module.features.map((feature, index) => {
                                     const active = location.pathname === feature.path;
                                     return (
-                                        <Tooltip key={feature.path} title={`${module.label}: ${t(feature.navKey)}`}>
+                                        <Tooltip
+                                            key={feature.path}
+                                            title={`${t(module.labelKey)}: ${t(feature.navKey)}`}
+                                        >
                                             <IconButton
+                                                ref={
+                                                    index === module.features.length - 1 ? expandedGroupEnd : undefined
+                                                }
                                                 size='small'
                                                 onClick={() => navigate(feature.path)}
                                                 sx={{ ...navIconSx(active), p: 0.75 }}
@@ -195,10 +274,10 @@ export const TitleBar: React.FC = () => {
                         </React.Fragment>
                     );
                 })}
+            </Box>
 
-                {/* スペーサー */}
-                <Box sx={{ width: 16 }} />
-
+            {/* アプリ設定とメニュー。幅が足りなくても縮めない */}
+            <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, pl: 2, WebkitAppRegion: 'no-drag' }}>
                 {/* アプリ設定（アイコンのみ・バーガーメニューの左） */}
                 <Tooltip title={t('nav.appSettings')}>
                     <IconButton
@@ -253,18 +332,14 @@ export const TitleBar: React.FC = () => {
                         return (
                             <MenuItem
                                 key={module.id}
-                                onMouseEnter={e =>
-                                    setSubMenu({ anchorEl: e.currentTarget, agentId: module.id })
-                                }
-                                onClick={e =>
-                                    setSubMenu({ anchorEl: e.currentTarget, agentId: module.id })
-                                }
+                                onMouseEnter={e => openSubMenu(e.currentTarget, module.id)}
+                                onClick={e => openSubMenu(e.currentTarget, module.id)}
                             >
                                 <ListItemIcon>
                                     <SubMenuIcon sx={{ color: 'text.secondary' }} />
                                 </ListItemIcon>
                                 <ListItemText
-                                    primary={module.label}
+                                    primary={t(module.labelKey)}
                                     slotProps={{
                                         primary: {
                                             sx: { fontSize: '0.95rem', fontWeight: groupActive ? 600 : 400 },
@@ -302,7 +377,7 @@ export const TitleBar: React.FC = () => {
                 {/* agent グループのサブメニュー。バーガーメニューはウィンドウ右端に開くため
                     右側に空きがなく、常に左横へカスケード表示する（矢印 ◀ も左向きに合わせる） */}
                 <Popper
-                    open={Boolean(subMenu)}
+                    open={Boolean(menuAnchor && subMenu)}
                     anchorEl={subMenu?.anchorEl ?? null}
                     placement='left-start'
                     sx={{ zIndex: theme => theme.zIndex.modal + 1 }}
@@ -330,7 +405,7 @@ export const TitleBar: React.FC = () => {
             </Box>
 
             {/* ウィンドウコントロールボタン */}
-            <Box sx={{ display: 'flex', WebkitAppRegion: 'no-drag' }}>
+            <Box sx={{ display: 'flex', flexShrink: 0, WebkitAppRegion: 'no-drag' }}>
                 <IconButton
                     size='medium'
                     onClick={handleMinimize}

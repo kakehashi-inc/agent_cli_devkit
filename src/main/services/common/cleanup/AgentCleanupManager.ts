@@ -7,18 +7,34 @@ import type {
     CleanupSelection,
     OSType,
 } from '../../../../shared/agents/types';
+import { isSafePathSegment } from '../fs/archiveEntryPath';
+import { createSqliteStore } from '../sqlite/createSqliteStore';
 import { HomeFs } from '../wsl/HomeFs';
 import { WslDetector } from '../wsl/WslDetector';
 import { createCleanupProbe, type CleanupProbe } from './CleanupProbe';
-import { listHandled, removeHandled, type CleanupHandler } from './handledCleanup';
+import { listHandled, removeHandled, type CleanupBlock, type CleanupHandler } from './handledCleanup';
 import {
+    candidateTextKeys,
     deleteResolvedChildren,
     homePath,
     removeHomeTargets,
     resolveChildren,
+    toBlockedCandidate,
     toResolvedCandidate,
     type CleanupResolver,
 } from './resolvedCleanup';
+
+/**
+ * 候補の子要素を消した後に、それに付随するものを片付ける処理。
+ * names は消そうとした子要素名（候補全体の選択では、消す前に一覧した子要素名）で、消せずに残ったものも含む。
+ * 片付けきれなかった子要素名を返し、削除できずに残ったパスを failedPaths に追加する。
+ */
+export type CleanupAfterDelete = (
+    env: AgentEnvironment,
+    probe: CleanupProbe,
+    names: readonly string[],
+    failedPaths: string[]
+) => Promise<string[]>;
 
 interface Options {
     baseRel: string;
@@ -31,6 +47,10 @@ interface Options {
     resolvers?: Record<string, CleanupResolver>;
     // 候補キーごとのハンドラー。指定した候補はファイルを直接消さず、ハンドラーが子要素の一覧と削除を行う。
     handlers?: Record<string, CleanupHandler>;
+    // 候補キーごとの削除後の処理。resolvers と handlers を指定した候補には使わない。
+    afterDelete?: Record<string, CleanupAfterDelete>;
+    // 候補キーごとの、環境によって行に添える注記を返す処理。
+    notices?: Record<string, (env: AgentEnvironment) => Promise<CleanupBlock | null>>;
 }
 
 /**
@@ -38,6 +58,7 @@ interface Options {
  * resolvers を指定した候補は、ホーム外を含めてリゾルバが特定した子要素だけを扱う。
  * handlers を指定した候補は、ハンドラーが子要素の一覧と削除を行う（CLI 経由の削除など）。
  * その子要素は走査のたびにハンドラーで一覧し、一覧できなかった場合は対象なしとして扱う。
+ * afterDelete を指定した候補は、子要素を消した後に付随するものを片付ける。
  * 削除は OS のファイルロックなどで消せないものを飛ばして続け、残ったパスを CleanupEnvReport.failedPaths で報告する。
  * 使用中の可能性がある子要素は、利用者が削除を承認したもの（CleanupSelection.approvedChildren）だけを削除する。
  */
@@ -101,14 +122,32 @@ export class AgentCleanupManager {
         return result;
     }
 
+    /** ハンドラーの候補をスキャンする。使えない環境では行と注記だけの候補にする。 */
+    private async scanHandled(
+        spec: CleanupCandidateSpec,
+        handler: CleanupHandler,
+        env: AgentEnvironment
+    ): Promise<CleanupCandidate> {
+        const block = await handler.blocked?.(env);
+        if (block) return toBlockedCandidate(spec, block);
+        return toResolvedCandidate(spec, await listHandled(handler, spec.key, env));
+    }
+
+    /** 候補に環境によって添える注記を反映する。 */
+    private async withNotice(candidate: CleanupCandidate, env: AgentEnvironment): Promise<CleanupCandidate> {
+        const notice = await this.options.notices?.[candidate.key]?.(env);
+        return notice ? { ...candidate, ...notice } : candidate;
+    }
+
     async scan(env: AgentEnvironment): Promise<CleanupEnvReport> {
+        await createSqliteStore(env, this.detector).removeStaleCopies();
         const fs = this.fsFor(env);
         const probe = createCleanupProbe(env, this.detector);
         const candidates: CleanupCandidate[] = [];
         for (const spec of this.options.candidates) {
             const handler = this.handlerFor(spec);
             if (handler) {
-                candidates.push(toResolvedCandidate(spec, await listHandled(handler, spec.key, env)));
+                candidates.push(await this.scanHandled(spec, handler, env));
                 continue;
             }
             const resolver = this.resolverFor(spec);
@@ -134,6 +173,7 @@ export class AgentCleanupManager {
                 defaultChecked: spec.defaultChecked,
                 expandable: spec.expandable,
                 childKind: spec.childKind,
+                ...candidateTextKeys(spec),
             };
             if (exists && spec.expandable && spec.childKind) {
                 const names = spec.childKind === 'dir' ? await fs.listDirs(rel) : await fs.listFiles(rel);
@@ -147,7 +187,7 @@ export class AgentCleanupManager {
                 }
                 candidate.children = children.sort((a, b) => b.size - a.size);
             }
-            candidates.push(candidate);
+            candidates.push(await this.withNotice(candidate, env));
         }
         return {
             env,
@@ -156,8 +196,30 @@ export class AgentCleanupManager {
         };
     }
 
-    private safeName(name: string): boolean {
-        return name.trim().length > 0 && !name.includes('/') && !name.includes('\\') && !name.includes('..');
+    /** 削除後の処理を持つ候補の、現在の子要素名。処理を持たない候補と、候補自体がリンクの場合は空。 */
+    private async childNamesForAfterDelete(fs: HomeFs, spec: CleanupCandidateSpec): Promise<string[]> {
+        if (!this.options.afterDelete?.[spec.key] || !spec.childKind) return [];
+        const rel = this.rel(spec);
+        if (await fs.isLink(rel)) return [];
+        return spec.childKind === 'dir' ? fs.listDirs(rel) : fs.listFiles(rel);
+    }
+
+    /** 候補の削除後の処理を実行し、片付けきれなかった子要素名を返す。処理が失敗した場合はログを残して候補キーを返す。 */
+    private async runAfterDelete(
+        spec: CleanupCandidateSpec,
+        env: AgentEnvironment,
+        probe: CleanupProbe,
+        names: readonly string[],
+        failedPaths: string[]
+    ): Promise<string[]> {
+        const afterDelete = this.options.afterDelete?.[spec.key];
+        if (!afterDelete || names.length === 0) return [];
+        try {
+            return await afterDelete(env, probe, names, failedPaths);
+        } catch (error) {
+            console.error(`Failed to finish deleting ${spec.key} (${JSON.stringify(env)}):`, error);
+            return [spec.key];
+        }
     }
 
     /** 画面から渡された子要素名の配列を検証し、文字列だけを残す（ハンドラーは名前の中の識別子で特定する）。 */
@@ -179,7 +241,7 @@ export class AgentCleanupManager {
             if (!spec) continue;
             const handler = this.handlerFor(spec);
             if (handler) {
-                skipped.push(...(await removeHandled(handler, key, env, 'all', approvedOf(key))));
+                skipped.push(...(await removeHandled(handler, key, env, 'all', approvedOf(key), failedPaths)));
                 continue;
             }
             const resolver = this.resolverFor(spec);
@@ -192,6 +254,7 @@ export class AgentCleanupManager {
                 skipped.push(key);
                 continue;
             }
+            const childNames = await this.childNamesForAfterDelete(fs, spec);
             const [removed] = await removeHomeTargets(
                 probe,
                 env,
@@ -199,6 +262,7 @@ export class AgentCleanupManager {
                 failedPaths
             );
             if (!removed) skipped.push(key);
+            skipped.push(...(await this.runAfterDelete(spec, env, probe, childNames, failedPaths)));
         }
         for (const spec of this.options.candidates) {
             if (!spec.expandable || !spec.childKind || selection.dirs.includes(spec.key)) continue;
@@ -206,7 +270,9 @@ export class AgentCleanupManager {
             if (selected.length === 0) continue;
             const handler = this.handlerFor(spec);
             if (handler) {
-                skipped.push(...(await removeHandled(handler, spec.key, env, selected, approvedOf(spec.key))));
+                skipped.push(
+                    ...(await removeHandled(handler, spec.key, env, selected, approvedOf(spec.key), failedPaths))
+                );
                 continue;
             }
             const resolver = this.resolverFor(spec);
@@ -222,7 +288,9 @@ export class AgentCleanupManager {
                       ? await fs.listDirs(base)
                       : await fs.listFiles(base)
             );
-            const names = selected.filter(name => this.safeName(name) && existing.has(name));
+            // パスの 1 セグメントとして扱えない名前は削除せず、消せなかったものとして報告する。
+            const names = selected.filter(name => isSafePathSegment(name) && existing.has(name));
+            skipped.push(...selected.filter(name => !isSafePathSegment(name)));
             const removed = await removeHomeTargets(
                 probe,
                 env,
@@ -232,6 +300,7 @@ export class AgentCleanupManager {
             names.forEach((name, i) => {
                 if (!removed[i]) skipped.push(name);
             });
+            skipped.push(...(await this.runAfterDelete(spec, env, probe, names, failedPaths)));
         }
         const report = await this.scan(env);
         if (skipped.length > 0) report.skipped = skipped;

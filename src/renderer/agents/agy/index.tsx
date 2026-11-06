@@ -37,8 +37,8 @@ const ASSET_COLUMNS: Partial<Record<AssetKind, FmColumn[]>> = {
 
 export const agyModule: AgentModule = {
     id: 'agy',
-    label: 'Agy',
-    dashboardLabel: 'Agy（Antigravity CLI）',
+    labelKey: 'agy.nav.group',
+    dashboardLabelKey: 'agy.dashboard.group',
     features: [
         {
             path: '/agy/mcp',
@@ -76,7 +76,7 @@ export const agyModule: AgentModule = {
             descKey: 'agy.dashboard.settingsDesc',
             Icon: SettingsIcon,
             color: '#8a6df0',
-            element: <SettingsManagerView agentId='agy' api={api.settings} />,
+            element: <SettingsManagerView agentId='agy' api={api.settings} profileApi={api.profile} />,
         },
         {
             path: '/agy/cleanup',

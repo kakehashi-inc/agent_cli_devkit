@@ -4,6 +4,7 @@ import {
     GROK_WSL_CLI_TEST,
     CLEANUP_BIN_OLD_KEY,
     CLEANUP_CANDIDATES,
+    GROK_SESSIONS_CLEANUP_KEY,
     OTHER_CLEANUP_ITEMS,
 } from '../../../shared/agents/grok/constants';
 import {
@@ -19,14 +20,22 @@ import {
 } from '../../../shared/agents/grok/types';
 import { createCleanupProbe } from '../common/cleanup/CleanupProbe';
 import {
+    candidateTextKeys,
     deleteResolvedChildren,
     removeHomeTargets,
     resolveChildren,
     toResolvedCandidate,
 } from '../common/cleanup/resolvedCleanup';
+import { isSafePathSegment } from '../common/fs/archiveEntryPath';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { clearYamlList, countYamlListEntries, needsYamlListNormalize } from '../../utils/yamlPreserve';
+import {
+    GROK_PROJECT_CLEANUPS,
+    removeGrokSessionRows,
+    resolveGrokSessionRows,
+    type GrokCleanupContext,
+} from './grokProjectCleanup';
 import { GROK_TEMP_CLEANUP_RESOLVERS } from './grokTempCleanupResolvers';
 
 const VALID_KEYS = new Set(CLEANUP_CANDIDATES.map(c => c.key));
@@ -52,8 +61,11 @@ function lastSegment(path: string): string {
 /**
  * Grok CLI のデータディレクトリ（~/.grok 配下）と、OS の一時フォルダに残った Grok の一時物の
  * クリーンアップを行う。
- * - 対象は履歴／メモリ／ログ／診断データ／キャッシュ／旧バイナリ／一時ファイルのみ（CLEANUP_CANDIDATES）。
- * - expandable 候補（sessions=プロジェクト単位のサブディレクトリ）は個別 + 全体の両方を削除可能。
+ * - 対象は履歴／メモリ／ログ／診断データ／キャッシュ／旧バイナリ／一時ファイルと、ワークスペースのパスごとの記録のみ
+ *   （CLEANUP_CANDIDATES）。
+ * - sessions はワークスペースのパスごとの行に分け、個別 + 全体の両方を削除可能。
+ * - GROK_PROJECT_CLEANUPS に登録した候補（プロジェクト記録・プロジェクト別の許可・プロジェクトメモリ）は、走査で特定した
+ *   実体だけを削除する。画面から受け取るのは行の識別子だけで、削除先は常に走査の結果から作る。
  * - それ以外はディレクトリ/ファイルごと削除（Grok が必要時に自動再作成する）。
  * - 'bin-old-versions' は特別候補: ~/.grok/bin の grok-<version> 形式ファイルのうち
  *   最新バージョン以外と、Windows の更新時に退避された実行ファイル（grok.exe.old など
@@ -86,7 +98,8 @@ export class GrokCleanupManager {
     }
 
     /** 管理対象の環境一覧（native + Grok 入り WSL distro）。 */
-    async getEnvironments(): Promise<{ env: GrokEnvironment; label: string }[]> {
+    async getEnvironments(refresh = false): Promise<{ env: GrokEnvironment; label: string }[]> {
+        if (refresh) this.detector.invalidate();
         const result: { env: GrokEnvironment; label: string }[] = [];
         result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         const distros = await this.detector.getDistrosWithTest(GROK_WSL_CLI_TEST);
@@ -101,9 +114,15 @@ export class GrokCleanupManager {
         const fs = this.fsFor(env);
         const probe = createCleanupProbe(env, this.detector);
         const label = env.kind === 'wsl' ? (env.distro ?? 'WSL') : this.nativeLabel();
+        const context: GrokCleanupContext = { probe, fs, env };
         const candidates: CleanupCandidate[] = [];
 
         for (const spec of CLEANUP_CANDIDATES) {
+            const project = GROK_PROJECT_CLEANUPS[spec.key];
+            if (project) {
+                candidates.push(toResolvedCandidate(spec, await project.rows(context)));
+                continue;
+            }
             const resolver = GROK_TEMP_CLEANUP_RESOLVERS[spec.key];
             if (resolver) {
                 candidates.push(toResolvedCandidate(spec, await resolveChildren(resolver, probe, spec.key, env)));
@@ -126,26 +145,21 @@ export class GrokCleanupManager {
                 defaultChecked: spec.defaultChecked,
                 expandable: spec.expandable,
                 childKind: spec.childKind,
+                ...candidateTextKeys(spec),
             };
 
-            if (spec.expandable && spec.childKind && exists) {
+            if (spec.key === GROK_SESSIONS_CLEANUP_KEY && exists) {
+                candidate.children = toResolvedCandidate(spec, await resolveGrokSessionRows(context)).children;
+            } else if (spec.expandable && spec.childKind && exists) {
                 const children: CleanupChild[] = [];
-                if (spec.childKind === 'dir') {
-                    const subdirs = await fs.listDirs(relPath);
-                    for (const name of subdirs) {
-                        const childStats = await fs.dirStats(`${relPath}/${name}`);
-                        children.push({ name, size: childStats.size, fileCount: childStats.fileCount });
-                    }
-                } else {
-                    // bin 旧バイナリ候補は grok-<version> 形式のうち保護対象以外のみを対象とする。
-                    const targets =
-                        spec.key === CLEANUP_BIN_OLD_KEY
-                            ? await this.binOldChildren(env, fs, relPath)
-                            : await fs.listFiles(relPath);
-                    for (const name of targets) {
-                        const childStats = await fs.fileStats(`${relPath}/${name}`);
-                        children.push({ name, size: childStats.size, fileCount: childStats.fileCount });
-                    }
+                // bin 旧バイナリ候補は grok-<version> 形式のうち保護対象以外のみを対象とする。
+                const targets =
+                    spec.key === CLEANUP_BIN_OLD_KEY
+                        ? await this.binOldChildren(env, fs, relPath)
+                        : await fs.listFiles(relPath);
+                for (const name of targets) {
+                    const childStats = await fs.fileStats(`${relPath}/${name}`);
+                    children.push({ name, size: childStats.size, fileCount: childStats.fileCount });
                 }
                 children.sort((a, b) => b.size - a.size);
                 candidate.children = children;
@@ -171,13 +185,21 @@ export class GrokCleanupManager {
     async deleteSelected(env: GrokEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport> {
         const fs = this.fsFor(env);
         const probe = createCleanupProbe(env, this.detector);
+        const context: GrokCleanupContext = { probe, fs, env };
         // 削除しようとして削除できなかった対象
         const skipped: string[] = [];
         // OS のファイルロックなどで削除できずに残ったパス
         const failedPaths: string[] = [];
 
         for (const key of selection.dirs) {
-            if (!VALID_KEYS.has(key) || this.isUnsafeName(key)) {
+            if (!VALID_KEYS.has(key)) {
+                continue;
+            }
+            const project = GROK_PROJECT_CLEANUPS[key];
+            if (project) {
+                const removal = await project.remove(context, key, 'all');
+                skipped.push(...removal.skipped);
+                failedPaths.push(...removal.failedPaths);
                 continue;
             }
             const resolver = GROK_TEMP_CLEANUP_RESOLVERS[key];
@@ -229,6 +251,15 @@ export class GrokCleanupManager {
             if (!names || names.length === 0) {
                 continue;
             }
+            const project = GROK_PROJECT_CLEANUPS[spec.key];
+            if (project || spec.key === GROK_SESSIONS_CLEANUP_KEY) {
+                const removal = project
+                    ? await project.remove(context, spec.key, names)
+                    : await removeGrokSessionRows(context, spec.key, names);
+                skipped.push(...removal.skipped);
+                failedPaths.push(...removal.failedPaths);
+                continue;
+            }
             const resolver = GROK_TEMP_CLEANUP_RESOLVERS[spec.key];
             if (resolver) {
                 skipped.push(...(await deleteResolvedChildren(resolver, probe, spec.key, env, names, failedPaths)));
@@ -240,21 +271,18 @@ export class GrokCleanupManager {
             const existing = new Set(
                 (await fs.isLink(baseRel))
                     ? []
-                    : spec.childKind === 'file'
-                      ? spec.key === CLEANUP_BIN_OLD_KEY
-                          ? await this.binOldChildren(env, fs, baseRel)
-                          : await fs.listFiles(baseRel)
-                      : await fs.listDirs(baseRel)
+                    : spec.key === CLEANUP_BIN_OLD_KEY
+                      ? await this.binOldChildren(env, fs, baseRel)
+                      : await fs.listFiles(baseRel)
             );
             // 消せないものを飛ばして削除し、残ったものを報告する。
-            const childNames = names.filter(name => !this.isUnsafeName(name) && existing.has(name));
+            // パスの 1 セグメントとして扱えない名前は削除せず、消せなかったものとして報告する。
+            const childNames = names.filter(name => isSafePathSegment(name) && existing.has(name));
+            skipped.push(...names.filter(name => !isSafePathSegment(name)));
             const removed = await removeHomeTargets(
                 probe,
                 env,
-                childNames.map(name => ({
-                    rel: `${baseRel}/${name}`,
-                    type: spec.childKind === 'file' ? ('file' as const) : ('dir' as const),
-                })),
+                childNames.map(name => ({ rel: `${baseRel}/${name}`, type: 'file' as const })),
                 failedPaths
             );
             childNames.forEach((name, i) => {
@@ -272,11 +300,6 @@ export class GrokCleanupManager {
             report.failedPaths = failedPaths;
         }
         return report;
-    }
-
-    /** パストラバーサル対策: 区切り文字や .. を含む名前を拒否する。 */
-    private isUnsafeName(name: string): boolean {
-        return name.includes('/') || name.includes('\\') || name.includes('..') || name.trim().length === 0;
     }
 
     // ===== bin 旧バイナリ候補（CLEANUP_BIN_OLD_KEY）の特別処理 =====

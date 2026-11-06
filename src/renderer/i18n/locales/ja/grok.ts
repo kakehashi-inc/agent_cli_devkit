@@ -19,7 +19,7 @@ export default {
     cleanup: {
         title: 'Grok クリーンアップ',
         description:
-            '~/.grok 配下の履歴・メモリ・ログ・診断データ・キャッシュ・旧バージョンの実行ファイルと、OS の一時フォルダ（%TEMP% / /tmp）に残った Grok の一時ファイルを削除します。ディスク容量の回収に加え、動作速度の改善にも役立ちます。設定ファイル・認証情報・エージェント・スキル・プラグイン・フック・同梱資産（bundled）・セッションのワークツリーは対象外です。',
+            '~/.grok 配下の履歴・メモリ・ログ・診断データ・キャッシュ・旧バージョンの実行ファイルと、OS の一時フォルダに残った Grok の一時ファイルを削除します。ディスク容量の回収に加え、動作速度の改善にも役立ちます。',
         wslSection: 'WSL: {{distro}}',
         deleteSelected: '選択済みを削除',
         cancel: 'キャンセル',
@@ -27,16 +27,29 @@ export default {
         confirmBody: '選択した {{count}} 件を削除します。元に戻せません。よろしいですか？',
         reclaimable: '{{count}} 件選択中、回収可能 {{size}}',
         noCandidates: 'クリーンアップ対象が見つかりません',
-        inUseNotice:
-            '実行中の Grok セッションがあると一部ディレクトリの削除に失敗することがあります。削除前にセッションを終了してください。',
         deleteSuccess: 'クリーンアップが完了しました',
         deleteError: '一部の項目の削除に失敗しました',
         columnName: '項目',
         columnDescription: '説明',
         columnFiles: 'ファイル数',
         columnSize: 'サイズ',
+        memoryPathUnknown: 'パスを特定できないメモリ',
+        confirmSharedTitle: '次のパスは同じメモリを共有しているので、一緒に削除します。',
+        confirmRelatedTitle:
+            '下位フォルダにも許可のファイルがあります。上位のパスの許可が無くなると、再び効く可能性があります。一緒に削除するものを選択してください。',
+        confirmWarning: {
+            sessions: '選択したパスのセッションと、そのパスのツールの許可を削除します。',
+            projectRecords:
+                '次回そのフォルダで信頼の確認が再び表示されることがあります。確認が済むまで、そのフォルダでは自分のフックも動きません。',
+            projectGrants: '次回、ツールの許可の確認が再び表示されることがあります。',
+            projectMemory:
+                'メモリは元に戻せません。同じリポジトリのクローンや worktree と共有している場合があります。同じ名前の旧メモリも一緒に削除します。',
+        },
         dir: {
             sessions: 'sessions',
+            projectRecords: 'プロジェクト記録',
+            projectGrants: 'プロジェクト別の許可',
+            projectMemory: 'プロジェクトメモリ',
             sandboxEvents: 'sessions/sandbox-events.jsonl',
             logs: 'logs',
             debug: 'debug',
@@ -57,8 +70,10 @@ export default {
             tempEditorFiles: '一時フォルダ: grok-prompt-* / grok-transcript-*',
         },
         desc: {
-            sessions:
-                '過去セッションの記録（会話ログ・プラン）。プロジェクト単位で展開して個別削除できます。プロジェクトごとに保存したツールの許可も削除されます。',
+            sessions: '過去セッションの記録（会話ログ・プラン）。一緒に消えるもの: 同じパスのツールの許可。',
+            projectRecords: 'trusted_folders.toml に記録された、フォルダごとの信頼の決定。',
+            projectGrants: 'ワークスペースのパスごとに保存したツールの許可。',
+            projectMemory: 'ワークスペースごとのメモリ。一緒に消えるもの: 同じ名前の旧メモリ。',
             sandboxEvents: 'サンドボックスのイベントログ。',
             logs: '統合ログ・MCP サーバーの標準エラー出力などの診断ログ。',
             debug: 'デバッグログ（GROK_DEBUG_LOG 指定時に出力）。',
@@ -67,21 +82,18 @@ export default {
             memtrace: 'プロセスのメモリ使用量の記録（診断用）。',
             crash: '異常終了時のクラッシュレポート。',
             traceExports: 'grok trace export で書き出したトレースのバンドル。',
-            marketplaceCache: 'プラグインマーケットプレイスの Git キャッシュ（必要時に再取得されます）。',
-            docs: '内蔵ユーザーガイドのキャッシュ（起動時に再生成されます）。',
-            memory: 'クロスセッションメモリのデータ。削除すると蓄積した記憶が失われます。',
-            memoryV2: 'メモリ v2 のデータ（トピック・観察）。削除すると蓄積した記憶が失われます。',
-            plans: '旧バージョンが作成したプランファイル（現行版はセッション内に保存します）。',
-            binOldVersions:
-                '更新で残った旧バージョンの実行ファイルと、更新時に退避された実行ファイル（*.old）。1個あたり約130MB。現行バージョンと起動用ファイルは保護されます。',
-            tempGoalScratch:
-                'ゴールモードの検証用作業フォルダ（OS の一時フォルダ直下）。セッションに保存されたゴールの状態と照合し、完了・予算上限で終了したゴールと対応するゴールが無いものは 1 時間以上、それ以外は 7 日以上更新されていないものだけを削除します。使用中の可能性がある新しいものは削除しません。',
+            marketplaceCache: 'プラグインマーケットプレイスの Git キャッシュ。',
+            docs: '内蔵ユーザーガイドのキャッシュ。',
+            memory: 'クロスセッションメモリのデータ。',
+            memoryV2: 'メモリ v2 のデータ（トピック・観察）。',
+            plans: '旧バージョンが作成したプランファイル。',
+            binOldVersions: '更新で残った旧バージョンの実行ファイルと、更新時に退避された実行ファイル（*.old）。',
+            tempGoalScratch: 'ゴールモードの検証用作業フォルダ（OS の一時フォルダ直下）。',
             tempSnapshotIndex:
-                'ワークツリーのスナップショット作成に使う一時的な Git インデックス（.lock を含む、OS の一時フォルダ直下）。作成から 24 時間以上経過し、24 時間以上更新されていないものだけを削除します。使用中の可能性がある新しいものは削除しません。',
-            tempVideoFrames:
-                '動画の添付時にフレームを抽出する一時フォルダ（OS の一時フォルダ直下）。作成から 24 時間以上経過し、24 時間以上更新されていないものだけを削除します。使用中の可能性がある新しいものは削除しません。',
+                'ワークツリーのスナップショット作成に使う一時的な Git インデックス（OS の一時フォルダ直下）。',
+            tempVideoFrames: '動画の添付時にフレームを抽出する一時フォルダ（OS の一時フォルダ直下）。',
             tempEditorFiles:
-                '外部エディタでのプロンプト編集やトランスクリプト表示に使う一時ファイル（OS の一時フォルダ直下）。7 日以上更新されていないものだけを削除します。使用中の可能性がある新しいものは削除しません。',
+                '外部エディタでのプロンプト編集やトランスクリプト表示に使う一時ファイル（OS の一時フォルダ直下）。',
         },
         other: {
             sectionTitle: 'その他のツール',
@@ -92,8 +104,8 @@ export default {
                 serenaLogs: 'Serena ログ',
             },
             desc: {
-                serenaProjects: 'Serena に登録されたプロジェクト一覧を空にします（設定・コメントは保持）。',
-                serenaLogs: 'Serena が出力したログを削除します。',
+                serenaProjects: 'Serena に登録されたプロジェクトの一覧。',
+                serenaLogs: 'Serena が出力したログ。',
             },
         },
     },
@@ -135,19 +147,50 @@ export default {
         overwrite: '上書き',
         deleteConfirmTitle: '選択した項目を削除しますか？',
         deleteConfirmBody: '選択した {{count}} 件を削除します。元に戻せません。よろしいですか？',
+        deleteNestedNotice: 'スキルのフォルダーを削除すると、その中のスキルも一緒に削除されます: {{names}}',
         deleteSuccess: '{{count}} 件を削除しました',
         deletePartial: '使用中のため一部を削除できませんでした',
         deleteError: '選択した項目の削除に失敗しました',
         noEntries: '対象のデータはありません',
-        unavailable: 'この環境はアーカイブ操作にアクセスできません（WSL のパスに到達できません）。',
+        unavailable: 'この環境のファイルに届きません。',
         downloadSuccess: 'アーカイブを保存しました',
         downloadError: 'アーカイブの作成に失敗しました',
         uploadSuccess: '{{count}} 件を展開しました',
         uploadError: 'アーカイブの展開に失敗しました',
+        invalidArchive: 'このアーカイブは取り込めません。壊れているか、取り込む対象が含まれていません。',
         overwriteConfirmTitle: '同名の項目を上書きしますか？',
         overwriteConfirmBody:
             '次の {{count}} 件は既に存在します。ディレクトリごと削除して置き換えます: {{names}}。続行しますか？',
         mdNoName: 'SKILL.md の name が取得できませんでした',
+        listTruncated: '{{depth}} 階層より深いフォルダーは一覧に表示していません。',
+        listIncomplete: '読み取れないフォルダーがあるため、一覧が欠けている可能性があります。',
+        entryMark: {
+            link: {
+                self: 'リンク',
+                via: 'リンクされたフォルダー内',
+            },
+            linkHint: {
+                self: 'シンボリックリンクです。削除するとリンクだけを外します。',
+                via: 'リンクされたフォルダーを通して読んでいるため、ここからは削除できません。削除するにはフォルダーのリンクを削除してください。',
+            },
+            status: {
+                'dangling-link': '読み込まれません（リンク先がありません）',
+                'no-entry-file': '読み込まれません（定義ファイルがありません）',
+                'link-folder': 'フォルダーへのリンク',
+                'link-loop': '読み取りません（一覧済みのフォルダーです）',
+                'refused-name': '管理できません（安全でない名前です）',
+            },
+            statusHint: {
+                'dangling-link':
+                    'リンク先のパスが存在しないため、CLI に読み込まれません。削除するとリンクだけを外します。',
+                'no-entry-file': 'このフォルダーには定義ファイルがないため、CLI に読み込まれません。',
+                'link-folder': 'フォルダーを指すリンクです。削除するとリンクだけを外します。',
+                'link-loop':
+                    '読み取り済みのフォルダーを指すリンクのため、中身をもう一度は表示しません。削除するとリンクだけを外します。',
+                'refused-name':
+                    '別の場所を指す可能性がある名前のため、ここでは参照、ダウンロード、削除ができません。このアプリの外で名前を変更してください。',
+            },
+        },
         kindWarnTitle: '種別が一致しない可能性があります',
         kindWarnContinue: 'このまま取り込む',
         kindWarn: {
@@ -168,16 +211,55 @@ export default {
             'no-md': 'このアーカイブには .md ファイルが含まれておらず、エージェントとして取り込めません。',
         },
     },
+    profile: {
+        tab: {
+            settings: '設定',
+            hooks: 'フック',
+            statusLine: 'ステータスライン',
+            externalCommands: '外部コマンド',
+            permissions: '権限',
+            instructions: '指示ファイル',
+            rules: 'ルール',
+            workflows: 'ワークフロー',
+            commands: 'コマンド',
+        },
+        statusLine: {
+            title: 'ステータスライン（[ui.status_line]）',
+        },
+        hooks: {
+            filesTitle: 'フックファイル',
+        },
+        externalCommands: {
+            commandsTitle: 'コマンド',
+            authCommandLabel: '認証コマンド（auth.auth_provider_command）',
+            authAliasNotice: 'grok_com_config の auth_provider_command が使われています。',
+            authProviderTitle: '認証プロバイダー（auth_provider）',
+            lspTitle: 'lsp.json',
+        },
+        permissions: {
+            listsTitle: 'permission.allow / ask / deny',
+            allow: '許可（allow）',
+            ask: '確認（ask）',
+            deny: '拒否（deny）',
+            rulesTitle: 'permission.rules',
+            listsBlocked: 'rules だけが書かれています。',
+            rulesBlocked: 'allow / ask / deny だけが書かれています。',
+            bothForms: 'allow / ask / deny と rules の両方が書かれています。',
+        },
+        workflows: {
+            notGuaranteed: '読み込みを保証しない',
+        },
+    },
     settings: {
         title: 'Grok 設定',
-        description: '~/.grok/config.toml の設定項目をテーブルで編集、または直接編集します。',
+        description:
+            'Grok の設定、フック、権限、指示ファイルなどを編集します。主な設定ファイルは ~/.grok/config.toml です。',
         wslSection: 'WSL: {{distro}}',
         colItem: '項目',
         colValue: '値',
         directEdit: '直接編集',
         directEditTitle: 'config.toml を直接編集',
-        directEditDesc:
-            'config.toml の内容をそのまま編集します。保存するとファイル全体がこの内容で上書きされます。TOML として正しい内容にしてください。',
+        directEditDesc: '保存するとファイル全体がこの内容で上書きされます。',
         save: '保存',
         cancel: 'キャンセル',
         unset: '未設定',
@@ -206,315 +288,667 @@ export default {
         field: {
             modelsDefault: {
                 label: '既定モデル（models.default）',
-                desc: '新規セッションで使用するモデル ID。現在の候補とカスタムモデル ID の両方を入力できます。',
+                desc: '新規セッションで使うモデルです。',
             },
             modelsWebSearch: {
-                label: 'Web検索モデル（models.web_search）',
-                desc: 'web_search ツールが使用するモデル。空欄で未設定。',
+                label: 'Web 検索モデル（models.web_search）',
+                desc: 'web_search ツールが使うモデルです。',
             },
             modelsDefaultReasoningEffort: {
-                label: '推論の労力（models.default_reasoning_effort）',
-                desc: '既定モデルの推論レベル。対応モデルでは none から xhigh まで指定できます。',
+                label: '既定の推論の労力（models.default_reasoning_effort）',
+                desc: '既定モデルの推論の労力です。',
             },
             modelsSessionSummary: {
                 label: 'セッション要約モデル（models.session_summary）',
-                desc: 'セッション要約に使用するモデル。空欄で未設定。',
+                desc: 'セッションのタイトルと要約に使うモデルです。',
+            },
+            modelsImageDescription: {
+                label: '画像説明モデル（models.image_description）',
+                desc: '渡された画像を文字に起こすビジョンモデルです。',
+            },
+            modelsPromptSuggestion: {
+                label: '入力候補モデル（models.prompt_suggestion）',
+                desc: '次の入力候補（ゴーストテキスト）を生成するモデルです。',
+            },
+            modelsAgentType: {
+                label: '既定のエージェント種別（models.agent_type）',
+                desc: 'agent_type を持たないモデルに使うエージェント定義の種別です。',
             },
             modelsTemperature: {
                 label: 'temperature（models.temperature）',
-                desc: '全モデル共通のサンプリング既定値（0〜2）。空欄で未設定。',
+                desc: '全モデル共通のサンプリング温度の既定値です（0〜2）。',
             },
             modelsTopP: {
                 label: 'top_p（models.top_p）',
-                desc: '全モデル共通のサンプリング既定値（0〜1）。空欄で未設定。',
+                desc: '全モデル共通の top_p の既定値です（0〜1）。',
             },
             modelsMaxCompletionTokens: {
                 label: '最大出力トークン（models.max_completion_tokens）',
-                desc: '全モデル共通の最大出力トークン数。空欄で未設定。',
+                desc: '全モデル共通の最大出力トークン数の既定値です。',
+            },
+            modelsMaxRetries: {
+                label: '推論の再試行回数（models.max_retries）',
+                desc: '全モデル共通の推論の再試行回数の既定値です。',
+            },
+            modelsRateLimitRetryThreshold: {
+                label: 'レート制限時の試行上限（models.rate_limit_retry_threshold）',
+                desc: 'レート制限を受けた要求の合計試行回数の上限の既定値です（最大は max_retries）。',
+            },
+            modelsSubagentRateLimitMaxAttempts: {
+                label: 'サブエージェントの 429 待機回数（models.subagent_rate_limit_max_attempts）',
+                desc: 'サブエージェントが 429 応答で待機する回数の上限です（0〜32）。0 で待機をオフにします。',
+            },
+            modelsInferenceIdleTimeoutSecs: {
+                label: '推論アイドルタイムアウト（models.inference_idle_timeout_secs）',
+                desc: 'ストリーミング推論のアイドルタイムアウトの既定値（秒）です。',
+            },
+            modelsStreamToolCalls: {
+                label: 'ツール呼び出しのストリーミング（models.stream_tool_calls）',
+                desc: '全モデルの要求でツール呼び出しをストリーミングします。',
+            },
+            agentName: {
+                label: 'エージェント定義名（agent.name）',
+                desc: 'セッションで動かす組み込みまたは検出済みのエージェント定義の名前です。',
+            },
+            agentDefinition: {
+                label: 'エージェント定義ファイル（agent.definition）',
+                desc: 'YAML frontmatter を持つエージェント定義 Markdown ファイルのパスです。',
+            },
+            agentSystemPromptLabel: {
+                label: 'システムプロンプトの名乗り（agent.system_prompt_label）',
+                desc: 'システムプロンプトでの名乗りです。モデル個別の指定が優先します。',
+            },
+            promptSuggestionsMaxOutputTokens: {
+                label: '入力候補の出力トークン数（prompt_suggestions.max_output_tokens）',
+                desc: '入力候補の生成で出力するトークン数です（16〜256）。',
+            },
+            promptSuggestionsTemperature: {
+                label: '入力候補の temperature（prompt_suggestions.temperature）',
+                desc: '入力候補の生成に使うサンプリング温度です。',
+            },
+            promptSuggestionsReasoningEffort: {
+                label: '入力候補の推論の労力（prompt_suggestions.reasoning_effort）',
+                desc: '入力候補の生成に使う推論の労力です。none は推論なしです。',
+            },
+            longReasoningReminderEnabled: {
+                label: '長考リマインダー（long_reasoning_reminder.enabled）',
+                desc: '長い推論を行ったモデル呼び出しの後、簡潔に考えるよう促すリマインダーをターンの途中で挿入します。',
+            },
+            longReasoningReminderTokens: {
+                label: '長考と判定するトークン数（long_reasoning_reminder.tokens）',
+                desc: '1 回のモデル呼び出しで長考とみなす推論トークン数です（100〜200000）。',
+            },
+            longReasoningReminderDelay: {
+                label: 'リマインダーまでの呼び出し回数（long_reasoning_reminder.delay）',
+                desc: '長考の後、リマインダーまでに待つモデル呼び出しの回数です（0〜10）。',
+            },
+            modelsExtraHeaders: {
+                label: 'モデル共通ヘッダー（models.extra_headers）',
+                desc: 'すべてのモデル要求へ追加する HTTP ヘッダーです。モデル個別の値が優先します。',
+            },
+            modelsAllowedModels: {
+                label: 'モデル許可リスト（models.allowed_models）',
+                desc: 'モデル選択画面、既定モデル、-m で使うモデルを絞る glob パターンです。',
+            },
+            modelsHiddenModels: {
+                label: '非表示モデル（models.hidden_models）',
+                desc: 'モデル選択画面で非表示にするモデル ID です。',
+            },
+            modelsDisabledModels: {
+                label: '無効モデル（models.disabled_models）',
+                desc: 'モデルカタログから除くモデル ID です。非表示モデルより優先します。',
+            },
+            customModels: {
+                label: 'カスタムモデル定義（model.<id>）',
+                desc: 'モデルごとの上書きと BYOK の定義です（接続先、認証、サンプリングなど）。',
+            },
+            modelProviders: {
+                label: 'カスタムプロバイダー定義（model_providers.<name>）',
+                desc: '[model.<id>] の model_provider から参照する名前付きプロバイダーの定義です。',
             },
             sandboxProfile: {
                 label: 'サンドボックス（sandbox.profile）',
-                desc: 'ファイルシステムサンドボックスのプロファイル（off / workspace / devbox / read-only / strict / カスタム名）。',
+                desc: 'ファイルシステムのサンドボックスのプロファイルです（off / workspace / devbox / read-only / strict / カスタム名）。',
             },
             sandboxAutoAllowBash: {
                 label: 'bash 自動許可（sandbox.auto_allow_bash）',
-                desc: 'サンドボックス有効時に bash の権限プロンプトをスキップします。',
+                desc: 'サンドボックスのプロファイルが有効な間、bash の権限確認を省きます。',
             },
             toolsRespectGitignore: {
                 label: 'gitignore 尊重（tools.respect_gitignore）',
-                desc: 'ファイル探索ツールが .gitignore を尊重します。',
+                desc: '検索・読み取りツールが gitignore 対象のファイルを飛ばします。',
+            },
+            toolsDisableZdrIncompatibleTools: {
+                label: 'ZDR 非対応ツールの制限（tools.disable_zdr_incompatible_tools）',
+                desc: 'ゼロデータ保持（ZDR）の下で、xAI がホストする出力を使うツール（動画など）を制限します。',
+            },
+            toolsetFileToolset: {
+                label: 'ファイル編集方式（toolset.file_toolset）',
+                desc: 'ファイル編集ツールの方式です。standard は通常の編集、hashline は行ハッシュを使う編集です。',
+            },
+            toolsetBashTimeoutSecs: {
+                label: 'bash タイムアウト（toolset.bash.timeout_secs）',
+                desc: 'フォアグラウンドの bash コマンドのタイムアウト（秒）です。',
+            },
+            toolsetBashOutputByteLimit: {
+                label: 'bash 出力上限（toolset.bash.output_byte_limit）',
+                desc: '取得する bash 出力の上限（バイト）です。',
+            },
+            toolsetBashMaxTimeoutSecs: {
+                label: 'bash 最大タイムアウト（toolset.bash.max_timeout_secs）',
+                desc: 'モデルが要求するフォアグラウンドのタイムアウトの上限（秒）です。',
+            },
+            toolsetBashAutoBackground: {
+                label: 'タイムアウト時にバックグラウンド化（toolset.bash.auto_background_on_timeout）',
+                desc: 'フォアグラウンドのタイムアウトで bash コマンドをバックグラウンドへ移します。',
+            },
+            toolsetBashLoginShellCapture: {
+                label: 'ログインシェル環境の取り込み（toolset.bash.login_shell_capture）',
+                desc: 'bash にログインシェルの環境を取り込みます。',
+            },
+            toolsetWebFetchProxyEndpoint: {
+                label: 'Web 取得プロキシ（toolset.web_fetch.proxy_endpoint）',
+                desc: 'web_fetch の外向き通信に使うプロキシ URL です。',
+            },
+            toolsetWebFetchAllowLocal: {
+                label: 'ローカル取得許可（toolset.web_fetch.allow_local）',
+                desc: 'web_fetch の接続先に明示的なループバック（localhost、127.0.0.0/8、::1）を加えます。',
+            },
+            toolsetAskUserQuestionTimeoutEnabled: {
+                label: '質問タイムアウト（toolset.ask_user_question.timeout_enabled）',
+                desc: 'ask_user_question にタイムアウトを設けます。オフでは回答を無期限に待ちます。',
+            },
+            toolsetAskUserQuestionTimeoutSecs: {
+                label: '質問タイムアウト秒数（toolset.ask_user_question.timeout_secs）',
+                desc: 'ask_user_question が回答を待つ秒数です。',
+            },
+            toolsMediaGenMaxParallelImageGenCalls: {
+                label: '画像生成の同時呼び出し数（tools.media_gen.max_parallel_image_gen_calls）',
+                desc: '1 回のモデルステップでの image_gen と image_edit の呼び出しの上限です。',
+            },
+            toolsMediaGenMaxParallelVideoGenCalls: {
+                label: '動画生成の同時呼び出し数（tools.media_gen.max_parallel_video_gen_calls）',
+                desc: '1 回のモデルステップでの video_gen の呼び出しの上限です。',
+            },
+            disableWebSearch: {
+                label: 'Web 検索ツールを外す（disable_web_search）',
+                desc: 'web_search ツールを外します。',
             },
             sessionAutoCompactThreshold: {
-                label: '自動コンパクト閾値（session.auto_compact_threshold_percent）',
-                desc: 'コンテキスト使用率がこの割合を超えると自動で要約圧縮します（0〜100、既定 85）。',
+                label: '自動圧縮の閾値（session.auto_compact_threshold_percent）',
+                desc: '自動圧縮を始めるコンテキスト使用率（%）です（0〜100）。',
             },
             sessionLoadEnvrc: {
                 label: '.envrc 読み込み（session.load_envrc）',
-                desc: 'セッション開始時に .envrc の環境変数を注入します。',
+                desc: '.envrc の環境変数を bash へ注入します。',
             },
-            memoryEnabled: {
-                label: 'クロスセッションメモリ（memory.enabled）',
-                desc: 'セッションをまたぐメモリ機能を有効にします。memory_v2.enabled を設定した場合はそちらが優先されます。既定は無効です。',
+            storageCleanupTtlDays: {
+                label: 'セッション自動削除の日数（storage.cleanup_ttl_days）',
+                desc: 'この日数使われていないセッションのフォルダを削除し、古いメディアと端末ログを整理します。0 で自動削除をオフにします。',
+            },
+            autoModeEnabled: {
+                label: 'Auto 権限モード（auto_mode.enabled）',
+                desc: 'ツールの承認を自動で判断する Auto 権限モードを有効にします。',
+            },
+            defaultAutoMode: {
+                label: '既定で Auto モード（default_auto_mode）',
+                desc: 'セッションを Auto 権限モードで開始します。',
+            },
+            doomLoopRecoveryEnabled: {
+                label: 'ツール呼び出しのループ回復（doom_loop_recovery.enabled）',
+                desc: 'ツール呼び出しのループを検出すると再サンプリングします。',
+            },
+            pathNotFoundHints: {
+                label: 'パス未検出時のヒント（path_not_found_hints）',
+                desc: 'パスが見つからないエラーに、作業ディレクトリの案内と似た名前の候補を添えます。',
+            },
+            harnessDisableWorkspaceTeleport: {
+                label: 'ターンごとのスナップショット停止（harness.disable_workspace_teleport）',
+                desc: 'ターンごとの作業領域のスナップショットを止めます。',
             },
             subagentsEnabled: {
                 label: 'サブエージェント（subagents.enabled）',
-                desc: 'サブエージェント（task ツール）機能のマスタースイッチです。既定は有効です。',
+                desc: 'サブエージェントと task ツールのマスタースイッチです。',
+            },
+            subagentsLimitBehavior: {
+                label: '同時実行上限時の動作（subagents.limit_behavior）',
+                desc: '同時実行数の上限での動作です。queue は待機、fail はエラーにします。',
+            },
+            subagentsMaxConcurrent: {
+                label: 'サブエージェント同時実行数（subagents.max_concurrent）',
+                desc: '同時に実行するサブエージェントの上限です。',
+            },
+            subagentsMaxDepth: {
+                label: 'サブエージェントの入れ子の深さ（subagents.max_depth）',
+                desc: 'サブエージェントの入れ子の深さの上限です。',
+            },
+            subagentsSamplingLimit: {
+                label: 'サブエージェントのサンプリング上限（subagents.sampling_limit）',
+                desc: 'プロセスあたりのサブエージェントのサンプリング呼び出しの同時実行数です。',
+            },
+            mcpMaxOutputBytes: {
+                label: 'MCP 出力サイズ上限（mcp.max_output_bytes）',
+                desc: 'MCP ツールの出力サイズの上限（バイト）です。',
+            },
+            shellEnvPolicyInherit: {
+                label: '引き継ぐ環境変数の範囲（shell_environment_policy.inherit）',
+                desc: 'bash が親から引き継ぐ環境変数です。all はすべて、core は PATH や HOME などの最小限、none は空から始めます。',
+            },
+            shellEnvPolicyIgnoreDefaultExcludes: {
+                label: '既定の除外を無視（shell_environment_policy.ignore_default_excludes）',
+                desc: '名前が *KEY*、*SECRET*、*TOKEN* に一致する変数を除く組み込みの規則を外します。',
+            },
+            toolsetWebFetchAllowedDomains: {
+                label: 'Web 取得の許可ドメイン（toolset.web_fetch.allowed_domains）',
+                desc: 'web_fetch の接続先ドメインです。組み込みの許可リストを置き換えます。',
+            },
+            toolsetWebSearchAllowedDomains: {
+                label: 'Web 検索の許可ドメイン（toolset.web_search.allowed_domains）',
+                desc: 'web_search の検索対象のドメインです。',
+            },
+            toolsetWebSearchExcludedDomains: {
+                label: 'Web 検索の除外ドメイン（toolset.web_search.excluded_domains）',
+                desc: 'web_search の検索対象から除くドメインです。',
+            },
+            toolsZdrVideoOutputS3: {
+                label: 'ZDR の動画出力バケット（tools.zdr_video_output_s3）',
+                desc: 'ZDR の下で生成した動画を保存する S3 互換バケットと認証情報です。',
+            },
+            mcpServers: {
+                label: 'MCP サーバー定義（mcp_servers.<name>）',
+                desc: 'MCP サーバーごとの stdio または HTTP 接続、環境変数、ヘッダー、タイムアウトの定義です。',
+            },
+            disabledMcpServers: {
+                label: '無効 MCP サーバー（disabled_mcp_servers）',
+                desc: '[mcp_servers] の定義を残したまま飛ばす MCP サーバー名です。',
+            },
+            disabledMcpTools: {
+                label: '無効 MCP ツール（disabled_mcp_tools）',
+                desc: 'MCP サーバーごとの拒否するツール名です。',
+            },
+            permission: {
+                label: '権限規則（permission）',
+                desc: 'ツールの allow、ask、deny の規則と詳細な規則です。deny、ask、allow の順に優先します。',
+            },
+            hooks: {
+                label: 'フック定義（hooks.<event>）',
+                desc: 'PreToolUse や Stop などのライフサイクルイベントで動かすマッチャーとコマンドです。',
+            },
+            shellEnvPolicyExclude: {
+                label: '除外する環境変数（shell_environment_policy.exclude）',
+                desc: 'bash から取り除く環境変数名です。',
+            },
+            shellEnvPolicyIncludeOnly: {
+                label: '許可する環境変数（shell_environment_policy.include_only）',
+                desc: 'bash が受け取る環境変数をこの名前に絞ります。',
+            },
+            shellEnvPolicySet: {
+                label: '設定する環境変数（shell_environment_policy.set）',
+                desc: 'bash へ注入する環境変数の値です。',
+            },
+            subagentsToggle: {
+                label: 'サブエージェント個別状態（subagents.toggle）',
+                desc: 'サブエージェントの種類ごとの有効・無効です。',
+            },
+            subagentsModels: {
+                label: 'サブエージェントモデル（subagents.models）',
+                desc: 'サブエージェントの種類ごとに使うモデル ID です。',
+            },
+            subagentsRoles: {
+                label: 'サブエージェントのロール（subagents.roles）',
+                desc: '権限と使うモデルの既定を持つカスタムロールの定義です。',
+            },
+            subagentsPersonas: {
+                label: 'サブエージェントのペルソナ（subagents.personas）',
+                desc: '口調や重点などの振る舞いの指示を加えるカスタムペルソナの定義です。',
+            },
+            memoryEnabled: {
+                label: 'クロスセッションメモリ（memory.enabled）',
+                desc: 'セッションをまたぐメモリのマスタースイッチです。',
+            },
+            memoryV2Enabled: {
+                label: 'メモリ v2（memory_v2.enabled）',
+                desc: 'メモリ v2 の主スイッチです。オンは memory.enabled より優先します。',
+            },
+            memoryV2BatchDreamEnabled: {
+                label: 'バッチ Dream（memory_v2.batch_dream_enabled）',
+                desc: 'メモリの Dream をバッチで実行し、トピック一覧全体を見てノートをトピックへまとめます。',
+            },
+            memoryV2BatchDreamMaxRunSecs: {
+                label: 'バッチ Dream の最大実行時間（memory_v2.batch_dream_max_run_secs）',
+                desc: '1 回のバッチ Dream の実行時間の上限（秒）です（60〜3600）。',
+            },
+            memoryV2BatchDreamMaxCallsPerBatch: {
+                label: 'バッチあたりのモデル呼び出し数（memory_v2.batch_dream_max_calls_per_batch）',
+                desc: 'バッチ Dream の 1 バッチのモデル呼び出しの上限です（2〜16）。',
+            },
+            memoryV2BatchDreamMaxBatchNoteBytes: {
+                label: 'バッチあたりのノート量（memory_v2.batch_dream_max_batch_note_bytes）',
+                desc: 'バッチ Dream の 1 バッチのノートのバイト数の上限です（16384〜262144）。',
+            },
+            memoryV2ArchivedRetentionDays: {
+                label: 'アーカイブの保持日数（memory_v2.archived_retention_days）',
+                desc: 'アーカイブしたメモリの観察ファイルを保持する日数です。',
+            },
+            memoryV2JobRetentionDays: {
+                label: 'キャプチャジョブの保持日数（memory_v2.job_retention_days）',
+                desc: '完了したメモリのキャプチャジョブ情報を保持する日数です。',
             },
             cliAutoUpdate: {
                 label: '自動更新（cli.auto_update）',
-                desc: 'CLI の更新確認を有効にします。',
+                desc: '起動時に CLI の更新を確認します。',
             },
             cliChannel: {
                 label: '更新チャンネル（cli.channel）',
-                desc: 'リリースチャネル。stable は安定版、alpha は先行版、enterprise は企業向けです。その他の名前は stable と同じ規則で更新されます。',
+                desc: 'リリースチャネルです（stable / alpha / enterprise）。',
             },
             cliShowTips: {
                 label: '起動時 Tips（cli.show_tips）',
-                desc: '起動時のヒント表示を有効にします。',
+                desc: '起動時にヒントを表示します。',
+            },
+            cliUseLeader: {
+                label: 'リーダープロセスを使用（cli.use_leader）',
+                desc: '設定の再読み込みと MCP の監視にリーダープロセスを使います。',
+            },
+            cliNpmRegistry: {
+                label: 'npm レジストリ（cli.npm_registry）',
+                desc: '自動更新が使う npm レジストリです。',
             },
             cliMinimumVersion: {
                 label: '更新の下限バージョン（cli.minimum_version）',
-                desc: 'アップデーターがこのバージョンより古い版へ下げないようにします。起動自体は妨げません。',
+                desc: 'アップデーターが入れる最も古いバージョンです。',
             },
             cliMaximumVersion: {
                 label: '更新の上限バージョン（cli.maximum_version）',
-                desc: 'アップデーターがこのバージョンより新しい版を入れないようにします。',
+                desc: 'アップデーターが入れる最も新しいバージョンです。',
             },
             cliRequiredMinimumVersion: {
                 label: '起動可能な下限バージョン（cli.required_minimum_version）',
-                desc: 'これより古いバージョンでは起動を拒否します。grok update と grok --version は使えます。',
+                desc: '起動する最も古いバージョンです。',
             },
             cliRequiredMaximumVersion: {
                 label: '起動可能な上限バージョン（cli.required_maximum_version）',
-                desc: 'これより新しいバージョンでは起動を拒否します。grok update と grok --version は使えます。',
+                desc: '起動する最も新しいバージョンです。',
+            },
+            cliWorktreeType: {
+                label: 'ワークツリー作成方式（cli.worktree_type）',
+                desc: 'ワークツリーの作成方式です（linked / standalone / git）。',
+            },
+            cliSessionPickerGrouped: {
+                label: 'セッションをリポジトリ別に表示（cli.session_picker_grouped）',
+                desc: 'セッション選択画面と CLI の一覧で、セッションをリポジトリごとにまとめます。',
+            },
+            cliSessionRegistry: {
+                label: 'セッションレジストリ参加（cli.session_registry）',
+                desc: 'プロセスをまたぐセッションレジストリに参加します。',
             },
             hintsNewSessionWorktreeMode: {
-                label: '/new ワークツリー提案（hints.new_session_worktree_mode）',
-                desc: '/new 実行時に git ワークツリーの利用を提案するか。',
+                label: '/new のワークツリー確認（hints.new_session_worktree_mode）',
+                desc: '/new でのワークツリーの扱いです。ask は確認、always は作成、never は作成なしです。',
             },
             hintsForkWorktreeMode: {
-                label: '/fork ワークツリー提案（hints.fork_worktree_mode）',
-                desc: '/fork 実行時に git ワークツリーの利用を提案するか。',
+                label: '/fork のワークツリー確認（hints.fork_worktree_mode）',
+                desc: '/fork でのワークツリーの扱いです。ask は確認、always は作成、never は作成なしです。',
             },
             hintsMemoryModalFullscreen: {
                 label: 'メモリモーダル全画面（hints.memory_modal_fullscreen）',
-                desc: 'メモリモーダルのフルスクリーン状態を記憶します。',
+                desc: 'メモリモーダルを前回全画面で開いたかどうかを記憶します。',
+            },
+            dashboardEnabled: {
+                label: 'エージェントダッシュボード（dashboard.enabled）',
+                desc: 'エージェントダッシュボードを有効にします。',
+            },
+            dashboardGrouping: {
+                label: 'ダッシュボードのグループ化（dashboard.grouping）',
+                desc: 'ダッシュボードの行を状態（state）またはディレクトリ（directory）でまとめます。',
+            },
+            uiCompactMode: {
+                label: 'コンパクト表示（ui.compact_mode）',
+                desc: 'メッセージの余白を詰めて表示します。',
+            },
+            uiScreenMode: {
+                label: '既定の画面モード（ui.screen_mode）',
+                desc: 'grok の表示モードです。fullscreen は標準の TUI、minimal は端末のスクロールバックを使います。',
+            },
+            uiTimestamps: {
+                label: '時刻表示（ui.timestamps）',
+                desc: 'メッセージの時刻の表示です。off は非表示、minimal は入力と所要時間の行だけ、on はすべてのメッセージです。',
+            },
+            uiShowTimeline: {
+                label: 'タイムラインサイドバー（ui.show_timeline）',
+                desc: 'スクロールバーの代わりにターンごとの目盛りを表示します。',
+            },
+            uiToolCallDensity: {
+                label: 'ツール呼び出しの表示量（ui.tool_call_density）',
+                desc: 'ツール呼び出しの表示量です。detailed は編集差分とシェル出力まで表示し、compact 系ほど要約行へ折りたたみます。',
+            },
+            uiTheme: {
+                label: 'テーマ（ui.theme）',
+                desc: 'カラーテーマの名前です。auto は OS のライト・ダークに従います。',
+            },
+            uiAutoDarkTheme: {
+                label: 'OS ダーク時のテーマ（ui.auto_dark_theme）',
+                desc: 'テーマが auto で OS がダークのときのテーマです。',
+            },
+            uiAutoLightTheme: {
+                label: 'OS ライト時のテーマ（ui.auto_light_theme）',
+                desc: 'テーマが auto で OS がライトのときのテーマです。',
+            },
+            uiRenderMermaid: {
+                label: 'Mermaid の表示（ui.render_mermaid）',
+                desc: 'Mermaid 図の表示です。auto と on は開くための行を添え、off はソースのまま表示します。',
+            },
+            uiRememberToolApprovals: {
+                label: 'ツール承認を記憶（ui.remember_tool_approvals）',
+                desc: '承認の確認にツールごとの「常に許可」の選択肢を表示します。',
+            },
+            uiShowThinkingBlocks: {
+                label: '思考ブロックを表示（ui.show_thinking_blocks）',
+                desc: 'ストリーミング中に思考・推論のブロックを表示します。',
+            },
+            uiPromptSuggestions: {
+                label: '入力候補（ui.prompt_suggestions）',
+                desc: '各ターンの後に次の入力候補（ゴーストテキスト）を表示します。',
+            },
+            uiScrollSpeed: {
+                label: 'スクロール速度（ui.scroll_speed）',
+                desc: 'マウスとトラックパッドのスクロール速度の倍率です（1〜100）。',
+            },
+            uiScrollMode: {
+                label: 'スクロール入力方式（ui.scroll_mode）',
+                desc: 'スクロール入力の種類です。auto は自動判定、wheel と trackpad は固定です。',
+            },
+            uiScrollLines: {
+                label: '1 回のスクロール行数（ui.scroll_lines）',
+                desc: 'ホイールとトラックパッドの 1 回あたりのスクロール行数です（1〜10）。',
+            },
+            uiInvertScroll: {
+                label: 'スクロール方向を反転（ui.invert_scroll）',
+                desc: '縦のスクロール方向を反転します。',
+            },
+            uiKeepTextSelection: {
+                label: 'テキスト選択（ui.keep_text_selection）',
+                desc: 'アプリ内の選択の動作です。flash は短く強調、hold は保持、word_select はダブルクリックで単語、トリプルクリックで段落を選択します。',
+            },
+            uiMaxThoughtsWidth: {
+                label: '思考表示の幅（ui.max_thoughts_width）',
+                desc: '思考パネルの列幅です（40〜500）。',
+            },
+            uiForkSecondaryModel: {
+                label: 'フォーク副モデル（ui.fork_secondary_model）',
+                desc: 'フォーク時の副エージェントのモデルです。',
+            },
+            uiYolo: {
+                label: 'YOLO モード（ui.yolo）',
+                desc: 'ツールの呼び出しを常に承認します。',
+            },
+            uiPermissionMode: {
+                label: '権限モード（ui.permission_mode）',
+                desc: 'ツールの権限の既定の動作です。default と ask は確認、auto は分類器で判断、always-approve は確認なしです。',
+            },
+            uiDefaultSelectedPermission: {
+                label: '承認の初期選択（ui.default_selected_permission）',
+                desc: '最初の承認の確認で選択しておく行です。',
+            },
+            uiPageFlipOnSend: {
+                label: '送信時に最上部へ（ui.page_flip_on_send）',
+                desc: '送信した入力を画面の最上部へ移します。',
+            },
+            uiConfirmBeforeRewind: {
+                label: '巻き戻し前に確認（ui.confirm_before_rewind）',
+                desc: '会話履歴を巻き戻す前に確認します。',
+            },
+            uiDashboardPreview: {
+                label: 'ダッシュボードのプレビュー（ui.dashboard_preview）',
+                desc: 'ダッシュボードに、選択中のセッションのプレビューと返信パネルを表示します。',
+            },
+            uiFollowUpBehavior: {
+                label: '実行中の追加入力（ui.follow_up_behavior）',
+                desc: 'ターン中の追加入力の扱いです。queue はターンの終了まで待ち、steer は次の安全な時点で割り込ませます。',
+            },
+            keysVim: {
+                label: 'Vim ナビゲーション（keys.vim）',
+                desc: 'スクロールバックの Vim キーの操作です。off は無効、nav は有効です。/vim-mode でも切り替えられます。',
+            },
+            uiHunkTrackerMode: {
+                label: '変更ハンク追跡（ui.hunk_tracker_mode）',
+                desc: 'ファイル変更のハンク追跡です。agent_only はエージェントの編集、all_dirty は Git の未コミット変更すべて、off は追跡なしです。',
+            },
+            uiVoiceCaptureMode: {
+                label: '音声キャプチャ方式（ui.voice_capture_mode）',
+                desc: '音声入力の操作です。hold は押している間だけ録音し、toggle は押すたびに開始と停止を切り替えます。',
+            },
+            uiVoiceKeybindEnabled: {
+                label: '音声入力ショートカット（ui.voice_keybind_enabled）',
+                desc: 'Ctrl+Space / F8 の音声入力ショートカットを有効にします。',
+            },
+            uiVoiceSttLanguage: {
+                label: '音声入力言語（ui.voice_stt_language）',
+                desc: '音声入力の言語コードまたは auto です。voice.language より優先します。',
+            },
+            uiMouseReportingToggle: {
+                label: 'マウスレポート切替（ui.mouse_reporting_toggle）',
+                desc: 'スクロールバックで Ctrl+R を押すと端末のマウスキャプチャを切り替えます。',
+            },
+            uiCancelSubagentsOnTurnCancel: {
+                label: 'ターン中断時のサブエージェント（ui.cancel_subagents_on_turn_cancel）',
+                desc: 'ターン中断時のサブエージェントの扱いです。ask は確認、always_stop は停止、always_continue は継続です。',
+            },
+            uiCursorBlink: {
+                label: 'カーソル点滅（ui.cursor_blink）',
+                desc: 'ブロックカーソルの表示です。オンは点滅、オフは点灯、未設定は端末の設定に従います。',
+            },
+            uiCombineQueuedPrompts: {
+                label: 'キュー投稿を結合（ui.combine_queued_prompts）',
+                desc: '連続する通常の追加入力を 1 つのターンにまとめます。',
+            },
+            uiStatusLineType: {
+                label: 'ステータスラインの種類（ui.status_line.type）',
+                desc: 'ステータスラインの方式です。builtin は Grok の表示項目、command はスクリプトの出力、disabled は非表示です。',
+            },
+            uiStatusLineItems: {
+                label: 'ステータスラインの項目（ui.status_line.items）',
+                desc: 'builtin で表示する項目と順序です（cwd / model / context / cost / turn-timer / session-name）。',
+            },
+            uiStatusLineCommand: {
+                label: 'ステータスラインのコマンド（ui.status_line.command）',
+                desc: 'command で出力を表示するスクリプトのパスまたはシェルコマンドです。',
+            },
+            uiStatusLinePadding: {
+                label: 'ステータスラインの余白（ui.status_line.padding）',
+                desc: '左右それぞれの余白の文字数です（最大 16）。',
+            },
+            uiStatusLineRefreshInterval: {
+                label: 'ステータスラインの更新間隔（ui.status_line.refresh_interval）',
+                desc: 'command のスクリプトを定期的に実行する間隔（秒）です（1〜86400）。',
+            },
+            voiceLanguage: {
+                label: '音声認識の言語（voice.language）',
+                desc: '音声認識の言語コードまたは auto です。',
+            },
+            voiceApiBase: {
+                label: '音声認識 API（voice.api_base）',
+                desc: '音声認識に使う HTTPS の API ルートです。',
+            },
+            voiceSampleRate: {
+                label: '音声のサンプリングレート（voice.sample_rate）',
+                desc: '音声認識のキャプチャのサンプリングレート（Hz）です。',
+            },
+            uiContextualHints: {
+                label: '状況別のヒント（ui.contextual_hints）',
+                desc: 'undo、plan_mode、image_input などのヒントごとの表示です。',
+            },
+            uiDisplayRefresh: {
+                label: 'ディスプレイ更新（ui.display_refresh）',
+                desc: 'ストリーミングとスクロールの更新間隔をディスプレイのリフレッシュレートに合わせます。',
+            },
+            uiNotifications: {
+                label: 'ターミナル通知（ui.notifications）',
+                desc: 'ターミナル通知の方式、条件、対象イベント、フックです。',
+            },
+            cliGrove: {
+                label: 'Grove 一括有効化（cli.grove）',
+                desc: 'grok clone とセッションのワークツリーの両方で Grove をオンにします。値は真偽値または Grove の種類名です。',
+            },
+            cliGroveWorktree: {
+                label: 'ワークツリーの Grove（cli.grove_worktree）',
+                desc: 'セッションのワークツリーの作り方（Grove またはコピー）です。値は真偽値または Grove の種類名です。',
+            },
+            worktreeAutoGc: {
+                label: 'ワークツリーの自動削除（worktree.auto_gc）',
+                desc: 'ワークツリーを自動で片付ける方針です。',
+            },
+            versionOverrides: {
+                label: 'バージョン別の設定（version_overrides）',
+                desc: 'CLI のバージョンごとに適用する設定の差分です。',
             },
             featuresWebFetch: {
                 label: 'web_fetch（features.web_fetch）',
                 desc: 'web_fetch ツールを有効にします。',
             },
+            featuresRemoteFetch: {
+                label: 'リモート取得（features.remote_fetch）',
+                desc: 'モデルカタログとアセットをオンラインで取得します。',
+            },
             featuresLspTools: {
                 label: 'LSP ツール（features.lsp_tools）',
-                desc: 'LSP ベースのコードツールをモデルへ公開します。',
+                desc: 'LSP のコード解析ツールをモデルへ公開します。',
             },
             featuresWriteFile: {
                 label: 'write ツール（features.write_file）',
-                desc: 'ファイル書き込みツールを有効にします。',
+                desc: 'write ツールを有効にします。',
             },
-            modelsImageDescription: {
-                label: '画像説明モデル（models.image_description）',
-                desc: '画像の内容を説明するときに使用するモデル ID です。現在の候補とカスタムモデル ID の両方を入力できます。',
+            featuresAskUserQuestion: {
+                label: '質問ツール（features.ask_user_question）',
+                desc: 'ユーザーへ質問する ask_user_question ツールを有効にします。',
             },
-            modelsMaxRetries: {
-                label: '推論の再試行回数（models.max_retries）',
-                desc: 'モデル推論が失敗した場合に行う全モデル共通の最大再試行回数です。',
-            },
-            modelsInferenceIdleTimeoutSecs: {
-                label: '推論アイドルタイムアウト（models.inference_idle_timeout_secs）',
-                desc: 'モデル推論のアイドルタイムアウト秒数（全体既定）です。既定は600秒です。',
-            },
-            modelsStreamToolCalls: {
-                label: 'ツール呼出しをストリーム（models.stream_tool_calls）',
-                desc: 'モデル要求でツール呼び出しをストリーミング形式にします。対応しない BYOK エンドポイントでは無効にします。',
-            },
-            toolsetFileToolset: {
-                label: 'ファイル編集方式（toolset.file_toolset）',
-                desc: 'standard は通常のファイル編集、hashline は行ハッシュを使う編集ツール方式です。既定は standard です。',
-            },
-            toolsetBashTimeoutSecs: {
-                label: 'bash実行時間（toolset.bash.timeout_secs）',
-                desc: 'フォアグラウンド bash コマンドの既定タイムアウト秒数です。既定は 120 秒です。',
-            },
-            toolsetBashOutputByteLimit: {
-                label: 'bash出力上限（toolset.bash.output_byte_limit）',
-                desc: 'bash コマンドから取得する出力の最大バイト数です。既定は 20000 バイトです。',
-            },
-            toolsetBashMaxTimeoutSecs: {
-                label: 'bash最大実行時間（toolset.bash.max_timeout_secs）',
-                desc: 'モデルが要求できるフォアグラウンド bash タイムアウトの上限秒数です。既定は 36000 秒です。',
-            },
-            toolsetBashAutoBackground: {
-                label: 'タイムアウト時にバックグラウンド化（toolset.bash.auto_background_on_timeout）',
-                desc: 'bash コマンドがタイムアウトしたとき終了せずバックグラウンド実行へ移します。既定は有効です。',
-            },
-            toolsetWebFetchProxyEndpoint: {
-                label: 'WebFetchプロキシ（toolset.web_fetch.proxy_endpoint）',
-                desc: 'web_fetch の外向き通信に使用するプロキシ URL を指定します。',
-            },
-            toolsetAskUserQuestionTimeoutEnabled: {
-                label: '質問タイムアウト有効化（toolset.ask_user_question.timeout_enabled）',
-                desc: 'ユーザーへの質問にタイムアウトを設けます。既定は有効です。',
-            },
-            toolsetAskUserQuestionTimeoutSecs: {
-                label: '質問タイムアウト秒数（toolset.ask_user_question.timeout_secs）',
-                desc: '質問の応答を待つ秒数です。既定は1800秒です。',
-            },
-            toolsetWebFetchAllowLocal: {
-                label: 'ローカル取得許可（toolset.web_fetch.allow_local）',
-                desc: 'web_fetch でループバック/ローカルホストへのアクセスを許可します（既定は SSRF 対策で無効）。',
-            },
-            uiCompactMode: {
-                label: 'コンパクト表示（ui.compact_mode）',
-                desc: 'TUI の余白や装飾を減らして、狭い端末に多くの内容を表示します。20行以下では自動的に使われます。',
-            },
-            uiScreenMode: {
-                label: '画面モード（ui.screen_mode）',
-                desc: 'fullscreen は標準の全画面TUI、minimal は確定済み出力を端末の通常スクロールバックへ残します。',
-            },
-            uiShowTimeline: {
-                label: 'タイムラインを表示（ui.show_timeline）',
-                desc: 'セッション内の進行を時系列のタイムラインとして表示します。',
-            },
-            uiSimpleMode: {
-                label: 'シンプル入力モード（ui.simple_mode）',
-                desc: 'Vim 入力モードを使わない簡素な入力操作にします。既定は有効です。',
-            },
-            uiTheme: {
-                label: 'TUIテーマ（ui.theme）',
-                desc: 'auto または組み込みの Grok Build カラーテーマを選びます。候補外の保存済みテーマも保持できます。',
-            },
-            uiRenderMermaid: {
-                label: 'Mermaid描画（ui.render_mermaid）',
-                desc: 'Mermaid 図の端末描画を自動判定、常時有効、無効から選びます。',
-            },
-            uiRememberToolApprovals: {
-                label: 'ツール承認を記憶（ui.remember_tool_approvals）',
-                desc: 'セッション中に許可したツール操作を記憶し、同じ承認確認の繰り返しを減らします。',
-            },
-            uiShowThinkingBlocks: {
-                label: '思考ブロックを表示（ui.show_thinking_blocks）',
-                desc: 'モデルの推論・思考ブロックを TUI に表示します。環境変数 GROK_SHOW_THINKING_BLOCKS と同じ機能です。',
-            },
-            uiPromptSuggestions: {
-                label: 'プロンプト候補（ui.prompt_suggestions）',
-                desc: '入力欄に状況に応じたプロンプト候補を表示します。',
-            },
-            uiScrollSpeed: {
-                label: 'スクロール速度（ui.scroll_speed）',
-                desc: 'TUI のスクロール速度を 1～100 で調整します。',
-            },
-            uiScrollMode: {
-                label: 'スクロール入力方式（ui.scroll_mode）',
-                desc: '入力機器を自動判定するか、ホイールまたはトラックパッド向けの挙動へ固定します。',
-            },
-            uiScrollLines: {
-                label: '1回のスクロール行数（ui.scroll_lines）',
-                desc: 'ホイール入力1回で移動する行数を 1～10 で指定します。',
-            },
-            uiInvertScroll: {
-                label: 'スクロール方向を反転（ui.invert_scroll）',
-                desc: 'マウスやトラックパッドによるTUIスクロールの方向を反転します。',
-            },
-            uiKeepTextSelection: {
-                label: 'テキスト選択の保持（ui.keep_text_selection）',
-                desc: '選択範囲を短く点滅、保持、単語選択向けの動作から選びます。候補外の保存済み値も保持できます。',
-            },
-            uiMaxThoughtsWidth: {
-                label: '思考表示の最大幅（ui.max_thoughts_width）',
-                desc: '思考/推論表示の最大列幅です（40〜500）。既定は120です。',
-            },
-            uiForkSecondaryModel: {
-                label: 'フォーク副モデル（ui.fork_secondary_model）',
-                desc: 'フォーク時に副エージェントで使うモデルを指定します。',
-            },
-            uiYolo: {
-                label: 'YOLOモード（ui.yolo）',
-                desc: 'すべての操作を自動承認する YOLO モードです。permission_mode=always-approve と等価です。既定は無効です。',
-            },
-            uiPermissionMode: {
-                label: '権限モード（ui.permission_mode）',
-                desc: 'ツール実行時の権限モードを選びます。既定は ask です。',
-            },
-            uiDefaultSelectedPermission: {
-                label: '承認の初期選択（ui.default_selected_permission）',
-                desc: '最初の承認プロンプトで初期選択される行を指定します。',
-            },
-            uiPageFlipOnSend: {
-                label: '送信時に最上部へ（ui.page_flip_on_send）',
-                desc: '送信時に投稿を画面最上部へスナップします。既定は有効です。',
-            },
-            uiAutoDarkTheme: {
-                label: 'OSダーク時テーマ（ui.auto_dark_theme）',
-                desc: 'theme=auto のとき OS がダークならこのテーマを使います。既定は groknight です。',
-            },
-            uiAutoLightTheme: {
-                label: 'OSライト時テーマ（ui.auto_light_theme）',
-                desc: 'theme=auto のとき OS がライトならこのテーマを使います。既定は grokday です。',
-            },
-            uiVimMode: {
-                label: 'vim操作（ui.vim_mode）',
-                desc: 'スクロールバックで vim 風のキー操作を有効にします。既定は無効です。',
-            },
-            uiHunkTrackerMode: {
-                label: '変更ハンク追跡（ui.hunk_tracker_mode）',
-                desc: 'ファイル変更ハンクの追跡範囲を選びます。agent_only はエージェントの変更のみ、all_dirty は未コミットの変更すべてを追跡し、off は追跡しません。既定は off です。',
-            },
-            uiVoiceCaptureMode: {
-                label: '音声キャプチャ方式（ui.voice_capture_mode）',
-                desc: '音声入力の操作方式（トグル/長押し）を選びます。既定は hold です。',
-            },
-            uiVoiceKeybindEnabled: {
-                label: '音声入力ショートカット（ui.voice_keybind_enabled）',
-                desc: 'Ctrl+Space / F8 での音声入力ショートカットを有効にします。無効にしても /voice からは使えます。既定は有効です。',
-            },
-            uiVoiceSttLanguage: {
-                label: '音声入力言語（ui.voice_stt_language）',
-                desc: '音声入力（STT）の言語コードです（auto も可）。既定は en です。',
-            },
-            uiMouseReportingToggle: {
-                label: 'マウスレポート切替（ui.mouse_reporting_toggle）',
-                desc: 'Ctrl+R でマウスレポートの切り替えを有効にします。',
-            },
-            uiCancelSubagentsOnTurnCancel: {
-                label: 'ターン中断時のサブエージェント（ui.cancel_subagents_on_turn_cancel）',
-                desc: 'ターン中断時にサブエージェントを停止するか継続するかを指定します。既定は ask です。',
-            },
-            uiCursorBlink: {
-                label: 'カーソル点滅（ui.cursor_blink）',
-                desc: '起動時のカーソル点滅を制御します（設定画面なし・config専用）。',
-            },
-            uiCombineQueuedPrompts: {
-                label: 'キュー投稿を結合（ui.combine_queued_prompts）',
-                desc: '連続してキューした投稿を1ターンに結合します。既定は無効です。',
-            },
-            uiContextualHints: {
-                label: '個別ヒント制御（ui.contextual_hints）',
-                desc: 'ヒントの種類ごとに表示するかどうかを指定します。',
-            },
-            uiDisplayRefresh: {
-                label: 'ディスプレイ更新（ui.display_refresh）',
-                desc: '画面のリフレッシュレートを検出し、描画・スクロールの更新間隔を合わせる設定です。',
-            },
-            uiNotifications: {
-                label: 'ターミナル通知（ui.notifications）',
-                desc: 'ターミナル通知の方式、発火条件、対象イベント、フックを設定します。',
-            },
-            featuresRemoteFetch: {
-                label: 'リモート設定取得（features.remote_fetch）',
-                desc: 'xAI バックエンドからモデルカタログとリモート設定を取得します。無効時は同梱のモデル情報だけを使います。既定は有効です。',
+            featuresBackendTools: {
+                label: 'サーバー側検索（features.backend_tools）',
+                desc: 'web_search と x_search をサーバー側で実行します。',
             },
             featuresImageGen: {
                 label: '画像生成（features.image_gen）',
-                desc: 'Grok Build の画像生成ツールを有効にします。',
+                desc: 'image_gen と /imagine を有効にします。',
+            },
+            featuresImageGenModelOverride: {
+                label: '画像生成モデル（features.image_gen_model_override）',
+                desc: 'image_gen で使う Imagine モデル ID です。',
+            },
+            featuresImageEditModelOverride: {
+                label: '画像編集モデル（features.image_edit_model_override）',
+                desc: 'image_edit で使う Imagine モデル ID です。',
             },
             featuresVideoGen: {
                 label: '動画生成（features.video_gen）',
-                desc: 'Grok Build の動画生成ツールを有効にします。',
+                desc: '動画ツールと /imagine-video を有効にします。',
+            },
+            featuresVoiceMode: {
+                label: '音声入力（features.voice_mode）',
+                desc: '音声入力（音声からテキストへの変換）を有効にします。',
             },
             featuresTelemetry: {
                 label: 'テレメトリ（features.telemetry）',
-                desc: '製品分析テレメトリの送信モードです。有効・無効のほか、セッション指標だけを送る session_metrics を選べます。',
+                desc: '製品分析テレメトリのモードです。有効はすべて、session_metrics はセッション指標だけを送り、無効とオフは送信なしです。',
                 choice: {
                     enabled: '有効（true）',
                     sessionMetrics: 'セッション指標のみ（session_metrics）',
@@ -524,679 +958,331 @@ export default {
             },
             featuresFeedback: {
                 label: 'フィードバック（features.feedback）',
-                desc: 'フィードバック機能を有効にします。既定は有効です。',
-            },
-            featuresCodebaseIndexing: {
-                label: 'コードベース索引（features.codebase_indexing）',
-                desc: 'コードグラフの索引を作成します。true で Git リポジトリを索引し、include / exclude の glob 配列で対象を絞り込めます。',
-            },
-            featuresTwoPassCompaction: {
-                label: '2パス圧縮（features.two_pass_compaction）',
-                desc: '長い会話の前半を、圧縮の前にバックグラウンドで要約しておきます。既定は有効です。',
-            },
-            workflowsEnabled: {
-                label: 'ワークフロー（workflows.enabled）',
-                desc: 'バックグラウンドワークフロー（workflow ツール等）を有効にします。既定は有効です。',
-            },
-            telemetryTraceUpload: {
-                label: 'トレース送信（telemetry.trace_upload）',
-                desc: '診断用のセッショントレースを xAI へアップロードできるようにします。',
-            },
-            telemetryMixpanelEnabled: {
-                label: 'Mixpanel 送信（telemetry.mixpanel_enabled）',
-                desc: 'Mixpanel へのプロダクト分析データ送信を有効にします。',
-            },
-            telemetryEventsUrl: {
-                label: 'イベント送信先（telemetry.events_url）',
-                desc: 'イベントを自社コレクターへ送る場合の送信先 URL。未設定なら既定の送信先を使います。',
-            },
-            telemetryEventsApiKey: {
-                label: 'イベント送信の認証キー（telemetry.events_api_key）',
-                desc: '自社コレクターが認証を要求する場合のトークン。',
-            },
-            telemetryOtelEnabled: {
-                label: '外部 OTEL 送信（telemetry.otel_enabled）',
-                desc: '自社の OTLP コレクターへ使用状況を送る外部 OpenTelemetry 連携を有効にします。',
-            },
-            telemetryOtelEndpoint: {
-                label: 'OTLP エンドポイント（telemetry.otel_endpoint）',
-                desc: '外部 OpenTelemetry の送信先ベース URL。',
-            },
-            telemetryOtelProtocol: {
-                label: 'OTLP プロトコル（telemetry.otel_protocol）',
-                desc: '外部 OpenTelemetry の送信プロトコル。',
-            },
-            telemetryOtelMetricsExporter: {
-                label: 'OTEL メトリクス出力（telemetry.otel_metrics_exporter）',
-                desc: 'メトリクスの出力先。otlp=コレクターへ送信、console=標準出力、none=送信しない。',
-            },
-            telemetryOtelLogsExporter: {
-                label: 'OTEL ログ出力（telemetry.otel_logs_exporter）',
-                desc: 'ログの出力先。otlp=コレクターへ送信、console=標準出力、none=送信しない。',
-            },
-            telemetryOtelLogUserPrompts: {
-                label: 'プロンプト本文を送信（telemetry.otel_log_user_prompts）',
-                desc: '外部 OpenTelemetry の送信内容に入力プロンプトの本文を含めます。',
-            },
-            telemetryOtelLogToolDetails: {
-                label: 'ツール詳細を送信（telemetry.otel_log_tool_details）',
-                desc: '外部 OpenTelemetry の送信内容にツール呼び出しの詳細を含めます。',
-            },
-            cliUseLeader: {
-                label: 'リーダープロセスを使用（cli.use_leader）',
-                desc: '複数の Grok Build セッションを調整するリーダープロセスを利用します。',
-            },
-            compatCursorSkills: {
-                label: 'Cursorスキルを検出（compat.cursor.skills）',
-                desc: 'Cursor のスキルディレクトリを検索し、Grok Build から利用できるようにします。既定は有効です。',
-            },
-            compatCursorRules: {
-                label: 'Cursorルールを検出（compat.cursor.rules）',
-                desc: '.cursor/rules のルールを検索し、Grok Build の指示として読み込みます。既定は有効です。',
-            },
-            compatCursorAgents: {
-                label: 'Cursorエージェントを検出（compat.cursor.agents）',
-                desc: 'Cursor のエージェント定義を検索し、Grok Build から利用できるようにします。既定は有効です。',
-            },
-            compatCursorMcps: {
-                label: 'Cursor MCPを検出（compat.cursor.mcps）',
-                desc: 'Cursor の mcp.json 設定を検索し、MCP サーバーを取り込みます。既定は有効です。',
-            },
-            compatCursorHooks: {
-                label: 'Cursorフックを検出（compat.cursor.hooks）',
-                desc: 'Cursor のフック設定を検索し、互換フックとして読み込みます。既定は有効です。',
-            },
-            compatClaudeSkills: {
-                label: 'Claudeスキルを検出（compat.claude.skills）',
-                desc: 'Claude Code のスキルディレクトリを検索し、Grok Build から利用できるようにします。既定は有効です。',
-            },
-            compatClaudeRules: {
-                label: 'Claudeルールを検出（compat.claude.rules）',
-                desc: 'Claude 互換のルールを検索し、Grok Build の指示として読み込みます。既定は有効です。',
-            },
-            compatClaudeAgents: {
-                label: 'Claudeエージェントを検出（compat.claude.agents）',
-                desc: 'Claude のエージェント定義と CLAUDE.md / CLAUDE.local.md を検索します。既定は有効です。',
-            },
-            compatClaudeMcps: {
-                label: 'Claude MCPを検出（compat.claude.mcps）',
-                desc: 'Claude Code の MCP 設定を検索し、MCP サーバーを取り込みます。既定は有効です。',
-            },
-            compatClaudeHooks: {
-                label: 'Claudeフックを検出（compat.claude.hooks）',
-                desc: 'Claude Code のフック設定を検索し、互換フックとして読み込みます。既定は有効です。',
-            },
-            modelsExtraHeaders: {
-                label: 'モデル共通ヘッダー（models.extra_headers）',
-                desc: 'すべてのモデル要求へ追加する HTTP ヘッダーのマップです。モデル個別の設定が優先します。',
-            },
-            modelsAllowedModels: {
-                label: 'モデル許可リスト（models.allowed_models）',
-                desc: 'モデル選択画面、既定モデル、-m で選べるモデルを glob パターンで制限する配列です。',
-            },
-            modelsHiddenModels: {
-                label: '非表示モデル（models.hidden_models）',
-                desc: 'モデル選択画面から隠すモデル ID の配列です。-m では引き続き指定できます。',
-            },
-            modelsDisabledModels: {
-                label: '無効モデル（models.disabled_models）',
-                desc: 'モデルカタログから完全に除外するモデル ID の配列です。非表示設定より優先します。',
-            },
-            customModels: {
-                label: 'カスタムモデル定義（model.<id>）',
-                desc: 'BYOK モデルごとの API 接続、認証、サンプリング、コンテキスト、再試行設定を定義します。',
-            },
-            toolsetWebFetchAllowedDomains: {
-                label: 'Web取得許可ドメイン（toolset.web_fetch.allowed_domains）',
-                desc: 'web_fetch がアクセスできるドメインを上書きする文字列配列です。',
-            },
-            mcpServers: {
-                label: 'MCPサーバー定義（mcp_servers.<name>）',
-                desc: 'MCP サーバーごとの stdio または HTTP 接続、環境変数、ヘッダー、タイムアウトを定義します。',
-            },
-            permission: {
-                label: '権限規則（permission）',
-                desc: 'ツール利用の allow、deny、ask 配列と、action・tool・pattern を持つ詳細規則を定義します。',
-            },
-            subagentsToggle: {
-                label: 'サブエージェント個別状態（subagents.toggle）',
-                desc: 'サブエージェントの種類ごとに有効・無効を指定するマップです。',
-            },
-            subagentsModels: {
-                label: 'サブエージェントモデル（subagents.models）',
-                desc: 'サブエージェントの種類ごとに使用するモデル ID を指定するマップです。',
-            },
-            skillsPaths: {
-                label: '追加スキルパス（skills.paths）',
-                desc: 'Grok Build が追加で検索するスキルディレクトリの配列です。',
-            },
-            skillsDisabled: {
-                label: '無効スキル（skills.disabled）',
-                desc: '検出はするものの有効化しないスキル名の配列です。',
-            },
-            skillsIgnore: {
-                label: 'スキャン除外パス（skills.ignore）',
-                desc: 'スキル探索から除外するパスの一覧です。',
-            },
-            pluginsPaths: {
-                label: '追加プラグインパス（plugins.paths）',
-                desc: 'Grok Build が追加で検索するプラグインディレクトリの配列です。',
-            },
-            pluginsDisabled: {
-                label: '無効プラグイン（plugins.disabled）',
-                desc: '検出はするものの有効化しないプラグイン名の配列です。',
-            },
-            pluginsEnabled: {
-                label: '有効プラグイン（plugins.enabled）',
-                desc: '明示的に有効化するプラグイン名の配列です。プロジェクトプラグインが既定で無効な場合に使用します。',
-            },
-            modelsPromptSuggestion: {
-                label: '入力候補モデル（models.prompt_suggestion）',
-                desc: '次の入力候補（ゴーストテキスト）の生成に使うモデル ID です。未設定ならリモート設定、次にセッションのモデルを使います。',
-            },
-            modelsAgentType: {
-                label: '既定のエージェント種別（models.agent_type）',
-                desc: 'モデル個別に agent_type を指定していないモデルで使うエージェント定義の種別です。',
-            },
-            modelsRateLimitRetryThreshold: {
-                label: 'レート制限時の試行上限（models.rate_limit_retry_threshold）',
-                desc: 'レート制限を受けたリクエストの合計試行回数の上限（全モデル共通の既定）です。max_retries を超えません。設定するとサブエージェントの 429 待機ループは使われません。',
-            },
-            modelsSubagentRateLimitMaxAttempts: {
-                label: 'サブエージェントの 429 待機回数（models.subagent_rate_limit_max_attempts）',
-                desc: 'rate_limit_retry_threshold が未設定のとき、サブエージェントが 429 応答で待機・再試行する最大回数です（0〜32、0 で待機しません）。既定は 8 回です。',
-            },
-            modelProviders: {
-                label: 'カスタムプロバイダー定義（model_providers.<name>）',
-                desc: '[model.<id>] の model_provider から参照する名前付きのモデルプロバイダーを定義します。',
-            },
-            agentName: {
-                label: 'エージェント定義名（agent.name）',
-                desc: 'セッションで使う組み込みまたは検出済みのエージェント定義の名前です。',
-            },
-            agentDefinition: {
-                label: 'エージェント定義ファイル（agent.definition）',
-                desc: 'YAML frontmatter を持つエージェント定義 Markdown ファイルのパスです。その定義でセッションを動かします。',
-            },
-            agentSystemPromptLabel: {
-                label: 'システムプロンプトの名乗り（agent.system_prompt_label）',
-                desc: 'システムプロンプトで使うアシスタントの名乗りを全体で指定します。モデル個別の指定が優先します。',
-            },
-            promptSuggestionsMaxOutputTokens: {
-                label: '入力候補の出力トークン数（prompt_suggestions.max_output_tokens）',
-                desc: '入力候補を生成するときの表示用出力トークン数です（16〜256）。',
-            },
-            promptSuggestionsTemperature: {
-                label: '入力候補の temperature（prompt_suggestions.temperature）',
-                desc: '入力候補を生成するときのサンプリング温度です。',
-            },
-            promptSuggestionsReasoningEffort: {
-                label: '入力候補の推論レベル（prompt_suggestions.reasoning_effort）',
-                desc: '入力候補を生成するときの推論レベルです。none または未設定では推論を行いません。',
-            },
-            longReasoningReminderEnabled: {
-                label: '長考リマインダー（long_reasoning_reminder.enabled）',
-                desc: '1 回のモデル呼び出しで長い推論が行われたとき、ターンの途中で簡潔に考えるよう促すリマインダーを挿入します。既定は無効です。',
-            },
-            longReasoningReminderTokens: {
-                label: '長考と判定するトークン数（long_reasoning_reminder.tokens）',
-                desc: '1 回のモデル呼び出しでこの推論トークン数以上を使うと長考とみなします（100〜200000）。既定は 1000 です。',
-            },
-            longReasoningReminderDelay: {
-                label: 'リマインダーまでの呼び出し回数（long_reasoning_reminder.delay）',
-                desc: '長考の後、リマインダーを挿入するまでに待つモデル呼び出しの回数です（0〜10）。既定は 1 です。',
-            },
-            toolsetBashLoginShellCapture: {
-                label: 'ログインシェル環境の取り込み（toolset.bash.login_shell_capture）',
-                desc: 'bash の実行にログインシェルの環境を取り込みます。無効にすると .bashrc / .zshrc などのエイリアス・関数や PATH・export が反映されない場合があります。',
-            },
-            toolsetImageGenBaseUrl: {
-                label: '画像生成エンドポイント（toolset.image_gen.base_url）',
-                desc: 'カスタムモデルエンドポイント利用時に image_gen / image_edit が使う画像 API の URL です。未設定ならこれらのツールは無効のままです。',
-            },
-            toolsetImageGenEnvKey: {
-                label: '画像生成の認証環境変数（toolset.image_gen.env_key）',
-                desc: 'toolset.image_gen.base_url へ送るベアラートークンを保持する環境変数名（文字列または配列）です。最初に設定されているものを使います。',
-            },
-            toolsetVideoGenBaseUrl: {
-                label: '動画生成エンドポイント（toolset.video_gen.base_url）',
-                desc: 'カスタムモデルエンドポイント利用時に動画ツールが使う動画 API の URL です。未設定なら動画ツールは無効のままです。',
-            },
-            toolsetVideoGenEnvKey: {
-                label: '動画生成の認証環境変数（toolset.video_gen.env_key）',
-                desc: 'toolset.video_gen.base_url へ送るベアラートークンを保持する環境変数名（文字列または配列）です。最初に設定されているものを使います。',
-            },
-            toolsMediaGenMaxParallelImageGenCalls: {
-                label: '画像生成の同時呼び出し数（tools.media_gen.max_parallel_image_gen_calls）',
-                desc: '1 回のモデルステップで並列に実行する image_gen / image_edit 呼び出しの上限です。',
-            },
-            toolsMediaGenMaxParallelVideoGenCalls: {
-                label: '動画生成の同時呼び出し数（tools.media_gen.max_parallel_video_gen_calls）',
-                desc: '1 回のモデルステップで並列に実行する video_gen 呼び出しの上限です。',
-            },
-            disableWebSearch: {
-                label: 'Web 検索ツールを外す（disable_web_search）',
-                desc: 'web_search ツールをモデルが使えるツールから外します。',
-            },
-            storageCleanupTtlDays: {
-                label: 'セッション自動削除の日数（storage.cleanup_ttl_days）',
-                desc: '使われていないセッションのフォルダをこの日数で削除し、稼働中のセッションからも古いメディアと端末ログを削除します。未設定または 0 で自動削除しません。',
-            },
-            autoModeEnabled: {
-                label: 'Auto 権限モード（auto_mode.enabled）',
-                desc: 'ツール実行の可否を自動で判断する Auto 権限モードを使えるようにします。',
-            },
-            defaultAutoMode: {
-                label: '既定で Auto モード（default_auto_mode）',
-                desc: 'セッション個別の指定がないとき、新しいセッションを Auto 権限モードで開始します。',
-            },
-            doomLoopRecoveryEnabled: {
-                label: 'ツール呼び出しのループ回復（doom_loop_recovery.enabled）',
-                desc: '同じツール呼び出しを繰り返すループを検出したとき、再サンプリングして抜け出します。無効にするとこの回復を行いません。',
-            },
-            pathNotFoundHints: {
-                label: 'パス未検出時のヒント（path_not_found_hints）',
-                desc: 'ファイルが見つからないエラーに、作業ディレクトリの案内や似た名前の候補を添えます。',
-            },
-            harnessDisableWorkspaceTeleport: {
-                label: 'ターンごとのスナップショット停止（harness.disable_workspace_teleport）',
-                desc: 'ターンごとに作業領域のスナップショットを取る処理を停止します。',
-            },
-            subagentsLimitBehavior: {
-                label: '同時実行上限時の動作（subagents.limit_behavior）',
-                desc: 'サブエージェントの同時実行数が上限に達したとき、待機させる（queue）か失敗させる（fail）かを指定します。',
-            },
-            subagentsMaxConcurrent: {
-                label: 'サブエージェント同時実行数（subagents.max_concurrent）',
-                desc: '同時に実行できるサブエージェントの上限です。',
-            },
-            subagentsMaxDepth: {
-                label: 'サブエージェントの入れ子の深さ（subagents.max_depth）',
-                desc: 'サブエージェントがさらにサブエージェントを起動できる深さの上限です（1 以上）。',
-            },
-            mcpMaxOutputBytes: {
-                label: 'MCP 出力サイズ上限（mcp.max_output_bytes）',
-                desc: 'MCP ツールの出力サイズをこのバイト数までに制限します。',
-            },
-            shellEnvPolicyInherit: {
-                label: '引き継ぐ環境変数の範囲（shell_environment_policy.inherit）',
-                desc: 'ツールの子プロセスへ引き継ぐ親の環境変数の範囲です。all はすべて、core は PATH・HOME など最小限、none は空から始めます。既定は all です。',
-            },
-            shellEnvPolicyIgnoreDefaultExcludes: {
-                label: '既定の除外を無視（shell_environment_policy.ignore_default_excludes）',
-                desc: '名前に KEY / SECRET / TOKEN を含む環境変数を子プロセスから除外する既定の規則を適用しません。既定は無効です。',
-            },
-            shellEnvPolicyExclude: {
-                label: '除外する環境変数（shell_environment_policy.exclude）',
-                desc: 'ツールの子プロセスから取り除く環境変数名のパターンの配列です。',
-            },
-            shellEnvPolicyIncludeOnly: {
-                label: '許可する環境変数（shell_environment_policy.include_only）',
-                desc: '指定すると、ツールの子プロセスはこのパターンに一致する環境変数だけを受け取ります。',
-            },
-            shellEnvPolicySet: {
-                label: '設定する環境変数（shell_environment_policy.set）',
-                desc: 'ツールの子プロセスへ設定する環境変数の値のマップです。',
-            },
-            toolsetWebSearchAllowedDomains: {
-                label: 'Web 検索の許可ドメイン（toolset.web_search.allowed_domains）',
-                desc: 'web_search の検索対象に含めるドメインの配列です。',
-            },
-            toolsetWebSearchExcludedDomains: {
-                label: 'Web 検索の除外ドメイン（toolset.web_search.excluded_domains）',
-                desc: 'web_search の検索対象から除外するドメインの配列です。',
-            },
-            disabledMcpServers: {
-                label: '無効 MCP サーバー（disabled_mcp_servers）',
-                desc: '[mcp_servers] の定義を残したまま起動しない MCP サーバー名の配列です。',
-            },
-            disabledMcpTools: {
-                label: '無効 MCP ツール（disabled_mcp_tools）',
-                desc: 'MCP サーバー名ごとに、使わせないツール名を並べたマップです。',
-            },
-            hooks: {
-                label: 'フック定義（hooks.<event>）',
-                desc: 'PreToolUse や Stop などのライフサイクルイベントごとに、マッチャーと実行するコマンドを定義します。',
-            },
-            memoryV2Enabled: {
-                label: 'メモリ v2（memory_v2.enabled）',
-                desc: 'メモリ機能（v2）のオン/オフです。設定すると memory.enabled より優先されます。既定は無効です。',
-            },
-            memoryV2CompactIndexEnabled: {
-                label: 'メモリ索引の簡略表示（memory_v2.compact_index_enabled）',
-                desc: 'システムプロンプトへ注入するメモリ索引をタイトルだけにして、より多くのトピックを収めます。',
-            },
-            memoryV2BatchDreamEnabled: {
-                label: 'バッチ Dream（memory_v2.batch_dream_enabled）',
-                desc: 'メモリの整理（Dream）を、トピック一覧全体を参照しながらノートをまとめて処理するバッチ方式で実行します。',
-            },
-            memoryV2BatchDreamMaxRunSecs: {
-                label: 'バッチ Dream の最大実行時間（memory_v2.batch_dream_max_run_secs）',
-                desc: '1 回のバッチ Dream の実行時間の上限（秒、60〜3600）です。処理しきれなかったノートは次回に持ち越されます。',
-            },
-            memoryV2BatchDreamMaxCallsPerBatch: {
-                label: 'バッチあたりのモデル呼び出し数（memory_v2.batch_dream_max_calls_per_batch）',
-                desc: 'バッチ Dream の 1 バッチで行うモデル呼び出しの上限です（2〜16）。',
-            },
-            memoryV2BatchDreamMaxBatchNoteBytes: {
-                label: 'バッチあたりのノート量（memory_v2.batch_dream_max_batch_note_bytes）',
-                desc: 'バッチ Dream の 1 バッチで扱うノートのバイト数の上限です（16384〜262144）。',
-            },
-            memoryV2ArchivedRetentionDays: {
-                label: 'アーカイブの保持日数（memory_v2.archived_retention_days）',
-                desc: 'アーカイブしたメモリの観察ファイルを保持する日数です。既定は 30 日です。',
-            },
-            memoryV2JobRetentionDays: {
-                label: 'キャプチャジョブの保持日数（memory_v2.job_retention_days）',
-                desc: '完了したメモリのキャプチャジョブ情報を保持する日数です。既定は 14 日です。',
-            },
-            memoryV2DailyTokenCap: {
-                label: 'メモリの 1 日あたりトークン上限（memory_v2.daily_token_cap）',
-                desc: 'メモリ処理が直近 24 時間に使えるモデルトークン数の上限です（1000000 以上）。超えるとキャプチャを一時停止します。',
-            },
-            cliNpmRegistry: {
-                label: 'npm レジストリ（cli.npm_registry）',
-                desc: '自動更新が使用する npm レジストリの URL です。',
-            },
-            cliWorktreeType: {
-                label: 'ワークツリー作成方式（cli.worktree_type）',
-                desc: 'ワークツリーの作成方式（linked / standalone / git）です。grove / copy などの綴りはワークツリーの Grove 設定として扱われます。',
-            },
-            cliSessionPickerGrouped: {
-                label: 'セッションをリポジトリ別に表示（cli.session_picker_grouped）',
-                desc: 'セッション選択画面と CLI の一覧で、セッションをリポジトリごとにまとめて表示します。',
-            },
-            cliSessionRegistry: {
-                label: 'セッションレジストリ参加（cli.session_registry）',
-                desc: 'プロセスをまたいでセッションを共有するセッションレジストリに参加します。',
-            },
-            cliGrove: {
-                label: 'Grove 一括有効化（cli.grove）',
-                desc: 'grok clone とセッション（-w）のワークツリーの両方で Grove を使います。真偽値または Grove の種類名を指定します。',
-            },
-            cliGroveWorktree: {
-                label: 'ワークツリーの Grove（cli.grove_worktree）',
-                desc: 'セッション（-w）のワークツリーを Grove とコピーのどちらで作るかを、真偽値または Grove の種類名で指定します。',
-            },
-            dashboardEnabled: {
-                label: 'エージェントダッシュボード（dashboard.enabled）',
-                desc: 'エージェントダッシュボードを表示します。',
-            },
-            dashboardGrouping: {
-                label: 'ダッシュボードのグループ化（dashboard.grouping）',
-                desc: 'ダッシュボードの行を状態（state）とディレクトリ（directory）のどちらでまとめるかを指定します。',
-            },
-            uiTimestamps: {
-                label: '時刻表示（ui.timestamps）',
-                desc: 'メッセージに時刻を表示する範囲です。off は表示せず、minimal は自分の入力と各ターンの所要時間の行のみ、on はすべてのメッセージに表示します。',
-            },
-            uiToolCallDensity: {
-                label: 'ツール呼び出しの表示量（ui.tool_call_density）',
-                desc: 'トランスクリプトに表示するツール呼び出しの詳しさです。detailed は編集差分やシェル出力まで表示し、compact 系ほど要約行へ折りたたみます。',
-            },
-            uiConfirmBeforeRewind: {
-                label: '巻き戻し前に確認（ui.confirm_before_rewind）',
-                desc: '会話履歴を巻き戻す前に確認します。既定は有効です。',
-            },
-            uiDashboardPreview: {
-                label: 'ダッシュボードのプレビュー（ui.dashboard_preview）',
-                desc: 'ダッシュボードに、選択中セッションのプレビューと返信パネルを表示します。既定は有効です。',
-            },
-            uiFollowUpBehavior: {
-                label: '実行中の追加入力（ui.follow_up_behavior）',
-                desc: 'ターンの実行中に送った追加入力を、キューに積む（queue）か、次の安全な時点で割り込ませる（steer）かを指定します。既定は queue です。',
-            },
-            uiStatusLineType: {
-                label: 'ステータスライン（ui.status_line.type）',
-                desc: 'ショートカットバーの上にステータスライン行を表示します。command は ui.status_line.command の出力を表示します。既定は disabled です。',
-            },
-            uiStatusLineCommand: {
-                label: 'ステータスラインのコマンド（ui.status_line.command）',
-                desc: 'ステータスラインに表示する内容を出力するスクリプトです。',
-            },
-            voiceLanguage: {
-                label: '音声入力の言語（voice.language）',
-                desc: '音声入力（STT）の言語コードまたは auto です。ui.voice_stt_language を設定した場合はそちらが優先されます。',
-            },
-            voiceApiBase: {
-                label: '音声入力 API（voice.api_base）',
-                desc: '音声入力（STT）に使う HTTPS の API ルートです。未設定なら xAI API のベース URL を使います。',
-            },
-            voiceSampleRate: {
-                label: '音声のサンプリングレート（voice.sample_rate）',
-                desc: '音声入力のキャプチャに使うサンプリングレート（Hz）です。',
-            },
-            worktreeAutoGc: {
-                label: 'ワークツリーの自動削除（worktree.auto_gc）',
-                desc: 'セッション用ワークツリーを自動で片付ける条件を定義します。',
-            },
-            versionOverrides: {
-                label: 'バージョン別の設定（version_overrides）',
-                desc: 'CLI のバージョンごとに適用する設定の差分を定義します。',
-            },
-            featuresAskUserQuestion: {
-                label: '質問ツール（features.ask_user_question）',
-                desc: 'ask_user_question ツールで、モデルがユーザーへ質問できるようにします。既定は有効です。',
-            },
-            featuresBackendTools: {
-                label: 'サーバー側検索（features.backend_tools）',
-                desc: 'web_search と x_search をサーバー側で実行します。既定は有効です。',
-            },
-            featuresImageGenModelOverride: {
-                label: '画像生成モデル（features.image_gen_model_override）',
-                desc: 'image_gen で使う Imagine モデル ID です。未設定ならリモート設定の既定を使います。',
-            },
-            featuresImageEditModelOverride: {
-                label: '画像編集モデル（features.image_edit_model_override）',
-                desc: 'image_edit で使う Imagine モデル ID です。',
-            },
-            featuresVoiceMode: {
-                label: '音声入力（features.voice_mode）',
-                desc: '音声入力（音声からテキストへの変換）を有効にします。既定は有効です。',
+                desc: 'フィードバックの案内と /feedback を有効にします。',
             },
             featuresFeedbackTraceCard: {
                 label: 'フィードバック時のトレース送信確認（features.feedback_trace_card）',
-                desc: '/feedback の後に、トレースのアップロードへの同意を確認します。既定は無効です。',
+                desc: '/feedback の後に、トレースのアップロードへの同意を確認します。',
+            },
+            featuresTwoPassCompaction: {
+                label: '2 パス圧縮（features.two_pass_compaction）',
+                desc: '長い会話の前半を、圧縮の前にバックグラウンドで要約します。',
             },
             featuresCompactionMode: {
                 label: '圧縮方式（features.compaction_mode）',
-                desc: '会話の圧縮方式（summary / transcript / segments）を指定します。',
+                desc: '会話の圧縮方式です（summary / transcript / segments）。',
             },
             featuresCompactionDetail: {
                 label: '圧縮の詳細度（features.compaction_detail）',
-                desc: 'segments 方式の圧縮で原文を残す度合い（none / minimal / balanced / verbose）です。',
+                desc: 'segments 方式で原文を残す度合いです（none / minimal / balanced / verbose）。',
             },
             featuresCompactionToolChoice: {
                 label: '圧縮時のツール選択（features.compaction_tool_choice）',
-                desc: '圧縮処理のモデル呼び出しで使うツール選択のヒントです。',
+                desc: '圧縮のときに使うツール選択のヒントです。',
             },
             featuresCompactionVerbatimInput: {
                 label: '原文から要約（features.compaction_verbatim_input）',
-                desc: '短縮したコピーではなく、会話の原文を要約します。既定は有効です。',
+                desc: '短縮したコピーではなく会話の原文を要約します。',
             },
             featuresSessionRecap: {
                 label: 'セッションの振り返り（features.session_recap）',
-                desc: '/recap と、離席から戻ったときの自動の振り返りを有効にします。既定は有効です。',
+                desc: '/recap と、離席から戻ったときの自動の振り返りを有効にします。',
             },
             featuresSessionSearch: {
                 label: 'セッション検索（features.session_search）',
-                desc: 'SQLite によるセッション検索インデックスを有効にします。既定は有効です。',
+                desc: 'SQLite のセッション検索インデックスを有効にします。',
             },
             featuresTurnSummary: {
                 label: 'ターン要約（features.turn_summary）',
-                desc: 'エージェントダッシュボードにターンごとの要約を表示します。既定は有効です。',
+                desc: 'エージェントダッシュボードにターンごとの要約を表示します。',
             },
             featuresTitleRefresh: {
                 label: 'タイトルの自動更新（features.title_refresh）',
-                desc: 'セッションの序盤にセッションタイトルを自動で更新します。',
+                desc: 'セッションの序盤にタイトルを自動で更新します。',
             },
             featuresCancelRewind: {
                 label: 'キャンセル時の入力復元（features.cancel_rewind）',
-                desc: 'ターンの最初の動作より前に Ctrl+C を押すと、入力を元に戻します。既定は有効です。',
+                desc: 'ターンの最初の動作より前の Ctrl+C で入力を元に戻します。',
             },
             featuresAutoWake: {
                 label: '自動再開（features.auto_wake）',
-                desc: 'バックグラウンドタスクやサブエージェントが終わると、すぐに会話を続けます。既定は有効です。',
+                desc: 'バックグラウンドタスクやサブエージェントが終わると、すぐに会話を続けます。',
             },
             featuresActiveAgentMessages: {
                 label: '実行中エージェントへの追加指示（features.active_agent_messages）',
-                desc: 'モデルが作成した追加の指示を、実行中の配下のエージェントへ送れるようにします。既定は無効です。',
-            },
-            featuresSubagentBundle: {
-                label: 'スキルバンドルの読み込み（features.subagent_bundle）',
-                desc: 'デーモン経路の組み込みスキルを、バージョン管理されたスキルバンドルから読み込みます。起動時に読み込まれます。既定は有効です。',
+                desc: 'モデルが作成した追加の指示を、実行中の配下のエージェントへ送ります。',
             },
             featuresSubagentModelInheritance: {
                 label: 'サブエージェントのモデル継承（features.subagent_model_inheritance）',
-                desc: '選べるモデルがすべて xAI のモデルのとき、サブエージェントの model 引数を隠して親のモデルを継承させます。セッション開始時に読み込まれます。既定は無効です。',
+                desc: '選べるモデルがすべて xAI のとき、サブエージェントの model 引数を隠して親のモデルを継承させます。',
             },
             featuresSubagentWorktreeSnapshot: {
                 label: 'サブエージェントの作業保存（features.subagent_worktree_snapshot）',
-                desc: '完了したサブエージェントの作業コピーを git の ref としてリポジトリへ保存し、再開時に復元します。既定は無効です。',
+                desc: '完了したサブエージェントの作業コピーを git の ref としてリポジトリへ保存し、再開時に復元します。',
             },
-            featuresWorkflowConversion: {
-                label: 'ワークフローの変換（features.workflow_conversion）',
-                desc: 'デーモン経路で旧形式（.rhai）のワークフローを名前で実行したとき、JavaScript モジュールへの変換をモデルに依頼してから実行します。既定は有効です。',
+            featuresWorktreeInheritsMainApprovals: {
+                label: 'ワークツリーの承認の継承（features.worktree_inherits_main_approvals）',
+                desc: 'メインのチェックアウトで保存した「常に許可」の回答を git ワークツリーでも使います。',
             },
             featuresSupportPermission: {
                 label: '権限確認（features.support_permission）',
-                desc: 'ツールの実行について、エージェントが権限を確認できるようにします。',
+                desc: 'ツールの実行についてエージェントが権限を確認します。',
             },
             featuresRememberMode: {
                 label: '権限モードを記憶（features.remember_mode）',
-                desc: '最後に使った権限モードをセッションをまたいで記憶します。既定は無効です。',
+                desc: '最後の権限モードをセッションをまたいで記憶します。',
             },
             featuresNonGitWarning: {
                 label: 'Git 外での警告（features.non_git_warning）',
-                desc: 'Git リポジトリの外で起動したとき、続行前に警告を表示します。',
+                desc: 'Git リポジトリの外で起動すると、操作を止める警告を表示します。',
             },
             featuresMcpAutoRestart: {
                 label: 'MCP の自動再起動（features.mcp_auto_restart）',
-                desc: '通信が途切れた stdio の MCP サーバーを自動で再起動します。既定は有効です。',
+                desc: '通信が失敗した stdio の MCP サーバーを自動で再起動します。',
             },
             featuresMcpLivenessWatchers: {
                 label: 'MCP の死活監視（features.mcp_liveness_watchers）',
-                desc: 'MCP の接続を定期的に確認し、サーバーの状態変化を通知します。',
+                desc: 'MCP の接続を定期的に確認し、サーバーの状態の更新を送ります。',
             },
             featuresMcpPushServerStatus: {
                 label: 'MCP 状態の受信（features.mcp_push_server_status）',
-                desc: 'TUI が MCP サーバーの状態変化の通知を受け取ります。',
+                desc: 'TUI が MCP サーバーの状態の通知を受け取ります。',
             },
             featuresMcpRecursiveConfigWatch: {
                 label: 'プロジェクト MCP 設定の監視（features.mcp_recursive_config_watch）',
-                desc: '作業ディレクトリと .grok ディレクトリにある MCP 設定の変更を監視します（サブディレクトリは監視しません）。',
+                desc: '作業ディレクトリと .grok フォルダのプロジェクト MCP 設定の編集を監視します。',
             },
             featuresDock: {
                 label: 'パネルドック（features.dock）',
-                desc: 'サブエージェント・タスク・ウォッチャー・キューをまとめたパネルを入力欄の上に表示します。既定は無効です。',
+                desc: 'サブエージェント、タスク、ウォッチャー、キューをまとめたパネルを入力欄の上に表示します。',
             },
             featuresTerminalTheme: {
                 label: 'terminal テーマ（features.terminal_theme）',
-                desc: '端末自身の配色を使う terminal カラーテーマを選べるようにします。既定は無効です。',
+                desc: '端末自身の配色を使う terminal カラーテーマを表示します。',
             },
             featuresFileAcceleration: {
                 label: 'ファイルアクセラレーター（features.file_acceleration）',
-                desc: 'ローカルセッションのファイルシステムを、インストール済みのファイルアクセラレーターに任せます。既定は無効です。',
+                desc: 'ローカルセッションのファイルシステムを、インストール済みのファイルアクセラレーターに任せます。',
             },
             fileAccelerationRoutes: {
                 label: 'ファイルアクセラレーターの経路（file_acceleration.routes）',
-                desc: 'インストール済みのファイルアクセラレーターへそのまま渡す経路の上書き指定です。',
+                desc: 'インストール済みのファイルアクセラレーターへそのまま渡す経路の上書きです。',
             },
             featuresCampaigns: {
                 label: 'キャンペーン設定の適用（features.campaigns）',
                 desc: 'リモートから配信されるキャンペーンの設定パッチを適用します。',
             },
+            featuresZdrAccessEnabled: {
+                label: 'ZDR でのツール提示（features.zdr_access_enabled）',
+                desc: 'ゼロデータ保持（ZDR）のチームに、ZDR 非対応のツールを提示します。',
+            },
+            workflowsEnabled: {
+                label: 'ワークフロー（workflows.enabled）',
+                desc: 'workflow ツールや /deep-research などのバックグラウンドワークフローを有効にします。',
+            },
             goalEnabled: {
                 label: '/goal（goal.enabled）',
-                desc: '/goal コマンドを有効にします。既定は有効です。',
+                desc: '/goal コマンドを有効にします。',
             },
             relayEnabled: {
                 label: 'セッションの中継同期（relay.enabled）',
                 desc: 'セッションの中継（relay）同期を有効にします。',
             },
+            featuresCodebaseIndexing: {
+                label: 'コードベース索引（features.codebase_indexing）',
+                desc: 'コードグラフの索引です。true は Git リポジトリを索引し、include / exclude の glob 配列は対象を指定します。',
+            },
+            compatCursorSkills: {
+                label: 'Cursor スキルを検出（compat.cursor.skills）',
+                desc: 'Cursor のスキルディレクトリを検索します。',
+            },
+            compatCursorRules: {
+                label: 'Cursor ルールを検出（compat.cursor.rules）',
+                desc: '.cursor/rules を検索します。',
+            },
+            compatCursorAgents: {
+                label: 'Cursor エージェントを検出（compat.cursor.agents）',
+                desc: 'Cursor のエージェント定義を検索します。',
+            },
+            compatCursorMcps: {
+                label: 'Cursor MCP を検出（compat.cursor.mcps）',
+                desc: 'Cursor の mcp.json を検索します。',
+            },
+            compatCursorHooks: {
+                label: 'Cursor フックを検出（compat.cursor.hooks）',
+                desc: 'Cursor のフックを検索します。',
+            },
+            compatClaudeSkills: {
+                label: 'Claude スキルを検出（compat.claude.skills）',
+                desc: 'Claude のスキルを検索します。',
+            },
+            compatClaudeRules: {
+                label: 'Claude ルールを検出（compat.claude.rules）',
+                desc: 'Claude のルールを検索します。',
+            },
+            compatClaudeAgents: {
+                label: 'Claude エージェントを検出（compat.claude.agents）',
+                desc: 'CLAUDE.md と CLAUDE.local.md を検索します。',
+            },
+            compatClaudeMcps: {
+                label: 'Claude MCP を検出（compat.claude.mcps）',
+                desc: 'Claude の MCP 設定を検索します。',
+            },
+            compatClaudeHooks: {
+                label: 'Claude フックを検出（compat.claude.hooks）',
+                desc: 'Claude のフックを検索します。',
+            },
             compatCodexSkills: {
-                label: 'Codexスキルを検出（compat.codex.skills）',
-                desc: 'Codex のスキルディレクトリを検索し、Grok Build から利用できるようにします。既定は有効です。',
+                label: 'Codex スキルを検出（compat.codex.skills）',
+                desc: 'Codex のスキルディレクトリを検索します。',
             },
             compatCodexHooks: {
-                label: 'Codexフックを検出（compat.codex.hooks）',
-                desc: 'Codex のフック設定を検索し、互換フックとして読み込みます。既定は有効です。',
+                label: 'Codex フックを検出（compat.codex.hooks）',
+                desc: 'Codex のフックを検索します。',
             },
             marketplaceRequireSha: {
                 label: 'コミット SHA の固定を必須化（marketplace.require_sha）',
-                desc: 'リモートのプラグインのインストールと更新に、完全なコミット SHA の固定を必須にします。他の設定や環境変数で有効になっている場合、この設定で無効にはできません。',
-            },
-            marketplaceSources: {
-                label: 'マーケットプレイスソース（marketplace.sources）',
-                desc: 'プラグインのマーケットプレイスとして登録する Git リポジトリまたはローカルディレクトリの一覧です。',
-            },
-            pathsExtraRuleDirs: {
-                label: '追加ルールディレクトリ（paths.extra_rule_dirs）',
-                desc: 'ホームのルールの後に読み込むルールディレクトリ（各ディレクトリに *.md を置く）の配列です。',
+                desc: 'リモートのプラグインのインストールと更新に、完全なコミット SHA の固定を求めます。',
             },
             cursorWorkerAutoStart: {
                 label: 'Cursor ワーカー自動起動（cursor_worker.auto_start）',
-                desc: '起動時にリーダープロセスを Cursor のプライベートワーカーとして登録し、Cursor Cloud Agents からこのマシンで作業できるようにします。既定は無効です。',
+                desc: 'リーダーの起動時に Cursor のプライベートワーカーとして登録します。',
             },
             cursorWorkerName: {
                 label: 'Cursor ワーカー名（cursor_worker.name）',
-                desc: 'Cursor に表示するワーカー名です。未設定ならマシンのホスト名を使います。',
-            },
-            cursorWorkerWorkerDirs: {
-                label: 'Cursor ワーカーの対象ディレクトリ（cursor_worker.worker_dirs）',
-                desc: 'Cursor Cloud Agents に提供するリポジトリディレクトリの絶対パスの配列です。先頭が作業ディレクトリとして登録されます。',
+                desc: 'Cursor に表示するワーカー名です。未設定はホスト名です。',
             },
             cursorWorkerMaxAgents: {
                 label: 'Cursor ワーカー同時実行数（cursor_worker.max_agents）',
-                desc: '同時に受け付ける Cloud Agents の上限です。上限を超えた依頼は待たずに失敗します。未設定なら上限はありません。',
+                desc: '同時に受け付ける Cloud Agents の上限です。未設定は上限なしです。',
             },
             cursorWorkerAnyRepo: {
                 label: '任意リポジトリの受け付け（cursor_worker.any_repo）',
-                desc: 'Cloud Agent が持ち込んだ任意のリポジトリを複製して作業する受け口も登録します。既定は無効です。',
+                desc: 'Cloud Agent が持ち込んだリポジトリを複製する受け口も登録します。',
             },
             cursorWorkerHubUrl: {
                 label: 'Computer Hub の URL（cursor_worker.hub_url）',
-                desc: 'Cursor のセッション取得に使う Computer Hub のベース URL です。未設定ならリーダーの Hub URL から導出します。',
+                desc: 'ワーカーのセッションに使う Hub のベース URL です。未設定はリーダーの Hub URL から導きます。',
             },
             cursorWorkerRewriteShellOutput: {
                 label: 'シェル出力のパス書き換え（cursor_worker.rewrite_shell_output）',
-                desc: 'シェル出力に含まれるワークツリーやスナップショットのパスを、登録ディレクトリのパスへ書き換えます。既定は有効です。',
+                desc: 'シェル出力のワークツリーとスナップショットのパスを、登録ディレクトリのパスへ書き換えます。',
+            },
+            skillsPaths: {
+                label: '追加スキルパス（skills.paths）',
+                desc: '追加のスキルディレクトリです。',
+            },
+            skillsDisabled: {
+                label: '無効スキル（skills.disabled）',
+                desc: '検出だけして無効にしておくスキル名です。',
+            },
+            skillsIgnore: {
+                label: 'スキャン除外パス（skills.ignore）',
+                desc: 'スキルの検出から除くパスです。',
+            },
+            pathsExtraRuleDirs: {
+                label: '追加ルールディレクトリ（paths.extra_rule_dirs）',
+                desc: 'ホームのルールの後に読み込むルールディレクトリです（各ディレクトリに *.md を置きます）。',
+            },
+            pluginsPaths: {
+                label: '追加プラグインパス（plugins.paths）',
+                desc: '追加のプラグインディレクトリです。',
+            },
+            pluginsDisabled: {
+                label: '無効プラグイン（plugins.disabled）',
+                desc: '検出だけして読み込みを止めるプラグイン ID です。',
+            },
+            pluginsEnabled: {
+                label: '有効プラグイン（plugins.enabled）',
+                desc: '有効にするプラグイン ID です。既定で無効のプロジェクトプラグインも含みます。',
+            },
+            marketplaceSources: {
+                label: 'マーケットプレイスソース（marketplace.sources）',
+                desc: 'プラグインのマーケットプレイスとして登録する Git リポジトリまたはローカルディレクトリです。',
+            },
+            cursorWorkerWorkerDirs: {
+                label: 'Cursor ワーカーの対象ディレクトリ（cursor_worker.worker_dirs）',
+                desc: 'Cloud Agents に提供するリポジトリの絶対パスです。先頭が作業ディレクトリとして登録されます。',
+            },
+            telemetryTraceUpload: {
+                label: 'トレース送信（telemetry.trace_upload）',
+                desc: 'セッションのトレースをアップロードします。',
+            },
+            telemetryMixpanelEnabled: {
+                label: 'Mixpanel 送信（telemetry.mixpanel_enabled）',
+                desc: '製品分析データを Mixpanel へ送ります。',
+            },
+            telemetryEventsUrl: {
+                label: 'イベント送信先（telemetry.events_url）',
+                desc: 'テレメトリのイベントを送る自社コレクターの URL です。',
+            },
+            telemetryEventsApiKey: {
+                label: 'イベント送信の認証キー（telemetry.events_api_key）',
+                desc: '自社コレクターのトークンです。',
+            },
+            telemetryOtelEnabled: {
+                label: '外部 OTEL 送信（telemetry.otel_enabled）',
+                desc: '自社コレクターへ送る外部 OpenTelemetry のマスタースイッチです。',
+            },
+            telemetryOtelEndpoint: {
+                label: 'OTLP エンドポイント（telemetry.otel_endpoint）',
+                desc: '外部 OpenTelemetry の OTLP のベースエンドポイントです。',
             },
             telemetryOtelLogsEndpoint: {
-                label: 'OTLP ログ送信先（telemetry.otel_logs_endpoint）',
-                desc: 'ログの送信先の OTLP エンドポイントです（指定どおりに使われます）。',
+                label: 'OTLP ログのエンドポイント（telemetry.otel_logs_endpoint）',
+                desc: 'ログの OTLP エンドポイントです（指定のまま使います）。',
             },
             telemetryOtelMetricsEndpoint: {
-                label: 'OTLP メトリクス送信先（telemetry.otel_metrics_endpoint）',
-                desc: 'メトリクスの送信先の OTLP エンドポイントです（指定どおりに使われます）。',
+                label: 'OTLP メトリクスのエンドポイント（telemetry.otel_metrics_endpoint）',
+                desc: 'メトリクスの OTLP エンドポイントです（指定のまま使います）。',
+            },
+            telemetryOtelProtocol: {
+                label: 'OTLP プロトコル（telemetry.otel_protocol）',
+                desc: 'OTLP の通信プロトコルです（http/protobuf / grpc）。',
             },
             telemetryOtelLogsProtocol: {
                 label: 'OTLP ログのプロトコル（telemetry.otel_logs_protocol）',
-                desc: 'ログの送信に使う OTLP の通信プロトコルです。',
+                desc: 'ログの OTLP の通信プロトコルです。',
             },
             telemetryOtelMetricsProtocol: {
                 label: 'OTLP メトリクスのプロトコル（telemetry.otel_metrics_protocol）',
-                desc: 'メトリクスの送信に使う OTLP の通信プロトコルです。',
+                desc: 'メトリクスの OTLP の通信プロトコルです。',
+            },
+            telemetryOtelMetricsExporter: {
+                label: 'OTEL メトリクス出力（telemetry.otel_metrics_exporter）',
+                desc: 'メトリクスの出力先です。otlp はコレクター、console は標準出力、none は出力なしです。',
+            },
+            telemetryOtelLogsExporter: {
+                label: 'OTEL ログ出力（telemetry.otel_logs_exporter）',
+                desc: 'ログの出力先です。otlp はコレクター、console は標準出力、none は出力なしです。',
             },
             telemetryOtelTimeout: {
                 label: 'OTLP 送信タイムアウト（telemetry.otel_timeout）',
-                desc: '外部 OpenTelemetry への送信のタイムアウト（ミリ秒）です。',
+                desc: '送信のタイムアウト（ミリ秒）です。',
             },
             telemetryOtelMetricExportInterval: {
                 label: 'メトリクス送信間隔（telemetry.otel_metric_export_interval）',
-                desc: 'メトリクスを送信する間隔（ミリ秒）です。',
+                desc: 'メトリクスを送る間隔（ミリ秒）です。',
             },
             telemetryOtelMetricsIncludeSessionId: {
                 label: 'メトリクスにセッション ID（telemetry.otel_metrics_include_session_id）',
-                desc: 'メトリクスにセッション ID の属性を付けます。',
+                desc: 'メトリクスに session.id を付けます。',
+            },
+            telemetryOtelLogUserPrompts: {
+                label: 'プロンプト本文を送信（telemetry.otel_log_user_prompts）',
+                desc: '外部 OpenTelemetry に入力プロンプトの本文を含めます。',
             },
             telemetryOtelLogAssistantResponses: {
                 label: '応答本文を送信（telemetry.otel_log_assistant_responses）',
-                desc: '外部 OpenTelemetry の送信内容にアシスタントの応答本文を含めます。未設定ならプロンプト本文の設定に従います。',
+                desc: '外部 OpenTelemetry にアシスタントの応答本文を含めます。未設定はプロンプト本文の設定に従います。',
+            },
+            telemetryOtelLogToolDetails: {
+                label: 'ツール詳細を送信（telemetry.otel_log_tool_details）',
+                desc: '外部 OpenTelemetry にツール引数の抜粋、パス、正確な名前を含めます。',
             },
             telemetryOtelLogToolContent: {
                 label: 'ツールの入出力本文を送信（telemetry.otel_log_tool_content）',
-                desc: '外部 OpenTelemetry の送信内容に、ツールの入力・出力・コマンド全文・エラーメッセージを含めます。既定は無効です。',
+                desc: '外部 OpenTelemetry にツールの入力、出力、コマンド全文、エラーメッセージを含めます。',
             },
             telemetryOtelCertificate: {
                 label: 'OTLP の CA 証明書（telemetry.otel_certificate）',
@@ -1212,56 +1298,62 @@ export default {
             },
             telemetryOtelClientCertificate: {
                 label: 'OTLP クライアント証明書（telemetry.otel_client_certificate）',
-                desc: 'mTLS で使うクライアント証明書（PEM）のパスです。',
+                desc: 'mTLS のクライアント証明書（PEM）のパスです。',
             },
             telemetryOtelClientKey: {
                 label: 'OTLP クライアント鍵（telemetry.otel_client_key）',
-                desc: 'mTLS で使うクライアント秘密鍵（PEM）のパスです。',
+                desc: 'mTLS のクライアント秘密鍵（PEM）のパスです。',
             },
             telemetryOtelLogsClientCertificate: {
                 label: 'OTLP ログのクライアント証明書（telemetry.otel_logs_client_certificate）',
-                desc: 'ログの送信の mTLS で使うクライアント証明書（PEM）のパスです。',
+                desc: 'ログの mTLS のクライアント証明書（PEM）のパスです。',
             },
             telemetryOtelLogsClientKey: {
                 label: 'OTLP ログのクライアント鍵（telemetry.otel_logs_client_key）',
-                desc: 'ログの送信の mTLS で使うクライアント秘密鍵（PEM）のパスです。',
+                desc: 'ログの mTLS のクライアント秘密鍵（PEM）のパスです。',
             },
             telemetryOtelMetricsClientCertificate: {
                 label: 'OTLP メトリクスのクライアント証明書（telemetry.otel_metrics_client_certificate）',
-                desc: 'メトリクスの送信の mTLS で使うクライアント証明書（PEM）のパスです。',
+                desc: 'メトリクスの mTLS のクライアント証明書（PEM）のパスです。',
             },
             telemetryOtelMetricsClientKey: {
                 label: 'OTLP メトリクスのクライアント鍵（telemetry.otel_metrics_client_key）',
-                desc: 'メトリクスの送信の mTLS で使うクライアント秘密鍵（PEM）のパスです。',
+                desc: 'メトリクスの mTLS のクライアント秘密鍵（PEM）のパスです。',
+            },
+            diagnosticsErrorReporting: {
+                label: 'エラー報告（diagnostics.error_reporting）',
+                desc: 'エラー報告のオンとオフです。未設定はテレメトリの設定に従います。',
             },
             diagnosticsCrashHandler: {
                 label: 'クラッシュレポート（diagnostics.crash_handler）',
-                desc: '異常終了時に ~/.grok/crash へクラッシュレポートを書き出します。',
+                desc: '異常終了のレポートを $GROK_HOME/crash へ書き出します。',
             },
             harnessWaitForUploads: {
                 label: 'トレース送信の完了待ち（harness.wait_for_uploads）',
-                desc: 'ターン終了時のトレースのアップロードが終わるまで、プロンプトの応答を返すのを待ちます。既定は無効です。',
+                desc: 'ターン終了時のトレースのアップロードが終わるまで、プロンプトの応答を待ちます。',
             },
             feedbackUserCommand: {
                 label: 'フィードバック送信者コマンド（feedback.user.command）',
-                desc: 'フィードバック送信時の名前とメールアドレスを JSON で出力するシェルコマンドです。',
+                desc: 'フィードバックの送信者の名前とメールを JSON で出力するシェルコマンドです。',
             },
             feedbackUserEmail: {
                 label: 'フィードバック送信者メール（feedback.user.email）',
-                desc: 'フィードバック送信者のメールアドレスの取得元（git_email またはそのままの値）の配列です。',
+                desc: 'フィードバックの送信者のメールの取得元です（git_email またはそのままの値）。',
             },
             feedbackUserName: {
                 label: 'フィードバック送信者名（feedback.user.name）',
-                desc: 'フィードバック送信者の名前の取得元（os_user またはそのままの値）の配列です。',
+                desc: 'フィードバックの送信者の名前の取得元です（os_user またはそのままの値）。',
             },
         },
     },
     pluginManager: {
         title: 'Grok プラグイン管理',
-        description:
-            'Grok のプラグインを一覧・追加・削除し、マーケットプレイスを管理します。操作には grok コマンドを使用します。',
+        description: 'Grok のプラグインを一覧・追加・削除し、マーケットプレイスを管理します。',
+        configUnreadable:
+            '~/.grok/config.toml を読み込めないか、形式が正しくないため、有効・無効の状態を確認できません。一覧の状態は既定の「有効」で表示しています。',
     },
     nav: {
+        group: 'Grok',
         grokMcp: 'Grok MCP 管理',
         grokAgentSkill: 'Grok Agent・Skill 管理',
         pluginManager: 'Grok プラグイン管理',

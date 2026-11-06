@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box, Button, Typography, Snackbar, Alert, Divider } from '@mui/material';
 import { Refresh as RefreshIcon } from '@mui/icons-material';
-import type { AgentEnvironment } from '@shared/agents/types';
 import { envId } from '../../utils/format';
+import { useAgentEnvironments } from '../agent/useAgentEnvironments';
 import { PluginEnvSection } from './PluginEnvSection';
 import type { PluginManagerApi } from './types';
 
@@ -26,12 +26,12 @@ interface Props {
  */
 export const PluginManagerView: React.FC<Props> = ({ titleKey, descKey, api, noEnvironmentKey }) => {
     const { t } = useTranslation();
-    const [environments, setEnvironments] = useState<{ env: AgentEnvironment; label: string }[]>([]);
-    const [loading, setLoading] = useState(true);
-    // 環境一覧を取得できなかった（取得自体が失敗した）か。
-    const [loadFailed, setLoadFailed] = useState(false);
-    // 再取得時にセクションを作り直すためのキー。
-    const [reloadKey, setReloadKey] = useState(0);
+    // reloadNonce はセクションのキーに使い、再取得のたびにセクションを作り直す。
+    const { environments, refreshing, loadFailed, reloadNonce, load } = useAgentEnvironments(
+        titleKey,
+        api,
+        'Failed to load plugin environments:'
+    );
     // 操作の実行中のセクション（環境 ID）。
     const [busyEnvs, setBusyEnvs] = useState<ReadonlySet<string>>(new Set());
     const [snackbar, setSnackbar] = useState<{
@@ -39,28 +39,6 @@ export const PluginManagerView: React.FC<Props> = ({ titleKey, descKey, api, noE
         message: string;
         severity: 'success' | 'error' | 'warning';
     }>({ open: false, message: '', severity: 'success' });
-
-    const load = async (refresh = false) => {
-        setLoading(true);
-        try {
-            const envs = await api.getEnvironments(refresh);
-            setEnvironments(envs);
-            setLoadFailed(false);
-            setReloadKey(k => k + 1);
-        } catch (error) {
-            console.error('Failed to load plugin environments:', error);
-            setEnvironments([]);
-            setLoadFailed(true);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        load();
-        // api は安定参照（preload ブリッジ）。マウント時に一度ロードする。
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     const notify = (message: string, severity: 'success' | 'error' | 'warning') => {
         setSnackbar({ open: true, message, severity });
@@ -81,7 +59,7 @@ export const PluginManagerView: React.FC<Props> = ({ titleKey, descKey, api, noE
         });
     }, []);
 
-    if (loading) {
+    if (refreshing) {
         return (
             <Box sx={{ p: 3 }}>
                 <Typography>{t('common.loading')}</Typography>
@@ -89,8 +67,9 @@ export const PluginManagerView: React.FC<Props> = ({ titleKey, descKey, api, noE
         );
     }
 
-    const nativeEnvs = environments.filter(e => e.env.kind === 'native');
-    const wslEnvs = environments.filter(e => e.env.kind === 'wsl');
+    const shownEnvs = loadFailed ? [] : environments;
+    const nativeEnvs = shownEnvs.filter(e => e.env.kind === 'native');
+    const wslEnvs = shownEnvs.filter(e => e.env.kind === 'wsl');
 
     return (
         <Box sx={{ p: 3 }}>
@@ -108,7 +87,7 @@ export const PluginManagerView: React.FC<Props> = ({ titleKey, descKey, api, noE
                     startIcon={<RefreshIcon />}
                     disabled={busyEnvs.size > 0}
                     onClick={() => void load(true)}
-                    sx={{ textTransform: 'none', flexShrink: 0 }}
+                    sx={{ flexShrink: 0 }}
                 >
                     {t('common.refresh')}
                 </Button>
@@ -119,14 +98,14 @@ export const PluginManagerView: React.FC<Props> = ({ titleKey, descKey, api, noE
                     {t('pluginManager.environmentsError')}
                 </Alert>
             ) : (
-                environments.length === 0 && (
+                shownEnvs.length === 0 && (
                     <Alert severity='info' sx={{ mb: 2 }}>
                         {t(noEnvironmentKey ?? 'pluginManager.noEnvironment')}
                     </Alert>
                 )
             )}
             {nativeEnvs.map(info => (
-                <Box key={`${envId(info.env)}-${reloadKey}`}>
+                <Box key={`${titleKey}:${envId(info.env)}-${reloadNonce}`}>
                     <Typography variant='h6' sx={{ mb: 1 }}>
                         {info.label}
                     </Typography>
@@ -141,7 +120,7 @@ export const PluginManagerView: React.FC<Props> = ({ titleKey, descKey, api, noE
                         WSL
                     </Typography>
                     {wslEnvs.map(info => (
-                        <Box key={`${envId(info.env)}-${reloadKey}`}>
+                        <Box key={`${titleKey}:${envId(info.env)}-${reloadNonce}`}>
                             <Typography variant='h6' sx={{ mb: 1 }}>
                                 {t('pluginManager.wslSection', { distro: info.label })}
                             </Typography>

@@ -5,8 +5,8 @@ import { ClaudeCleanupManager } from '../../services/claude/ClaudeCleanupManager
 
 export function registerClaudeCleanupHandlers(manager: ClaudeCleanupManager): void {
     // 環境一覧（native + Claude 入り WSL distro）を取得
-    ipcMain.handle(CLAUDE_CLEANUP_CHANNELS.GET_ENVIRONMENTS, () => {
-        return manager.getEnvironments();
+    ipcMain.handle(CLAUDE_CLEANUP_CHANNELS.GET_ENVIRONMENTS, (_, refresh?: boolean) => {
+        return manager.getEnvironments(refresh === true);
     });
 
     // クリーンアップ候補をスキャン

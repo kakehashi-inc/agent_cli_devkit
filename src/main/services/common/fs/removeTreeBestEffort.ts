@@ -13,9 +13,8 @@ function isMissing(error: unknown): boolean {
 }
 
 /**
- * 実 OS パス（native の絶対パス、または WSL の UNC パス）がリンク（シンボリックリンク・ジャンクション）か、
- * 種別を判定できないものか。存在しない場合は false。
- * UNC 越しの Linux のシンボリックリンクは lstat が失敗するため、判定できないものとしてリンクと同じに扱う。
+ * この OS のパスがリンク（シンボリックリンク・ジャンクション）か、種別を判定できないものか。存在しない場合は false。
+ * 判定できないものはリンクと同じに扱う。
  */
 export function isLinkOrUnknown(abs: string): boolean {
     try {
@@ -26,7 +25,7 @@ export function isLinkOrUnknown(abs: string): boolean {
 }
 
 /**
- * 実 OS パス（native の絶対パス、または WSL の UNC パス）のディレクトリまたはファイルを可能な限り削除し、
+ * この OS のパスのディレクトリまたはファイルを可能な限り削除し、
  * 自身まで削除できた（もともと無かった場合を含む）かを返す（同期・ベストエフォート）。
  * 使用中（ロック）などで消せないものは残し、消せるものだけを削除する。
  * failed を渡すと、削除できずに残したファイル・リンク・ディレクトリのパスを追加する
@@ -63,7 +62,6 @@ function removeDirectory(dir: string, dev: number, failed: string[]): boolean {
     }
     let removedAll = true;
     for (const entry of entries) {
-        // native の絶対パス・UNC パスに対する結合のため、プラットフォーム適切な区切りで join する。
         if (!removeEntry(join(dir, entry.name), entry, dev, failed)) removedAll = false;
     }
     if (!removedAll) return false;
@@ -76,8 +74,7 @@ function removeDirectory(dir: string, dev: number, failed: string[]): boolean {
 }
 
 /**
- * ディレクトリ内のエントリ 1 件を削除する。リンクの判定は一覧の種別を優先する
- * （UNC 越しの Linux のシンボリックリンクは一覧ではリンクと分かるが、lstat は失敗するため）。
+ * ディレクトリ内のエントリ 1 件を削除する。リンクの判定は一覧の種別を優先する。
  */
 function removeEntry(path: string, entry: Dirent, dev: number, failed: string[]): boolean {
     if (entry.isSymbolicLink()) return removeLink(path, failed);

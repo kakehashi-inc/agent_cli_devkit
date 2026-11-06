@@ -13,6 +13,10 @@ import { registerClaudeCleanupHandlers } from './claudeCleanupHandlers';
 import { registerClaudeAssetHandlers } from './claudeAssetHandlers';
 import { registerClaudeSettingsHandlers } from './claudeSettingsHandlers';
 import { registerClaudePluginHandlers } from './claudePluginHandlers';
+import { profileChannels } from '../../../shared/agents/profile/channels';
+import { CLAUDE_PROFILE_SPEC } from '../../../shared/agents/claude/profileTabs';
+import { ProfileManager } from '../../services/common/profile/ProfileManager';
+import { registerProfileHandlers } from '../common/profileHandlers';
 
 /**
  * Claude 系の IPC ハンドラを一括登録する。
@@ -29,4 +33,9 @@ export function registerClaudeIpcHandlers(
     registerClaudeAssetHandlers(new ClaudeAssetManager(detector), getMainWindow);
     registerClaudeSettingsHandlers(new ClaudeSettingsManager(detector));
     registerClaudePluginHandlers(new ClaudePluginManager(detector, cliRunner));
+    registerProfileHandlers(
+        profileChannels('claude'),
+        new ProfileManager(detector, CLAUDE_PROFILE_SPEC),
+        getMainWindow
+    );
 }

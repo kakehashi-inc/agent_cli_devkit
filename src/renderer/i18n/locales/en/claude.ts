@@ -41,14 +41,12 @@ export default {
         description:
             'Delete history, cache, temporary files, and logs under ~/.claude, plus the temporary items Claude Code leaves in the OS temp folder and cache. Besides reclaiming disk space, this can improve performance and clear stale state left in memory that makes Claude Code behave unexpectedly.',
         wslSection: 'WSL: {{distro}}',
-        deleteSelected: 'Delete Selected',
+        deleteSelected: 'Delete selected',
         cancel: 'Cancel',
-        confirmTitle: 'Confirm Cleanup',
+        confirmTitle: 'Confirm cleanup',
         confirmBody: 'Delete {{count}} selected item(s)? This cannot be undone.',
         reclaimable: '{{count}} item(s) selected, {{size}} reclaimable',
         noCandidates: 'No cleanup targets found',
-        inUseNotice:
-            'Close running Claude Code sessions before cleanup, otherwise some directories may fail to delete.',
         deleteSuccess: 'Cleanup completed',
         deleteError: 'Failed to clean up some items',
         columnName: 'Item',
@@ -58,8 +56,19 @@ export default {
         childOrphan: 'No conversation history (temporary items only)',
         childMayBeInUse: 'May be in use ({{count}} conversation record(s), temporary item(s), etc.)',
         approvalTitle: 'Projects That May Be in Use',
+        confirmWarning: {
+            projects: 'Deletes transcripts and temporary items.',
+            projectMemory:
+                'Deletes auto memory. This cannot be undone, and it may be shared with worktrees and subfolders.',
+            projectRecords:
+                'Deletes the trust record, local-scope MCP settings, MCP on/off choices, .mcp.json approvals, external import approvals, and statistics. The trust prompt may appear again at the next start.',
+            recordsWithBackups:
+                'backups is also selected. Old copies of the project records are deleted too, so there will be no way to restore them.',
+        },
         dir: {
             projects: 'projects',
+            projectMemory: 'Project Memory',
+            projectRecords: 'Project Records',
             plans: 'plans',
             fileHistory: 'file-history',
             history: 'history.jsonl',
@@ -84,7 +93,10 @@ export default {
         },
         desc: {
             projects:
-                "Per-project conversation transcripts (used to resume and rewind past sessions). Each project's memory/ folder (auto memory) and the project's temporary items (session work folders and bash-edit-diff in the OS temp folder, and MCP server logs) are deleted with it. Projects whose transcripts are gone but whose temporary items remain can also be selected. In a project with a running session, that session's transcripts, work folders, and bash-edit-diff, plus the project's memory/ folder and MCP server logs, are kept. When running sessions cannot be determined, transcripts and temporary items are not deleted.",
+                'Transcripts per workspace path (used to resume or rewind past sessions). Also deleted: work folders of that path in the OS temp folder, bash-edit-diff, and MCP server logs.',
+            projectMemory: 'Auto memory per workspace path.',
+            projectRecords:
+                'Records per workspace path in ~/.claude.json (trust records, local scope MCP settings, stats, and more).',
             plans: 'Plan files created in plan mode (records of past plans).',
             fileHistory:
                 'History and diffs of files edited by Claude Code, used to restore checkpoints of past sessions.',
@@ -98,17 +110,16 @@ export default {
             tasks: 'Task lists written by the task tools (picked up by a resumed session).',
             usageData: 'Reports written by /insights and the cached analysis data used to build them.',
             feedbackBundles: 'Feedback and bug-report archives written by /feedback that have not been sent yet.',
-            skillsTrash: 'Skills removed by the claude.ai sync (they can no longer be recovered).',
-            pluginsTrash: 'Plugins removed by the claude.ai sync (they can no longer be recovered).',
+            skillsTrash: 'Where skills removed by claude.ai sync are kept.',
+            pluginsTrash: 'Where plugins removed by claude.ai sync are kept.',
             backups: 'Auto-saved backups of previous ~/.claude.json files.',
-            tempBundledSkills:
-                'Built-in skills extracted to the OS temp folder (one per Claude Code version). Versions matching a running session are excluded.',
+            tempBundledSkills: 'Built-in skills unpacked in the OS temp folder, per Claude Code version.',
             tempBashEditDiff:
-                'Diff records of shell-command edits in the OS temp folder that match no project conversation transcript. Records of running sessions are excluded.',
-            imageCache: 'Attached images saved by older Claude Code versions (no longer written).',
-            todos: 'TODO data used by older Claude Code versions (no longer written).',
-            statsig: 'Feature-flag cache used by older Claude Code versions (no longer written).',
-            logs: 'Logs written by older Claude Code versions (no longer written).',
+                'Diff records of edits made by shell commands in the OS temp folder that match no project transcript.',
+            imageCache: 'Attached images saved by old versions of Claude Code.',
+            todos: 'TODO data used by old versions of Claude Code.',
+            statsig: 'Feature flag cache used by old versions of Claude Code.',
+            logs: 'Logs written by old versions of Claude Code.',
         },
         other: {
             sectionTitle: 'Other tools',
@@ -119,8 +130,8 @@ export default {
                 serenaLogs: 'Serena logs',
             },
             desc: {
-                serenaProjects: "Clears Serena's registered project list (keeps settings and comments).",
-                serenaLogs: 'Deletes logs produced by Serena.',
+                serenaProjects: 'The list of projects registered in Serena.',
+                serenaLogs: 'Logs written by Serena.',
             },
         },
     },
@@ -166,7 +177,7 @@ export default {
         deletePartial: 'Some items could not be deleted because they were in use',
         deleteError: 'Failed to delete the selected items',
         noEntries: 'No items found',
-        unavailable: 'This environment cannot be accessed for archive operations (WSL path unreachable).',
+        unavailable: 'The files of this environment cannot be reached.',
         downloadSuccess: 'Archive saved',
         downloadError: 'Failed to create the archive',
         uploadSuccess: 'Extracted {{count}} item(s)',
@@ -174,10 +185,10 @@ export default {
         overwriteConfirmTitle: 'Overwrite existing items?',
         overwriteConfirmBody:
             'The following {{count}} item(s) already exist and will be deleted and replaced: {{names}}. Continue?',
-        importOfficial: 'Import Official Skills',
+        importOfficial: 'Import official skills',
         importOfficialTitle: 'Import Official Skills',
         importOfficialDesc:
-            'These are skills from the official Anthropic repository (anthropics/skills). Select the skills to import. Existing skills with the same name will be replaced.',
+            'These are skills from the official Anthropic repository (anthropics/skills). Existing skills with the same name will be replaced.',
         import: 'Import',
         gitRequired: 'This feature requires git to be installed',
         officialImportSuccess: 'Imported {{count}} official skill(s)',
@@ -187,6 +198,35 @@ export default {
         mdNoName: 'Could not read the name from SKILL.md',
         syncedReserved:
             '"synced" is the folder Claude Code uses to sync skills from claude.ai, so a skill with this name cannot be uploaded',
+        listTruncated: 'Folders deeper than {{depth}} levels are not listed.',
+        listIncomplete: 'Some folders could not be read, so this list may be incomplete.',
+        entryMark: {
+            link: {
+                self: 'Link',
+                via: 'In a linked folder',
+            },
+            linkHint: {
+                self: 'This is a symbolic link. Deleting removes only the link.',
+                via: 'This is read through a linked folder, so it cannot be deleted here. To remove it, delete the folder link.',
+            },
+            status: {
+                'dangling-link': 'Not loaded: link target is missing',
+                'no-entry-file': 'Not loaded: no definition file',
+                'link-folder': 'Folder link',
+                'link-loop': 'Not read: folder already listed',
+                'refused-name': 'Cannot be managed: unsafe name',
+            },
+            statusHint: {
+                'dangling-link':
+                    'The link points to a path that does not exist, so the CLI does not load it. Deleting it removes only the link.',
+                'no-entry-file': 'This folder has no definition file, so the CLI does not load it.',
+                'link-folder': 'This link points to a folder. Deleting it removes only the link.',
+                'link-loop':
+                    'This link points to a folder that was already read, so its contents are not listed again. Deleting it removes only the link.',
+                'refused-name':
+                    'This name could point to a different location, so it cannot be viewed, downloaded, or deleted here. Rename it outside this app.',
+            },
+        },
         kindWarnTitle: 'This may be the wrong type',
         kindWarnContinue: 'Import anyway',
         kindWarn: {
@@ -203,16 +243,41 @@ export default {
             'no-md': 'This archive contains no .md files and cannot be imported as an agent.',
         },
     },
+    profile: {
+        tab: {
+            settings: 'Settings',
+            hooks: 'Hooks',
+            statusLine: 'Status Line',
+            externalCommands: 'External commands',
+            permissions: 'Permissions',
+            instructions: 'Instructions',
+            outputStyles: 'Output styles',
+            rules: 'Rules',
+            workflows: 'Workflows',
+            commands: 'Commands',
+        },
+        statusLine: {
+            mainTitle: 'Main',
+            subagentTitle: 'Subagents',
+        },
+        externalCommands: {
+            helpersTitle: 'Authentication and telemetry commands',
+            ripgrepTitle: 'Sandbox ripgrep (sandbox.ripgrep)',
+        },
+        outputStyles: {
+            overridesBuiltin: 'Overrides a built-in style',
+        },
+    },
     settings: {
         title: 'Claude Code Settings',
-        description: 'Edit ~/.claude/settings.json items in a table, or edit the file directly.',
+        description:
+            'Edit Claude Code settings, hooks, permissions, instruction files, and more. The main settings file is ~/.claude/settings.json.',
         wslSection: 'WSL: {{distro}}',
         colItem: 'Item',
         colValue: 'Value',
-        directEdit: 'Direct Edit',
+        directEdit: 'Direct edit',
         directEditTitle: 'Edit settings.json directly',
-        directEditDesc:
-            'Edit the raw contents of settings.json. Saving overwrites the entire file with this content. Make sure it is valid JSON.',
+        directEditDesc: 'Saving overwrites the entire file with this content.',
         save: 'Save',
         cancel: 'Cancel',
         unset: 'Not set',
@@ -225,7 +290,10 @@ export default {
         saveError: 'Failed to save settings',
         readError: 'Failed to load settings',
         invalidJson: 'The JSON syntax is not valid',
-        invalidExisting: 'The existing settings.json is broken and cannot be saved. Fix it via Direct Edit.',
+        invalidExisting:
+            'The existing settings.json cannot be read by Claude Code, so it cannot be saved. Fix it via Direct Edit.',
+        parseError:
+            'settings.json is not strict JSON, so Claude Code cannot read this file (comments and trailing commas are not allowed). Its values cannot be shown, but this does not mean every item is unset. Fix it via Direct Edit.',
         verifyFailed:
             'Verification of the edit result failed, so saving was aborted. The file is unchanged. Change this item via Direct Edit.',
         unavailable: 'Settings for this environment cannot be accessed.',
@@ -240,31 +308,31 @@ export default {
         field: {
             model: {
                 label: 'Model (model)',
-                desc: 'Default model alias or full model ID. Suggestions are current examples; custom IDs are accepted.',
+                desc: 'Model alias or full model ID that new sessions start with.',
             },
             language: {
                 label: 'Response language (language)',
-                desc: 'Preferred language for responses and voice input. Any language name is accepted (e.g. japanese, english, spanish). Empty means unset.',
+                desc: 'Language name, such as japanese or spanish, that Claude responds in. It also sets the language of voice dictation and session titles.',
             },
             outputStyle: {
                 label: 'Output style (outputStyle)',
-                desc: 'Output style for responses. Built-in (default / Explanatory / Learning) or a custom style. Empty means unset.',
+                desc: "Name of the built-in or custom output style that sets Claude's role, tone, and output format.",
             },
             effortLevel: {
                 label: 'Effort level (effortLevel)',
-                desc: 'How much effort to spend thinking. Higher means better quality but more cost.',
+                desc: 'Default effort level for models without a saved level. Lower levels are faster and cheaper; higher levels reason more deeply.',
             },
             advisorModel: {
                 label: 'Advisor model (advisorModel)',
-                desc: 'Model alias or full model ID used by the advisor tool.',
+                desc: 'Model that answers when Claude calls the advisor tool. Unset turns the advisor off.',
             },
             maxEffortLevel: {
                 label: 'Effort level cap (maxEffortLevel)',
-                desc: 'Highest effort level a session can use. Any higher level runs at this cap. max sets no cap.',
+                desc: 'Highest effort level a session runs at; any higher level runs at this cap. max sets no cap.',
             },
             ultracode: {
                 label: 'Start with ultracode (ultracode)',
-                desc: 'Starts sessions with ultracode on, so Claude plans a dynamic workflow for each substantive task. The effort level is unchanged.',
+                desc: 'Starts sessions with ultracode on, so Claude plans a dynamic workflow for each substantive task.',
             },
             promptCacheTtl: {
                 label: 'Prompt cache lifetime (promptCacheTtl)',
@@ -280,7 +348,7 @@ export default {
             },
             alwaysThinkingEnabled: {
                 label: 'Extended thinking (alwaysThinkingEnabled)',
-                desc: 'Set to false to turn extended thinking off for every session. Thinking is on by default for supported models, so true has no effect.',
+                desc: 'false turns extended thinking off for every session. true changes nothing.',
             },
             autoMemoryEnabled: {
                 label: 'Auto memory (autoMemoryEnabled)',
@@ -288,11 +356,11 @@ export default {
             },
             editorMode: {
                 label: 'Editor mode (editorMode)',
-                desc: 'Key bindings for the input box.',
+                desc: 'Key bindings for the input prompt: normal = standard, vim = vim-style editing.',
             },
             preferredNotifChannel: {
                 label: 'Notifications (preferredNotifChannel)',
-                desc: 'How notifications are delivered.',
+                desc: 'How Claude Code notifies you when a task completes or a permission prompt is waiting. auto picks a method for your terminal.',
             },
             spinnerTipsEnabled: {
                 label: 'Spinner tips (spinnerTipsEnabled)',
@@ -300,7 +368,7 @@ export default {
             },
             emojiCompletionEnabled: {
                 label: 'Emoji completion (emojiCompletionEnabled)',
-                desc: 'Shows emoji suggestions when you type ":" plus a shortcode and replaces shortcodes like :heart: with the emoji. Default: on (v2.1.217+).',
+                desc: 'Shows emoji suggestions when you type ":" plus a shortcode and replaces shortcodes like :heart: with the emoji.',
             },
             showTurnDuration: {
                 label: 'Show turn duration (showTurnDuration)',
@@ -312,11 +380,11 @@ export default {
             },
             awaySummaryEnabled: {
                 label: 'Away summary (awaySummaryEnabled)',
-                desc: 'Shows a recap when you return after being away.',
+                desc: 'Shows a one-line session recap when you return after a few minutes away.',
             },
             autoUpdatesChannel: {
                 label: 'Update channel (autoUpdatesChannel)',
-                desc: 'Channel for auto-updates. "latest" is the newest (default); "stable" is about a week behind and steadier.',
+                desc: 'Release channel for auto-updates: latest = the newest release, stable = a version about a week old that skips releases with major regressions.',
             },
             minimumVersion: {
                 label: 'Minimum update version (minimumVersion)',
@@ -324,11 +392,11 @@ export default {
             },
             cleanupPeriodDays: {
                 label: 'Session retention days (cleanupPeriodDays)',
-                desc: 'Deletes session files older than this many days (minimum 1; default 30 when unset).',
+                desc: 'Days to keep session transcripts and other application data before deleting them. Unset means 30.',
             },
             desktopSessionCleanupPeriodDays: {
                 label: 'Desktop session retention days (desktopSessionCleanupPeriodDays)',
-                desc: 'Age limit for transcripts of sessions used in Claude Desktop or Cowork. They are deleted once older than both this value and cleanupPeriodDays. 0 keeps them indefinitely.',
+                desc: 'Age limit in days for transcripts of sessions used in Claude Desktop or Cowork, applied once they are also older than cleanupPeriodDays. 0 sets no limit.',
             },
             autoCompactEnabled: {
                 label: 'Auto compact (autoCompactEnabled)',
@@ -336,7 +404,7 @@ export default {
             },
             idleCompaction: {
                 label: 'Idle compaction (idleCompaction)',
-                desc: 'Compacts a long conversation you have stepped away from shortly before its prompt cache expires. Set to false to turn it off.',
+                desc: 'Compacts a long conversation you have stepped away from, shortly before its prompt cache expires.',
             },
             autoCompactWindow: {
                 label: 'Auto compact window (autoCompactWindow)',
@@ -344,35 +412,35 @@ export default {
             },
             fileCheckpointingEnabled: {
                 label: 'File checkpointing (fileCheckpointingEnabled)',
-                desc: 'Saves snapshots of file changes so /rewind can restore them.',
+                desc: 'Snapshots files before each edit, and /rewind restores them.',
             },
             agentTeams: {
                 label: 'Agent teams (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS)',
-                desc: 'Enables the experimental agent teams feature. ON sets "1" in env; OFF removes the entry.',
+                desc: 'Enables the experimental agent teams feature.',
             },
             teammateMode: {
                 label: 'Teammate mode (teammateMode)',
-                desc: 'Display mode for teammates. in-process = inside the main terminal, auto = split when available, tmux / iterm2 = split panes. Default is in-process.',
+                desc: 'Where agent team teammates display: in-process = the main terminal pane, auto = split panes when the terminal supports them, tmux = tmux or iTerm2 split panes, iterm2 = iTerm2 native split panes.',
             },
             agentPushNotifEnabled: {
                 label: 'Agent notifications (agentPushNotifEnabled)',
-                desc: 'Sends proactive phone notifications, such as long-task completion, while Remote Control is connected. Default: off.',
+                desc: 'Sends a push notification to your phone when Claude decides one is worth sending.',
             },
             fastMode: {
                 label: 'Fast mode (fastMode)',
-                desc: 'Starts supported sessions in fast mode. Enabling /fast also writes this setting.',
+                desc: 'Turns fast mode on for new sessions.',
             },
             fastModePerSessionOptIn: {
                 label: 'Fast mode per session (fastModePerSessionOptIn)',
-                desc: 'Stops fast mode from carrying across sessions, so each session requires explicit activation with /fast.',
+                desc: 'Stops a saved fastMode from applying at session start, so each session needs /fast.',
             },
             switchModelsOnFlag: {
                 label: 'Switch models when flagged (switchModelsOnFlag)',
-                desc: 'Switches to the fallback model automatically and continues when a safety classifier flags a request. Turn off to pause and choose instead. Default: on.',
+                desc: 'What happens when a safety classifier flags a request: true = switch to the fallback model and continue, false = pause to choose between switching and editing the prompt.',
             },
             inputNeededNotifEnabled: {
                 label: 'Input-needed notifications (inputNeededNotifEnabled)',
-                desc: 'Sends a phone notification when a permission prompt or question needs input while Remote Control is connected. Default: off.',
+                desc: 'Sends a push notification to your phone when a permission prompt or question is waiting for your input.',
             },
             agent: {
                 label: 'Default agent (agent)',
@@ -380,7 +448,7 @@ export default {
             },
             crossSessionInbound: {
                 label: 'Messages from other sessions (crossSessionInbound)',
-                desc: 'How messages from your other Claude Code sessions are handled: accept = deliver to Claude, hold = show a notice without delivering, refuse = drop. Unset decides per message.',
+                desc: 'How messages from your other Claude Code sessions are handled: accept = deliver to Claude, hold = show a notice without delivering, refuse = drop, unset = decide per message.',
             },
             isolatePeerMachines: {
                 label: 'Confirm cross-machine messages (isolatePeerMachines)',
@@ -396,19 +464,19 @@ export default {
             },
             promptSuggestionEnabled: {
                 label: 'Prompt suggestions (promptSuggestionEnabled)',
-                desc: 'Shows grayed-out predictions of your next input in the prompt box. Set to false to hide them.',
+                desc: 'Shows grayed-out predictions of your next input in the prompt box.',
             },
             terminalTitleFromRename: {
                 label: 'Session name as terminal title (terminalTitleFromRename)',
-                desc: 'Shows the session name set with /rename or --name as the terminal tab title. Set to false to keep the title generated from the conversation.',
+                desc: 'Shows the session name set with /rename or --name as the terminal tab title. false keeps the title generated from the conversation.',
             },
             timeFormat: {
                 label: 'Time format (timeFormat)',
-                desc: 'Format of times shown in the interface: auto (follows the locale), 12-hour, 24-hour, 24-hour-utc, or a strftime pattern such as %H:%M.',
+                desc: 'Format of times shown in the interface: auto = the built-in format, 12-hour, 24-hour, 24-hour-utc, or a strftime pattern such as %H:%M.',
             },
             timeZone: {
                 label: 'Display time zone (timeZone)',
-                desc: 'IANA time zone name, such as UTC or Europe/Dublin, for times shown in the interface. Unset uses the system time zone.',
+                desc: 'IANA time zone name, such as UTC or Asia/Tokyo, for times shown in the interface. Unset uses the system time zone.',
             },
             maxProseWidth: {
                 label: 'Maximum prose width (maxProseWidth)',
@@ -416,7 +484,7 @@ export default {
             },
             showThinkingSummaries: {
                 label: 'Show thinking summaries (showThinkingSummaries)',
-                desc: 'Makes extended-thinking summaries visible in interactive sessions. It does not change generation or billing. Default: off.',
+                desc: 'true shows full thinking summaries when you expand thinking. false shows a collapsed stub.',
             },
             syntaxHighlightingDisabled: {
                 label: 'Disable syntax highlighting (syntaxHighlightingDisabled)',
@@ -424,27 +492,27 @@ export default {
             },
             terminalProgressBarEnabled: {
                 label: 'Terminal progress bar (terminalProgressBarEnabled)',
-                desc: 'Shows a progress bar in the tab or window of supported terminals. Default: on.',
+                desc: 'Shows a progress bar on the terminal tab or window while Claude works.',
             },
             theme: {
                 label: 'Color theme (theme)',
-                desc: 'Selects a built-in theme or a custom:<slug> theme. Saved custom themes outside the suggestions remain supported.',
+                desc: 'Built-in theme, or a custom theme as custom:<slug> or custom:<plugin-name>:<slug>. auto matches the terminal background.',
             },
             tui: {
                 label: 'TUI renderer (tui)',
-                desc: 'Uses the classic main-screen renderer (default) or the flicker-free alternate-screen renderer (fullscreen).',
+                desc: 'Terminal renderer: default = classic main-screen renderer, fullscreen = flicker-free alternate-screen renderer, unset = Claude Code picks.',
             },
             verbose: {
                 label: 'Verbose output (verbose)',
-                desc: 'Shows full tool output instead of truncated summaries. Default: off.',
+                desc: 'Shows full tool output instead of truncated summaries.',
             },
             viewMode: {
                 label: 'Startup view mode (viewMode)',
-                desc: 'Selects the default, verbose, or focus transcript view when a session starts.',
+                desc: 'Transcript view at session start: default = truncated tool output, verbose = full tool output, focus = last prompt, tool summary, and final response.',
             },
             wheelScrollAccelerationEnabled: {
                 label: 'Wheel acceleration (wheelScrollAccelerationEnabled)',
-                desc: 'Accelerates fullscreen scrolling when the mouse wheel is moved quickly. Default: on.',
+                desc: 'Accelerates fullscreen scrolling when the mouse wheel is moved quickly.',
             },
             autoMemoryDirectory: {
                 label: 'Auto-memory directory (autoMemoryDirectory)',
@@ -452,11 +520,11 @@ export default {
             },
             askUserQuestionTimeout: {
                 label: 'Question auto-continue timeout (askUserQuestionTimeout)',
-                desc: 'Sets how long AskUserQuestion waits before continuing. never waits until you answer.',
+                desc: 'Idle time after which an unanswered AskUserQuestion continues with the options already selected. never waits until you answer.',
             },
             dialogExpiry: {
                 label: 'Remote dialog expiry (dialogExpiry)',
-                desc: 'Deadline for dialogs forwarded to a remote client such as Remote Control. When it passes, the dialog is canceled and Claude Code continues with its default. never disables the deadline.',
+                desc: 'Deadline for dialogs forwarded to a remote client such as Remote Control, after which the dialog is canceled and Claude Code continues with its default. never sets no deadline.',
             },
             autoContinueAtUsageLimit: {
                 label: 'Continue after usage limit (autoContinueAtUsageLimit)',
@@ -468,55 +536,55 @@ export default {
             },
             bashOutputMaxChars: {
                 label: 'Bash output limit (bashOutputMaxChars)',
-                desc: 'Characters of successful command output Claude receives inline (4000-128000). Longer output is saved to a file and only a preview is sent. Default: 30000.',
+                desc: 'Characters of successful command output Claude receives inline, clamped to 4000-128000. Longer output is saved to a file with a preview sent; unset means 30000.',
             },
             defaultShell: {
                 label: 'Default shell (defaultShell)',
-                desc: 'Selects bash or PowerShell for ! commands entered in the input box.',
+                desc: 'Shell that runs the ! commands you type in the input box.',
             },
             feedbackSurveyRate: {
                 label: 'Feedback survey rate (feedbackSurveyRate)',
-                desc: 'Sets the 0–1 probability of showing the session quality survey when eligible. Use 0 to suppress it entirely.',
+                desc: 'Probability from 0 to 1 that the session quality survey appears. 0 keeps it from appearing.',
             },
             feedbackDrafts: {
                 label: 'Claude-drafted feedback (feedbackDrafts)',
-                desc: 'Whether Claude can queue feedback drafts for review: notify = show a card when queued, quiet = queue without a card, off = no drafts.',
+                desc: 'Claude-drafted feedback for your review: notify = show a card when queued, quiet = queue without a card, off = no drafts.',
             },
             includeGitInstructions: {
                 label: 'Include Git instructions (includeGitInstructions)',
-                desc: 'Includes built-in commit and PR instructions plus a git status snapshot in the system prompt. Default: on.',
+                desc: "Includes built-in commit and PR instructions plus a git status snapshot in Claude's context.",
             },
             plansDirectory: {
                 label: 'Plans directory (plansDirectory)',
-                desc: 'Sets the plan-file directory relative to the project root. Default: ~/.claude/plans.',
+                desc: 'Directory for plan files, relative to the project root. Unset uses ~/.claude/plans.',
             },
             respectGitignore: {
                 label: 'Respect gitignore (respectGitignore)',
-                desc: 'Excludes files matched by .gitignore from @ file-picker suggestions. Default: on.',
+                desc: 'Excludes files matching .gitignore from @ file-picker suggestions.',
             },
             respondToBashCommands: {
                 label: 'Respond after shell commands (respondToBashCommands)',
-                desc: 'Lets Claude respond after an input-box ! command. When off, output is added to context without a response.',
+                desc: 'Has Claude reply after an input-box ! command. false adds the output to context without a reply.',
             },
             showClearContextOnPlanAccept: {
                 label: 'Clear context on plan accept (showClearContextOnPlanAccept)',
-                desc: 'Shows the clear-context option on the plan acceptance screen. Default: off.',
+                desc: 'Adds a first option to the plan approval menu that approves the plan and clears the conversation context.',
             },
             skipWebFetchPreflight: {
                 label: 'Skip WebFetch preflight (skipWebFetchPreflight)',
-                desc: 'Skips the Anthropic hostname safety preflight for WebFetch. Intended for restricted-egress deployments.',
+                desc: 'Skips the WebFetch safety check that sends each requested hostname to api.anthropic.com.',
             },
             useAutoModeDuringPlan: {
                 label: 'Auto mode during plan (useAutoModeDuringPlan)',
-                desc: 'Applies auto-mode semantics in plan mode when auto mode is available. Default: on.',
+                desc: 'Has the auto mode classifier review shell commands in plan mode. false prompts for every command outside the built-in read-only set.',
             },
             workflowKeywordTriggerEnabled: {
                 label: 'Ultracode keyword (workflowKeywordTriggerEnabled)',
-                desc: 'Treats ultracode in a prompt as the dynamic-workflow trigger. Default: on.',
+                desc: 'Treats the word ultracode in a prompt as a dynamic workflow trigger.',
             },
             workflowSizeGuideline: {
                 label: 'Workflow size guideline (workflowSizeGuideline)',
-                desc: 'Agent count Claude aims for in dynamic workflows: unrestricted, small, medium (default), or large.',
+                desc: 'Agent count Claude aims for in dynamic workflows: unrestricted = no guideline, small = fewer than 5, medium = fewer than 10, large = fewer than 50.',
             },
             enableWorkflows: {
                 label: 'Enable workflows (enableWorkflows)',
@@ -524,19 +592,19 @@ export default {
             },
             disableWorkflows: {
                 label: 'Disable workflows (disableWorkflows)',
-                desc: 'Disables dynamic workflows and bundled workflow commands. Default: off.',
+                desc: 'Turns off dynamic workflows and the bundled workflow commands for everyone these settings reach.',
             },
             disableBundledSkills: {
                 label: 'Disable bundled skills (disableBundledSkills)',
-                desc: 'Removes skills and workflows bundled with Claude Code without affecting plugin or .claude skills.',
+                desc: 'Removes the skills and workflows bundled with Claude Code and hides built-in commands such as /init from the model.',
             },
             syncClaudeAiSkills: {
                 label: 'Sync claude.ai skills (syncClaudeAiSkills)',
-                desc: 'Set to false to stop downloading and loading the skills enabled for your claude.ai account and move already synced skills to ~/.claude/skills/.trash.',
+                desc: 'false stops downloading and loading the skills enabled for your claude.ai account and moves already synced skills to ~/.claude/skills/.trash.',
             },
             syncClaudeAiPlugins: {
                 label: 'Sync claude.ai plugins (syncClaudeAiPlugins)',
-                desc: 'Set to false to stop downloading and loading the plugins enabled for your claude.ai account and move already synced plugins to ~/.claude/plugins/.trash.',
+                desc: 'false stops downloading and loading the plugins enabled for your claude.ai account and moves already synced plugins to ~/.claude/plugins/.trash.',
             },
             disableAllHooks: {
                 label: 'Disable all hooks (disableAllHooks)',
@@ -547,8 +615,8 @@ export default {
                 desc: 'Disables background agents, claude agents, --bg, /background, and the on-demand supervisor.',
             },
             disableClaudeAiConnectors: {
-                label: 'Disable Claude.ai connectors (disableClaudeAiConnectors)',
-                desc: 'Stops automatic fetching and connection of claude.ai MCP connectors. Explicit --mcp-config servers are unaffected.',
+                label: 'Disable claude.ai connectors (disableClaudeAiConnectors)',
+                desc: 'Stops fetching and connecting the claude.ai MCP connectors.',
             },
             disableRemoteControl: {
                 label: 'Disable Remote Control (disableRemoteControl)',
@@ -556,15 +624,15 @@ export default {
             },
             remoteControlAtStartup: {
                 label: 'Remote Control at startup (remoteControlAtStartup)',
-                desc: 'Connects Remote Control when each interactive session starts. Unset follows the organization default.',
+                desc: "Connects Remote Control when each interactive session starts. Unset follows your organization's default, then Claude Code's.",
             },
             skillListingBudgetFraction: {
                 label: 'Skill-listing context fraction (skillListingBudgetFraction)',
-                desc: 'Reserves this fraction of the model context for the skill listing each turn. Must be greater than 0 and at most 1. Default: 0.01 (1%).',
+                desc: 'Share of the context window reserved for the skill listing each turn, greater than 0 and at most 1. Unset means 0.01 (1%).',
             },
             skillListingMaxDescChars: {
                 label: 'Maximum skill description (skillListingMaxDescChars)',
-                desc: 'Caps the combined description and when_to_use text sent for each skill. Default: 1536 characters.',
+                desc: 'Characters of description and when_to_use text shown per skill in the skill listing. Unset means 1536.',
             },
             apiKeyHelper: {
                 label: 'API key helper command (apiKeyHelper)',
@@ -596,7 +664,7 @@ export default {
             },
             forceLoginMethod: {
                 label: 'Restrict login method (forceLoginMethod)',
-                desc: 'Limits which account type can sign in: claudeai = Claude.ai, console = Claude Console, gateway = cloud gateway.',
+                desc: 'Limits which account type signs in: claudeai = claude.ai, console = Claude Console, gateway = cloud gateway.',
             },
             forceLoginGatewayUrl: {
                 label: 'Login gateway URL (forceLoginGatewayUrl)',
@@ -604,15 +672,15 @@ export default {
             },
             remoteDefaultEnvironmentId: {
                 label: 'Default cloud environment (remote.defaultEnvironmentId)',
-                desc: 'Default cloud environment for sessions created with claude --cloud. Picking one with /remote-env writes this key.',
+                desc: 'Environment ID of the default cloud environment for cloud sessions created from the CLI, such as with claude --cloud.',
             },
             worktreeBaseRef: {
                 label: 'Worktree base ref (worktree.baseRef)',
-                desc: 'Ref new worktrees branch from: fresh = origin default branch (default), head = your current local HEAD.',
+                desc: 'Ref new worktrees branch from: fresh = origin default branch, head = your current local HEAD.',
             },
             worktreeBgIsolation: {
                 label: 'Background isolation (worktree.bgIsolation)',
-                desc: 'Isolation mode for background sessions: worktree = block edits in the main checkout until EnterWorktree (default), none = edit the working copy directly.',
+                desc: 'Isolation of file edits in background sessions: worktree = block edits in the main checkout until EnterWorktree, none = edit the working copy directly.',
             },
             worktreeLocation: {
                 label: 'SSH session worktree folder (worktree.location)',
@@ -624,15 +692,15 @@ export default {
             },
             enableArtifact: {
                 label: 'Enable Artifact (enableArtifact)',
-                desc: 'Set to false to turn off the Artifact tool that publishes session output as a private claude.ai page. true is the same as unset.',
+                desc: 'false turns off the Artifact tool that publishes session output as a private claude.ai page.',
             },
             disableAutoMode: {
                 label: 'Block auto mode (disableAutoMode)',
-                desc: 'Set to disable to remove auto mode from the Shift+Tab cycle and start sessions that would begin in auto mode in default mode instead.',
+                desc: 'disable removes auto mode from the Shift+Tab cycle and starts sessions that would begin in auto mode in default mode.',
             },
             disableDeepLinkRegistration: {
                 label: 'Block deep-link registration (disableDeepLinkRegistration)',
-                desc: 'Set to disable to stop startup registration of the claude-cli:// protocol handler.',
+                desc: 'disable stops Claude Code from registering the claude-cli:// protocol handler.',
             },
             disableSkillShellExecution: {
                 label: 'Disable skill shell execution (disableSkillShellExecution)',
@@ -644,7 +712,7 @@ export default {
             },
             fallbackModel: {
                 label: 'Fallback models (fallbackModel)',
-                desc: 'Ordered model IDs to try when the primary model is overloaded or unavailable, up to three models.',
+                desc: 'Model aliases or IDs to try in order when the primary model is overloaded or unavailable, up to three.',
             },
             modelOverrides: {
                 label: 'Model ID overrides (modelOverrides)',
@@ -656,7 +724,7 @@ export default {
             },
             modelSettings: {
                 label: 'Per-model settings (modelSettings)',
-                desc: 'Effort level, effort cap, and auto-compact window saved for each model. Levels chosen with /effort or /model are saved here.',
+                desc: 'Effort level, effort cap, and auto-compact window saved for each model.',
             },
             footerLinksRegexes: {
                 label: 'Footer link rules (footerLinksRegexes)',
@@ -704,7 +772,7 @@ export default {
             },
             fileSuggestion: {
                 label: 'File suggestion command (fileSuggestion)',
-                desc: 'External command that generates @ file-completion candidates. Requires type ("command") and command.',
+                desc: 'External command that generates @ file-completion candidates.',
             },
             hooks: {
                 label: 'Lifecycle hooks (hooks)',
@@ -712,19 +780,23 @@ export default {
             },
             permissionsDefaultMode: {
                 label: 'Default permission mode (permissions.defaultMode)',
-                desc: 'Permission mode at session start. default = prompt on first tool use, acceptEdits = auto-accept file edits, plan = start in plan mode, auto = start in auto mode, dontAsk = auto-deny anything that would prompt, bypassPermissions = skip all permission prompts, manual = alias for default.',
+                desc: 'Permission mode for new sessions: default = ask except for reads, acceptEdits = also run file edits, plan = read and plan only, auto = a classifier checks actions, dontAsk = deny what would prompt, bypassPermissions = run everything, manual = same as default.',
             },
             permissionsDisableBypassPermissionsMode: {
                 label: 'Disable bypassPermissions (permissions.disableBypassPermissionsMode)',
-                desc: 'Set "disable" to prevent the bypassPermissions mode from being used.',
+                desc: 'disable prevents anyone from entering bypassPermissions mode.',
             },
             permissionsBlockReadsOutsideWorkingDirectories: {
                 label: 'Block reads outside working directories (permissions.blockReadsOutsideWorkingDirectories)',
                 desc: 'Refuses Read, Grep, Glob, and LSP reads outside your working directories in every permission mode.',
             },
+            permissionsBlockWritesOutsideWorkingDirectories: {
+                label: 'Block writes outside working directories (permissions.blockWritesOutsideWorkingDirectories)',
+                desc: "Refuses Write, Edit, and NotebookEdit paths outside your working directories in every permission mode, apart from some of Claude Code's own files.",
+            },
             skipDangerousModePermissionPrompt: {
                 label: 'Skip bypassPermissions prompt (skipDangerousModePermissionPrompt)',
-                desc: 'Skips the confirmation shown before entering bypass permissions mode via --dangerously-skip-permissions or defaultMode: bypassPermissions.',
+                desc: 'Skips the confirmation shown before a session enters bypassPermissions mode.',
             },
             skipAutoPermissionPrompt: {
                 label: 'Skip auto mode notice (skipAutoPermissionPrompt)',
@@ -740,7 +812,7 @@ export default {
             },
             permissionsDeny: {
                 label: 'Deny rules (permissions.deny)',
-                desc: 'Array of permission rules that deny tool use. Also useful for restricting access to sensitive files.',
+                desc: 'Array of permission rules that deny tool use.',
             },
             permissionsAdditionalDirectories: {
                 label: 'Additional directories (permissions.additionalDirectories)',
@@ -752,55 +824,63 @@ export default {
             },
             sandboxFailIfUnavailable: {
                 label: 'Fail if unavailable (sandbox.failIfUnavailable)',
-                desc: 'Fails startup when the sandbox dependencies are not available.',
+                desc: "Exits with an error at startup when the sandbox can't start, instead of running commands unsandboxed.",
             },
             sandboxAllowUnsandboxedCommands: {
                 label: 'Allow unsandboxed commands (sandbox.allowUnsandboxedCommands)',
-                desc: 'Permits running commands outside the sandbox. Disable for a strict sandbox.',
+                desc: 'Lets Claude retry a blocked command outside the sandbox. false turns on strict sandbox mode.',
             },
             sandboxAutoAllowBashIfSandboxed: {
                 label: 'Auto-allow sandboxed Bash (sandbox.autoAllowBashIfSandboxed)',
-                desc: 'Automatically approves Bash commands that run inside the sandbox.',
+                desc: 'Runs sandboxed Bash commands without a permission prompt.',
             },
             sandboxAllowAppleEvents: {
                 label: 'Allow Apple Events (sandbox.allowAppleEvents)',
-                desc: 'Permits sending Apple Events on macOS, letting sandboxed commands launch other applications.',
+                desc: 'On macOS, lets sandboxed commands send Apple Events. Code execution is no longer isolated.',
+            },
+            sandboxAllowNestedUserNamespaces: {
+                label: 'Allow nested user namespaces (sandbox.allowNestedUserNamespaces)',
+                desc: 'Lets sandboxed commands create user namespaces, which turns off a security boundary of the sandbox.',
             },
             sandboxEnableWeakerNetworkIsolation: {
                 label: 'Weaker network isolation (sandbox.enableWeakerNetworkIsolation)',
-                desc: 'Runs network isolation in a weaker mode.',
+                desc: 'Lets sandboxed commands reach the system TLS trust service, which opens a possible data exfiltration path.',
             },
             sandboxEnableWeakerNestedSandbox: {
                 label: 'Weaker nested sandbox (sandbox.enableWeakerNestedSandbox)',
-                desc: 'Uses a weaker sandbox for nested environments such as Docker containers.',
+                desc: "Runs the Linux sandbox inside an unprivileged container by reusing the container's /proc, which exposes process information.",
             },
             sandboxFilesystemDisabled: {
                 label: 'Disable filesystem isolation (sandbox.filesystem.disabled)',
-                desc: 'Disables sandbox filesystem isolation so reads and writes are unrestricted. Network isolation stays in effect (v2.1.216+).',
+                desc: 'Turns off sandbox filesystem isolation while keeping network isolation, so reads and writes are unrestricted.',
             },
             sandboxNetworkHttpProxyPort: {
                 label: 'HTTP proxy port (sandbox.network.httpProxyPort)',
-                desc: 'Port number of the HTTP proxy used by sandbox network isolation.',
+                desc: 'Local TCP port of your own HTTP proxy. Unset uses the proxy Claude Code runs.',
             },
             sandboxNetworkSocksProxyPort: {
                 label: 'SOCKS proxy port (sandbox.network.socksProxyPort)',
-                desc: 'Port number of the SOCKS proxy used by sandbox network isolation.',
+                desc: 'Local TCP port of your own SOCKS5 proxy. Unset uses the proxy Claude Code runs.',
             },
             sandboxNetworkStrictAllowlist: {
                 label: 'Strict domain allowlist (sandbox.network.strictAllowlist)',
-                desc: 'Denies sandboxed access to hosts outside the allowlist instead of prompting for approval. Default: off.',
+                desc: 'Denies sandboxed access to hosts outside the allowlist instead of prompting for approval.',
             },
             sandboxNetworkAllowAllUnixSockets: {
                 label: 'Allow all Unix sockets (sandbox.network.allowAllUnixSockets)',
-                desc: 'Allows every Unix socket connection inside the sandbox; the only way to permit them on Linux and WSL2. Default: off.',
+                desc: 'Lets sandboxed commands connect to every Unix socket.',
             },
             sandboxNetworkAllowLocalBinding: {
                 label: 'Allow localhost binding (sandbox.network.allowLocalBinding)',
-                desc: 'Lets sandboxed commands bind to localhost ports (macOS only). Default: off.',
+                desc: 'On macOS, lets sandboxed commands listen on network ports and connect to any localhost port.',
             },
             sandboxCredentialsAllowPlaintextInject: {
                 label: 'Allow plaintext injection (sandbox.credentials.allowPlaintextInject)',
-                desc: 'Substitutes masked credential values on plain HTTP requests as well as HTTPS. Leave off outside trusted test networks. Default: off.',
+                desc: 'Substitutes masked credential values on plain HTTP requests as well as TLS-terminated HTTPS.',
+            },
+            sandboxRipgrep: {
+                label: 'Sandbox ripgrep (sandbox.ripgrep)',
+                desc: 'Ripgrep binary the sandbox uses, given as a command path and optional arguments.',
             },
             sandbox: {
                 label: 'Sandbox details (sandbox)',
@@ -808,15 +888,19 @@ export default {
             },
             statusLine: {
                 label: 'Status line (statusLine)',
-                desc: 'Command that outputs the status line content. Requires type ("command") and command; padding (extra horizontal space), refreshInterval (re-run interval in seconds), and hideVimModeIndicator (hides the Vim mode indicator) are optional.',
+                desc: 'Command that outputs the status line content.',
             },
             subagentStatusLine: {
                 label: 'Subagent status line (subagentStatusLine)',
-                desc: 'Command that outputs the status line shown for subagents. Requires type ("command") and command.',
+                desc: 'Command that rewrites the subagent rows in the task display.',
             },
             skillOverrides: {
                 label: 'Skill visibility overrides (skillOverrides)',
                 desc: 'Maps skill names to on, name-only, user-invocable-only, or off visibility.',
+            },
+            sshHostCommands: {
+                label: 'SSH host commands (sshHostCommands)',
+                desc: 'SSH connections in the Desktop environment selector whose host comes from a command.',
             },
             sshConfigs: {
                 label: 'SSH connections (sshConfigs)',
@@ -836,7 +920,7 @@ export default {
             },
             pluginConfigs: {
                 label: 'Plugin configuration (pluginConfigs)',
-                desc: 'Stores per-plugin configuration using the structure defined by each plugin.',
+                desc: "Non-sensitive answers given to each plugin's configuration dialog, keyed by plugin ID.",
             },
             prependPlugins: {
                 label: 'Plugins run first (prependPlugins)',
@@ -868,28 +952,28 @@ export default {
             },
             allowedHttpHookUrls: {
                 label: 'Allowed HTTP hook URLs (allowedHttpHookUrls)',
-                desc: 'Allowlist of URL patterns that HTTP hooks may target. * works as a wildcard.',
+                desc: 'Allowlist of URL patterns that HTTP hooks target, with * as a wildcard.',
             },
             httpHookAllowedEnvVars: {
                 label: 'HTTP hook env vars (httpHookAllowedEnvVars)',
-                desc: 'Allowlist of environment variable names HTTP hooks may interpolate into headers.',
+                desc: 'Allowlist of environment variable names HTTP hooks interpolate into headers.',
             },
             claudeMdExcludes: {
                 label: 'CLAUDE.md excludes (claudeMdExcludes)',
                 desc: 'Glob patterns or absolute paths of CLAUDE.md files to skip when loading memory.',
             },
             forceLoginOrgUUID: {
-                label: 'Allowed login org (forceLoginOrgUUID)',
-                desc: 'UUIDs of Anthropic organizations allowed to sign in. Accepts a single string or an array.',
+                label: 'Login organization (forceLoginOrgUUID)',
+                desc: 'UUID of an Anthropic organization, or an array of them. A single UUID pre-selects that organization at login.',
             },
         },
     },
     pluginManager: {
         title: 'Claude Code Plugin Manager',
-        description:
-            'List, install, and uninstall Claude Code plugins and manage marketplaces. Operations use the claude command.',
+        description: 'List, install, and uninstall Claude Code plugins and manage marketplaces.',
     },
     nav: {
+        group: 'Claude',
         claudeDesktop: 'Claude Desktop MCP Manager',
         claudeCode: 'Claude Code MCP Manager',
         assetManager: 'Claude Code Agent / Skill Manager',

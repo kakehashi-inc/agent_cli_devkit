@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Box,
@@ -9,12 +9,7 @@ import {
     TableContainer,
     TableHead,
     TableRow,
-    TextField,
     Typography,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
     Alert,
 } from '@mui/material';
 import {
@@ -24,7 +19,19 @@ import {
     KeyboardArrowDown as ExpandIcon,
     KeyboardArrowRight as CollapseIcon,
 } from '@mui/icons-material';
+import { DirectEditDialog, useDirectEdit } from '../../components/settings/DirectEditDialog';
+import { SettingsConflictDialog } from '../../components/settings/SettingsConflictDialog';
+import { SettingsFileBanner } from '../../components/settings/SettingsFileBanner';
+import { directSaveErrorKey, tableSaveErrorKey } from '../../components/settings/settingsFileMessage';
 import { SettingsValueEditor } from '../../components/settings/SettingsValueEditor';
+import {
+    baseValuesOf,
+    overlayUnsavedValues,
+    useSettingsFieldLink,
+    useSettingsLoadEffect,
+    type SettingsLoadMode,
+    type SettingsTabContext,
+} from '../../components/settings/settingsTabContext';
 import { settingsValueProblemMessage } from '../../components/settings/settingsValueMessage';
 import { AssetSearchField } from '../../components/assets/AssetSearchField';
 import { filterSettingsFields } from '../../utils/settingsSearch';
@@ -33,12 +40,15 @@ import type {
     CodexEnvironment,
     SettingsFieldSpec,
     SettingsFieldValue,
+    SettingsParseError,
     SettingsValues,
 } from '@shared/agents/codex/types';
 
 interface Props {
     env: CodexEnvironment;
     onNotify: (message: string, severity: 'success' | 'error' | 'warning') => void;
+    // タブの枠から受け取る情報。リンク行の移動先と、別のタブの保存への追従に使う。
+    profile?: SettingsTabContext;
 }
 
 /**
@@ -46,14 +56,15 @@ interface Props {
  *
  * - read() が返す項目定義（result.fields）だけをテーブルに展開して編集する。
  *   各項目は 3 状態 boolean・候補入力・セレクト・テキスト・数値で表示し、
- *   構造化設定はファイルの直接編集が必要なことを値欄へ表示する。
+ *   構造化設定は編集先のタブへのリンクか、ファイルの直接編集が必要なことを値欄へ表示する。
  * - 個々の変更は即保存せず、テーブル下の「保存」「キャンセル」で確定/破棄する。
  *   - 保存: 変更した編集可能項目だけを config.toml へ反映（他セクション・コメント・書式は保持）。
  *   - キャンセル: 再取得して編集前の状態へ戻す。
  * - 「直接編集」で config.toml の生 TOML を直接編集できる。
  */
-export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
+export const SettingsSection: React.FC<Props> = ({ env, onNotify, profile }) => {
     const { t } = useTranslation();
+    const fieldLink = useSettingsFieldLink('codex', profile?.selectTab);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [available, setAvailable] = useState(true);
@@ -61,8 +72,9 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
     const [editValues, setEditValues] = useState<Record<string, SettingsFieldValue>>({});
     const [originalValues, setOriginalValues] = useState<Record<string, SettingsFieldValue>>({});
 
-    const [rawOpen, setRawOpen] = useState(false);
-    const [rawText, setRawText] = useState('');
+    // 設定ファイルを読めない、または解釈できない理由。
+    const [readFailed, setReadFailed] = useState<string | undefined>(undefined);
+    const [parseError, setParseError] = useState<SettingsParseError | undefined>(undefined);
 
     const [fields, setFields] = useState<SettingsFieldSpec[]>([]);
 
@@ -122,17 +134,26 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         return t('codex.settings.unset');
     };
 
-    const load = async () => {
-        setLoading(true);
+    // テーブルの保存で、読み込んだ後に値が変わっていた項目の key。null の間は確認を出さない。
+    const [conflictKeys, setConflictKeys] = useState<string[] | null>(null);
+
+    const load = async (mode: SettingsLoadMode = 'replace', discard: readonly string[] = []) => {
+        if (mode === 'replace') setLoading(true);
         try {
             const result = await window.agentCliDevkit.codex.config.read(env);
             setAvailable(result.available);
+            setReadFailed(result.readFailed);
+            setParseError(result.parseError);
             setFields(result.fields);
             const next: Record<string, SettingsFieldValue> = {};
             for (const f of result.fields) {
                 next[f.key] = result.values[f.key];
             }
-            setEditValues(next);
+            setEditValues(
+                mode === 'overlay'
+                    ? previous => overlayUnsavedValues(result.fields, previous, originalValues, next, discard)
+                    : next
+            );
             setOriginalValues(next);
         } catch (error) {
             console.error('Failed to read settings:', error);
@@ -142,10 +163,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         }
     };
 
-    useEffect(() => {
-        load();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    useSettingsLoadEffect(load, profile?.docVersion, profile?.reloadNonce);
 
     const collectValues = (): SettingsValues =>
         Object.fromEntries(
@@ -172,21 +190,19 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         }
         setBusy(true);
         try {
-            const result = await window.agentCliDevkit.codex.config.write(env, values);
+            const result = await window.agentCliDevkit.codex.config.write(
+                env,
+                values,
+                baseValuesOf(values, originalValues)
+            );
             if (result.ok) {
                 onNotify(t('codex.settings.saveSuccess'), 'success');
                 await load();
+                profile?.onSaved();
+            } else if (result.message === 'conflict') {
+                setConflictKeys(result.conflictKeys ?? []);
             } else {
-                onNotify(
-                    t(
-                        result.message === 'invalid-existing-toml'
-                            ? 'codex.settings.invalidExisting'
-                            : result.message === 'verify-failed'
-                              ? 'codex.settings.verifyFailed'
-                              : 'codex.settings.saveError'
-                    ),
-                    'error'
-                );
+                onNotify(t(tableSaveErrorKey('codex.settings', result.message, 'invalid-existing-toml')), 'error');
             }
         } catch {
             onNotify(t('codex.settings.saveError'), 'error');
@@ -196,43 +212,23 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
     };
 
     const handleCancel = () => {
-        load();
+        void load();
     };
 
-    const handleOpenRaw = async () => {
-        setBusy(true);
-        try {
-            const result = await window.agentCliDevkit.codex.config.read(env);
-            const text = result.raw ?? '';
-            setRawText(text);
-            setRawOpen(true);
-        } catch {
-            onNotify(t('codex.settings.readError'), 'error');
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    const handleSaveRaw = async () => {
-        setBusy(true);
-        try {
-            const result = await window.agentCliDevkit.codex.config.writeRaw(env, rawText);
-            if (result.ok) {
-                onNotify(t('codex.settings.saveSuccess'), 'success');
-                setRawOpen(false);
-                await load();
-            } else {
-                onNotify(
-                    t(result.message === 'invalid-toml' ? 'codex.settings.invalidToml' : 'codex.settings.saveError'),
-                    'error'
-                );
-            }
-        } catch {
-            onNotify(t('codex.settings.saveError'), 'error');
-        } finally {
-            setBusy(false);
-        }
-    };
+    const directEditor = useDirectEdit({
+        read: () => window.agentCliDevkit.codex.config.readRaw(env),
+        writeRaw: (raw, baseRevision) => window.agentCliDevkit.codex.config.writeRaw(env, raw, baseRevision),
+        initialText: '',
+        setBusy,
+        onSaved: async () => {
+            onNotify(t('codex.settings.saveSuccess'), 'success');
+            await load();
+            profile?.onSaved();
+        },
+        onReadFailed: () => onNotify(t('codex.settings.readError'), 'error'),
+        onSaveFailed: message =>
+            onNotify(t(directSaveErrorKey('codex.settings', message, 'invalid-toml', 'invalidToml')), 'error'),
+    });
 
     const setValue = (key: string, value: SettingsFieldValue) => {
         setEditValues(prev => ({ ...prev, [key]: value }));
@@ -250,17 +246,31 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         return <Alert severity='info'>{t('codex.settings.unavailable')}</Alert>;
     }
 
+    // 値を確定できないあいだは、未設定に見える表と保存の操作を出さない。
+    const blocked = readFailed !== undefined || parseError !== undefined;
+
     return (
         <Box>
-            <AssetSearchField value={searchQuery} onChange={setSearchQuery} label={t('common.settingsSearchLabel')} />
+            <SettingsFileBanner
+                readFailed={readFailed}
+                parseError={parseError}
+                parseErrorKey='common.settingsFile.parseError'
+            />
+            {!blocked && (
+                <AssetSearchField
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    label={t('common.settingsSearchLabel')}
+                />
+            )}
 
-            {searching && groupedFields.length === 0 ? (
+            {blocked ? null : searching && groupedFields.length === 0 ? (
                 <Typography color='text.secondary' sx={{ py: 1 }}>
                     {t('common.noSearchResults')}
                 </Typography>
             ) : (
                 <TableContainer>
-                    <Table size='small'>
+                    <Table size='small' sx={{ tableLayout: 'fixed' }}>
                         <TableHead>
                             <TableRow>
                                 <TableCell sx={{ width: '40%' }}>{t('codex.settings.colItem')}</TableCell>
@@ -300,7 +310,9 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                         {expanded &&
                                             items.map(f => (
                                                 <TableRow key={f.key}>
-                                                    <TableCell sx={{ verticalAlign: 'top', pl: 3 }}>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', pl: 3, overflowWrap: 'anywhere' }}
+                                                    >
                                                         <Typography variant='body2' sx={{ fontWeight: 600 }}>
                                                             {t(`codex.settings.field.${f.key}.label`)}
                                                         </Typography>
@@ -326,6 +338,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                                 ),
                                                             }))}
                                                             onChange={value => setValue(f.key, value)}
+                                                            {...fieldLink(f)}
                                                         />
                                                     </TableCell>
                                                 </TableRow>
@@ -340,76 +353,59 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
 
             {/* テーブル下部: 左に 保存 / キャンセル、右端に 直接編集 */}
             <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'center' }}>
-                <Button variant='contained' size='small' startIcon={<SaveIcon />} disabled={busy} onClick={handleSave}>
-                    {t('codex.settings.save')}
-                </Button>
-                <Button
-                    variant='outlined'
-                    size='small'
-                    startIcon={<CloseIcon />}
-                    disabled={busy}
-                    onClick={handleCancel}
-                >
-                    {t('codex.settings.cancel')}
-                </Button>
+                {!blocked && (
+                    <>
+                        <Button
+                            variant='contained'
+                            size='small'
+                            startIcon={<SaveIcon />}
+                            disabled={busy}
+                            onClick={handleSave}
+                        >
+                            {t('codex.settings.save')}
+                        </Button>
+                        <Button
+                            variant='outlined'
+                            size='small'
+                            startIcon={<CloseIcon />}
+                            disabled={busy}
+                            onClick={handleCancel}
+                        >
+                            {t('codex.settings.cancel')}
+                        </Button>
+                    </>
+                )}
                 <Box sx={{ flexGrow: 1 }} />
                 <Button
                     variant='outlined'
                     size='small'
                     startIcon={<CodeIcon />}
-                    disabled={busy}
-                    onClick={handleOpenRaw}
+                    disabled={busy || readFailed !== undefined}
+                    onClick={() => void directEditor.start()}
                 >
                     {t('codex.settings.directEdit')}
                 </Button>
             </Box>
 
-            {/* 直接編集ダイアログ */}
-            <Dialog
-                open={rawOpen}
-                onClose={() => !busy && setRawOpen(false)}
-                maxWidth='md'
-                fullWidth
-                // ダイアログを固定高にし、スクロールはテキストエリア内の 1 本のみにする
-                slotProps={{ paper: { sx: { height: '85vh' } } }}
-            >
-                <DialogTitle>{t('codex.settings.directEditTitle')}</DialogTitle>
-                <DialogContent sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <Typography variant='body2' color='text.secondary' sx={{ mb: 1.5, flexShrink: 0 }}>
-                        {t('codex.settings.directEditDesc')}
-                    </Typography>
-                    <TextField
-                        multiline
-                        fullWidth
-                        value={rawText}
-                        onChange={e => setRawText(e.target.value)}
-                        sx={{ flexGrow: 1, minHeight: 0 }}
-                        slotProps={{
-                            input: {
-                                sx: {
-                                    fontFamily: 'monospace',
-                                    fontSize: '0.85rem',
-                                    height: '100%',
-                                    alignItems: 'flex-start',
-                                    // TextareaAutosize の自動高さを無効化し、固定高＋内部スクロールにする
-                                    '& textarea': {
-                                        height: '100% !important',
-                                        overflow: 'auto !important',
-                                    },
-                                },
-                            },
-                        }}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setRawOpen(false)} disabled={busy}>
-                        {t('codex.settings.cancel')}
-                    </Button>
-                    <Button variant='contained' startIcon={<SaveIcon />} onClick={handleSaveRaw} disabled={busy}>
-                        {t('codex.settings.save')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <SettingsConflictDialog
+                labels={conflictKeys?.map(key => t(`codex.settings.field.${key}.label`)) ?? null}
+                busy={busy}
+                onBack={() => setConflictKeys(null)}
+                onReload={() => {
+                    const keys = conflictKeys ?? [];
+                    setConflictKeys(null);
+                    void load('overlay', keys);
+                }}
+            />
+
+            <DirectEditDialog
+                editor={directEditor}
+                busy={busy}
+                title={t('codex.settings.directEditTitle')}
+                description={t('codex.settings.directEditDesc')}
+                cancelLabel={t('codex.settings.cancel')}
+                saveLabel={t('codex.settings.save')}
+            />
         </Box>
     );
 };

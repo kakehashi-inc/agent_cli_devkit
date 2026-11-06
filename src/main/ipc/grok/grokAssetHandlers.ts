@@ -10,8 +10,8 @@ import { GrokAssetManager } from '../../services/grok/GrokAssetManager';
  */
 export function registerGrokAssetHandlers(manager: GrokAssetManager, getMainWindow: () => BrowserWindow | null): void {
     // 環境一覧（native + Grok 入り WSL distro）を取得
-    ipcMain.handle(GROK_ASSET_CHANNELS.GET_ENVIRONMENTS, () => {
-        return manager.getEnvironments();
+    ipcMain.handle(GROK_ASSET_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) => {
+        return manager.getEnvironments(refresh === true);
     });
 
     // 指定環境・種別のサブディレクトリ一覧を取得

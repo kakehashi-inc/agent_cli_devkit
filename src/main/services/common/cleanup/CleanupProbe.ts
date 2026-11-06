@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import {
     closeSync,
+    type Dirent,
     lstatSync,
     openSync,
     readdirSync,
@@ -10,12 +11,19 @@ import {
     statSync,
     unlinkSync,
 } from 'fs';
+import { lstat, open, type FileHandle } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import { join, posix } from 'path';
 import type { AgentEnvironment } from '../../../../shared/agents/types';
 import { recursiveDirStats } from '../../../utils/fsSize';
 import { removeTreeBestEffort } from '../fs/removeTreeBestEffort';
 import type { WslDetector } from '../wsl/WslDetector';
+
+// native でファイルの先頭と末尾を同時に読む数の上限。
+const NATIVE_READ_CONCURRENCY = 8;
+// WSL で 1 回のスクリプトに含めるファイル数と、同時に実行するスクリプトの数の上限。
+const WSL_READ_BATCH_SIZE = 64;
+const WSL_READ_CONCURRENCY = 3;
 
 /** 一覧のエントリ種別。シンボリックリンク・ジャンクション・特殊ファイルは 'other'（辿らない）。 */
 export type ProbeEntryType = 'file' | 'dir' | 'other';
@@ -48,6 +56,12 @@ export interface ProbeNestedEntry {
     ownedBySelf: boolean;
 }
 
+/** ファイルの先頭と末尾。ファイルが読む大きさ以下なら両方とも全体。 */
+export interface FileHeadTail {
+    head: Buffer;
+    tail: Buffer;
+}
+
 /** ロックファイルの状態。判定できない場合は安全側に倒して 'held' とする。 */
 export type LockState = 'free' | 'held' | 'missing';
 
@@ -66,10 +80,11 @@ export interface NestedFiles {
  * - 'file': ファイルを削除する。
  * - 'dir': ディレクトリを配下ごと削除する（配下のリンクはリンク自体だけを外す）。
  * - 'empty-dir': 空のディレクトリだけを削除する（空でなければ残す）。
+ * - 'link': シンボリックリンク・ジャンクション自体だけを外す（リンク先には触れない）。リンクでなければ削除しない。
  */
 export interface RemoveTarget {
     path: string;
-    type: 'file' | 'dir' | 'empty-dir';
+    type: 'file' | 'dir' | 'empty-dir' | 'link';
 }
 
 /**
@@ -91,6 +106,11 @@ export interface CleanupProbe {
     /** dir 直下のエントリのうち、名前が match を満たすものを集計付きで返す。dir が無い・リンクの場合は空配列。 */
     list(dir: string, match: (name: string) => boolean): Promise<ProbeEntry[]>;
     /**
+     * 各ディレクトリ直下のすべてのエントリを集計付きで返す。存在しないディレクトリは空配列、リンク・ディレクトリ以外と
+     * 一覧できなかったものは null（対象なしと判定不能を区別する）。
+     */
+    listEach(dirs: string[]): Promise<(ProbeEntry[] | null)[]>;
+    /**
      * root からちょうど depth 階層下にあるエントリの種別と所有者を返す（depth=0 は root 自身）。
      * サイズ・件数は集計しない。root を含め、リンク・ジャンクションの先は辿らない。一覧できない場合は空配列。
      */
@@ -102,8 +122,20 @@ export interface CleanupProbe {
     tryListNested(root: string, depth: number): Promise<ProbeNestedEntry[] | null>;
     /** 各ファイルの先頭 bytes バイト。通常ファイルでない・読めない場合は null。 */
     readHeads(paths: string[], bytes: number): Promise<(Buffer | null)[]>;
+    /**
+     * 各ファイルの先頭と末尾の bytes バイト。通常ファイルでない・読めない場合は null。
+     * 同時に読む数を抑えて読む。
+     */
+    readHeadTails(paths: string[], bytes: number): Promise<(FileHeadTail | null)[]>;
+    /**
+     * 各ディレクトリの配下をリンクを辿らず再帰で走査し、ディレクトリ以外のエントリのうち、相対パスのどの要素も
+     * ドットで始まらないものがあるかを返す。無いと断定できない（走査できない場所がある）場合は null。
+     */
+    hasUndottedEntries(dirs: string[]): Promise<(boolean | null)[]>;
     /** root から depth 階層下の各ディレクトリについて、suffix のパスにある通常ファイルを読む（先頭 maxBytes まで）。 */
     readNested(root: string, depth: number, suffix: string[], maxBytes: number): Promise<NestedFiles>;
+    /** 各パスのリンクをすべてたどった実体のパス。パスが無い場合は null。 */
+    realPaths(paths: string[]): Promise<(string | null)[]>;
     /** ロックファイルが他から保持されているか。 */
     lockStates(paths: string[]): Promise<LockState[]>;
     /** ファイルを書き込みで開けない（実行中・他で使用中）か。存在しない場合は false。 */
@@ -131,6 +163,20 @@ export function createCleanupProbe(env: AgentEnvironment, detector: WslDetector)
     return new NativeCleanupProbe();
 }
 
+/** 同時に処理する数を limit までに抑えて items を処理し、入力の順に結果を返す。 */
+async function mapBounded<T, R>(items: readonly T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let next = 0;
+    const worker = async () => {
+        while (next < items.length) {
+            const index = next++;
+            results[index] = await work(items[index]);
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return results;
+}
+
 // ============================================================
 // POSIX シェル（WSL distro 内 / native の macOS・Linux）で使う判定スクリプト
 // ============================================================
@@ -141,15 +187,16 @@ function shellQuote(value: string): string {
 }
 
 // ロックファイルの状態を free / held / missing で出力するシェル関数。
-// flock(1) が無い環境（macOS など）は perl の flock で判定し、どちらも無ければ held とする。
+// flock があれば flock で判定する。無ければ lsof で判定し、標準出力と標準エラーがどちらも空のときだけ free とする
+// （lsof はエラーのときも「開いていない」と同じ終了コードを返す）。どちらも無ければ held とする。
 const LOCK_STATE_FN = [
     'lock_state() {',
     '    if [ -L "$1" ]; then echo held; return; fi',
     '    if [ ! -e "$1" ]; then echo missing; return; fi',
     '    if command -v flock >/dev/null 2>&1; then',
     '        if flock -n "$1" true 2>/dev/null; then echo free; else echo held; fi',
-    '    elif command -v perl >/dev/null 2>&1; then',
-    `        if perl -MFcntl=:flock -e 'open(my $f, "<", $ARGV[0]) or exit 2; exit(flock($f, LOCK_EX | LOCK_NB) ? 0 : 1)' "$1" 2>/dev/null; then echo free; else echo held; fi`,
+    '    elif command -v lsof >/dev/null 2>&1; then',
+    '        if [ -z "$(lsof -- "$1" 2>&1)" ]; then echo free; else echo held; fi',
     '    else',
     '        echo held',
     '    fi',
@@ -207,12 +254,23 @@ class NativeCleanupProbe implements CleanupProbe {
     }
 
     async list(dir: string, match: (name: string) => boolean): Promise<ProbeEntry[]> {
-        if (!this.isRealDir(dir)) return [];
+        return this.listDir(dir, match) ?? [];
+    }
+
+    async listEach(dirs: string[]): Promise<(ProbeEntry[] | null)[]> {
+        return dirs.map(dir => this.listDir(dir, () => true));
+    }
+
+    /** dir 直下のエントリを集計付きで返す。dir が無ければ空配列、リンク・ディレクトリ以外と一覧できない場合は null。 */
+    private listDir(dir: string, match: (name: string) => boolean): ProbeEntry[] | null {
         let names: string[];
         try {
+            const own = lstatSync(dir);
+            if (!own.isDirectory() || own.isSymbolicLink()) return null;
             names = readdirSync(dir);
-        } catch {
-            return [];
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            return code === 'ENOENT' || code === 'ENOTDIR' ? [] : null;
         }
         const uid = typeof process.getuid === 'function' ? process.getuid() : null;
         const entries: ProbeEntry[] = [];
@@ -309,6 +367,55 @@ class NativeCleanupProbe implements CleanupProbe {
         return paths.map(path => this.readRegularFile(path, bytes));
     }
 
+    async readHeadTails(paths: string[], bytes: number): Promise<(FileHeadTail | null)[]> {
+        return mapBounded(paths, NATIVE_READ_CONCURRENCY, path => this.readHeadTail(path, bytes));
+    }
+
+    /** 通常ファイルの先頭と末尾の bytes バイトを読む。リンク・読めない場合は null。 */
+    private async readHeadTail(path: string, bytes: number): Promise<FileHeadTail | null> {
+        let handle: FileHandle | null = null;
+        const readAt = async (file: FileHandle, length: number, position: number) => {
+            const buffer = Buffer.alloc(length);
+            const { bytesRead } = await file.read(buffer, 0, length, position);
+            return buffer.subarray(0, bytesRead);
+        };
+        try {
+            const st = await lstat(path);
+            if (!st.isFile()) return null;
+            handle = await open(path, 'r');
+            const head = await readAt(handle, Math.min(bytes, st.size), 0);
+            const tail = st.size <= bytes ? head : await readAt(handle, bytes, st.size - bytes);
+            return { head, tail };
+        } catch {
+            return null;
+        } finally {
+            await handle?.close().catch(() => undefined);
+        }
+    }
+
+    async hasUndottedEntries(dirs: string[]): Promise<(boolean | null)[]> {
+        return dirs.map(dir => {
+            let unreadable = false;
+            const walk = (current: string): boolean => {
+                let entries: Dirent[];
+                try {
+                    entries = readdirSync(current, { withFileTypes: true });
+                } catch (error) {
+                    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') unreadable = true;
+                    return false;
+                }
+                for (const entry of entries) {
+                    if (entry.name.startsWith('.')) continue;
+                    // シンボリックリンク・ジャンクションは一覧でディレクトリにならないので、辿らずに 1 件として数える。
+                    if (!entry.isDirectory() || walk(join(current, entry.name))) return true;
+                }
+                return false;
+            };
+            if (!this.isRealDir(dir)) return null;
+            return walk(dir) ? true : unreadable ? null : false;
+        });
+    }
+
     async readNested(root: string, depth: number, suffix: string[], maxBytes: number): Promise<NestedFiles> {
         if (!this.isRealDir(root)) {
             return { files: [] };
@@ -355,6 +462,16 @@ class NativeCleanupProbe implements CleanupProbe {
             files.push({ path, text: head ? head.toString('utf8') : null });
         }
         return { files };
+    }
+
+    async realPaths(paths: string[]): Promise<(string | null)[]> {
+        return paths.map(path => {
+            try {
+                return realpathSync.native(path);
+            } catch {
+                return null;
+            }
+        });
     }
 
     async lockStates(paths: string[]): Promise<LockState[]> {
@@ -426,6 +543,7 @@ class NativeCleanupProbe implements CleanupProbe {
                 const code = (error as NodeJS.ErrnoException).code;
                 return code === 'ENOENT' || code === 'ENOTDIR' ? [] : [target.path];
             }
+            if (target.type === 'link') return st.isSymbolicLink() ? this.removeLink(target.path) : [target.path];
             if (st.isSymbolicLink()) return [target.path];
             try {
                 if (target.type === 'dir') {
@@ -451,6 +569,25 @@ class NativeCleanupProbe implements CleanupProbe {
                 return [];
             }
         });
+    }
+
+    /** リンク自体だけを外し、残ったパスを返す。ジャンクションで unlink が失敗した場合は rmdir で外す。 */
+    private removeLink(path: string): string[] {
+        try {
+            unlinkSync(path);
+        } catch {
+            try {
+                rmdirSync(path);
+            } catch {
+                return [path];
+            }
+        }
+        try {
+            lstatSync(path);
+            return [path];
+        } catch {
+            return [];
+        }
     }
 
     /** シンボリックリンク・ジャンクションではない実ディレクトリか。 */
@@ -498,9 +635,6 @@ function runPosixShell(script: string): Promise<string> {
 // WSL distro（すべて distro 内のコマンドで判定・削除する）
 // ============================================================
 
-// ログインシェルが出力するメッセージとスクリプトの出力を区切る目印
-const OUTPUT_MARKER = '__AGENT_CLI_DEVKIT_OUTPUT__';
-
 class WslCleanupProbe implements CleanupProbe {
     readonly os = 'linux' as const;
 
@@ -509,15 +643,12 @@ class WslCleanupProbe implements CleanupProbe {
         private readonly detector: WslDetector
     ) {}
 
-    /** スクリプトを distro 内で実行し、目印より後の出力を返す。 */
-    private async run(script: string): Promise<Buffer> {
-        const out = await this.detector.runScriptInDistro(
-            this.distro,
-            `set +e\nprintf '%s\\n' ${OUTPUT_MARKER}\n${script}\nexit 0\n`
-        );
-        const marker = Buffer.from(`${OUTPUT_MARKER}\n`);
-        const at = out.indexOf(marker);
-        return at === -1 ? Buffer.alloc(0) : out.subarray(at + marker.length);
+    /**
+     * スクリプトを distro 内で実行し、前後の目印の間の出力（ログインシェルの出力を含まない）を返す。
+     * スクリプトの最後のコマンドの結果は問わない。最後まで実行されなかった場合は例外を投げる。
+     */
+    private run(script: string): Promise<Buffer> {
+        return this.detector.runMarkedScriptInDistro(this.distro, `${script}\n:`);
     }
 
     async homeDir(): Promise<string> {
@@ -554,35 +685,67 @@ class WslCleanupProbe implements CleanupProbe {
     }
 
     async list(dir: string, match: (name: string) => boolean): Promise<ProbeEntry[]> {
+        return (await this.listDirs([dir], match))[0] ?? [];
+    }
+
+    async listEach(dirs: string[]): Promise<(ProbeEntry[] | null)[]> {
+        return this.listDirs(dirs, () => true);
+    }
+
+    /**
+     * 各ディレクトリ直下のエントリのうち、名前が match を満たすものを 1 回のコマンドで一覧して集計する。
+     * ディレクトリが無ければ空配列、リンク・ディレクトリ以外と一覧できない場合は null。
+     */
+    private async listDirs(dirs: string[], match: (name: string) => boolean): Promise<(ProbeEntry[] | null)[]> {
+        if (dirs.length === 0) return [];
         let raw: Buffer;
         try {
+            // #U は実行ユーザーの uid、#D はディレクトリの始まり、#S はそのディレクトリの一覧の成否（0 は成功）。
             raw = await this.run(
                 [
-                    `d=${shellQuote(dir)}`,
-                    `printf 'U\\t%s\\0' "$(id -u)"`,
-                    `[ -d "$d" ] && [ ! -L "$d" ] && find -P "$d" -mindepth 1 -maxdepth 1 -printf '%y\\t%U\\t%T@\\t%s\\t%f\\0' 2>/dev/null`,
+                    `printf '#U\\t%s\\0' "$(id -u)"`,
+                    'adk_list() {',
+                    `    printf '#D\\0'`,
+                    `    if [ -L "$1" ]; then printf '#S\\tlink\\0'; return; fi`,
+                    `    if [ ! -e "$1" ]; then printf '#S\\t0\\0'; return; fi`,
+                    `    if [ ! -d "$1" ]; then printf '#S\\tlink\\0'; return; fi`,
+                    `    find -P "$1" -mindepth 1 -maxdepth 1 -printf '%y\\t%U\\t%T@\\t%s\\t%f\\0' 2>/dev/null`,
+                    `    printf '#S\\t%s\\0' "$?"`,
+                    '}',
+                    ...dirs.map(dir => `adk_list ${shellQuote(dir)}`),
                 ].join('\n')
             );
         } catch (error) {
-            console.error(`Failed to list ${dir} (${this.distro}):`, error);
-            return [];
+            console.error(`Failed to list ${dirs.join(', ')} (${this.distro}):`, error);
+            return dirs.map(() => null);
         }
         let uid = '';
-        const entries: ProbeEntry[] = [];
+        let index = -1;
+        const results: (ProbeEntry[] | null)[] = dirs.map(() => null);
+        const pending: ProbeEntry[][] = dirs.map(() => []);
         for (const record of raw.toString('utf8').split('\0')) {
-            if (record.startsWith('U\t')) {
-                uid = record.slice(2).trim();
+            if (record.startsWith('#U\t')) {
+                uid = record.slice(3).trim();
+                continue;
+            }
+            if (record === '#D') {
+                index++;
+                continue;
+            }
+            if (record.startsWith('#S\t')) {
+                if (index >= 0 && index < dirs.length && record.slice(3).trim() === '0')
+                    results[index] = pending[index];
                 continue;
             }
             const fields = splitFields(record, 5);
-            if (!fields) continue;
+            if (!fields || index < 0 || index >= dirs.length) continue;
             const [kind, owner, mtime, size, name] = fields;
             if (!match(name)) continue;
             const type: ProbeEntryType = kind === 'f' ? 'file' : kind === 'd' ? 'dir' : 'other';
             const mtimeSec = Number.parseFloat(mtime);
-            entries.push({
+            pending[index].push({
                 name,
-                path: posix.join(dir, name),
+                path: posix.join(dirs[index], name),
                 type,
                 size: type === 'file' ? Number.parseInt(size, 10) || 0 : 0,
                 fileCount: type === 'file' ? 1 : 0,
@@ -590,8 +753,8 @@ class WslCleanupProbe implements CleanupProbe {
                 ownedBySelf: uid.length > 0 && owner === uid,
             });
         }
-        await this.fillDirStats(entries.filter(entry => entry.type === 'dir'));
-        return entries;
+        await this.fillDirStats(results.flatMap(entries => entries ?? []).filter(entry => entry.type === 'dir'));
+        return results;
     }
 
     async listNested(root: string, depth: number): Promise<ProbeNestedEntry[]> {
@@ -712,6 +875,72 @@ class WslCleanupProbe implements CleanupProbe {
         });
     }
 
+    async readHeadTails(paths: string[], bytes: number): Promise<(FileHeadTail | null)[]> {
+        const batches: string[][] = [];
+        for (let i = 0; i < paths.length; i += WSL_READ_BATCH_SIZE) {
+            batches.push(paths.slice(i, i + WSL_READ_BATCH_SIZE));
+        }
+        const parts = await mapBounded(batches, WSL_READ_CONCURRENCY, batch => this.readHeadTailBatch(batch, bytes));
+        return parts.flat();
+    }
+
+    /** 1 回のスクリプトで各ファイルの先頭と末尾を読む。1 ファイル 1 行で、Y の後に base64 の先頭、空白、base64 の末尾。 */
+    private async readHeadTailBatch(paths: string[], bytes: number): Promise<(FileHeadTail | null)[]> {
+        let lines: string[];
+        try {
+            const out = await this.run(
+                paths
+                    .map(path => {
+                        const p = shellQuote(path);
+                        return (
+                            `if [ -f ${p} ] && [ ! -L ${p} ]; then printf 'Y'; ` +
+                            `head -c ${bytes} -- ${p} 2>/dev/null | base64 | tr -d '\\n'; printf ' '; ` +
+                            `tail -c ${bytes} -- ${p} 2>/dev/null | base64 | tr -d '\\n'; ` +
+                            `else printf 'N'; fi; printf '\\n'`
+                        );
+                    })
+                    .join('\n')
+            );
+            lines = out.toString('utf8').split(/\r?\n/);
+        } catch (error) {
+            console.error(`Failed to read files (${this.distro}):`, error);
+            return paths.map(() => null);
+        }
+        return paths.map((_, i) => {
+            const line = lines[i] ?? '';
+            const space = line.indexOf(' ');
+            if (!line.startsWith('Y') || space === -1) return null;
+            return {
+                head: Buffer.from(line.slice(1, space), 'base64'),
+                tail: Buffer.from(line.slice(space + 1), 'base64'),
+            };
+        });
+    }
+
+    async hasUndottedEntries(dirs: string[]): Promise<(boolean | null)[]> {
+        if (dirs.length === 0) return [];
+        let lines: string[];
+        try {
+            // Y はあり、N はなし、E は走査できない場所があり、見つかっていない。
+            const out = await this.run(
+                [
+                    'adk_undotted() {',
+                    `    if [ -L "$1" ] || [ ! -d "$1" ]; then echo E; return; fi`,
+                    `    adk_found=$(find -P "$1" -mindepth 1 \\( -name '.*' -prune \\) -o \\( ! -type d -printf x -quit \\) 2>/dev/null)`,
+                    '    adk_status=$?',
+                    '    if [ -n "$adk_found" ]; then echo Y; elif [ "$adk_status" = 0 ]; then echo N; else echo E; fi',
+                    '}',
+                    ...dirs.map(dir => `adk_undotted ${shellQuote(dir)}`),
+                ].join('\n')
+            );
+            lines = out.toString('utf8').split(/\r?\n/);
+        } catch (error) {
+            console.error(`Failed to scan directories (${this.distro}):`, error);
+            return dirs.map(() => null);
+        }
+        return dirs.map((_, i) => (lines[i] === 'Y' ? true : lines[i] === 'N' ? false : null));
+    }
+
     async readNested(root: string, depth: number, suffix: string[], maxBytes: number): Promise<NestedFiles> {
         const level = depth + suffix.length;
         let raw: Buffer;
@@ -719,9 +948,11 @@ class WslCleanupProbe implements CleanupProbe {
             raw = await this.run(
                 [
                     `r=${shellQuote(root)}`,
-                    `if [ -d "$r" ] && [ ! -L "$r" ]; then printf 'Y\\0'; else printf 'N\\0'; exit 0; fi`,
+                    `if [ -d "$r" ] && [ ! -L "$r" ]; then`,
+                    `printf 'Y\\0'`,
                     `find -P "$r" -mindepth ${level} -maxdepth ${level} -type f -path ${shellQuote(`*/${suffix.join('/')}`)} -print0 2>/dev/null |`,
                     `while IFS= read -r -d '' f; do printf '%s\\t' "$f"; head -c ${maxBytes} -- "$f" 2>/dev/null | base64 | tr -d '\\n'; printf '\\0'; done`,
+                    `else printf 'N\\0'; fi`,
                 ].join('\n')
             );
         } catch (error) {
@@ -743,6 +974,33 @@ class WslCleanupProbe implements CleanupProbe {
             });
         }
         return { files };
+    }
+
+    async realPaths(paths: string[]): Promise<(string | null)[]> {
+        if (paths.length === 0) return [];
+        let lines: string[];
+        try {
+            // 1 パス 1 行で、Y の後に実体のパスの base64、たどれなければ N。
+            const out = await this.run(
+                paths
+                    .map(path => {
+                        const p = shellQuote(path);
+                        return (
+                            `if r=$(readlink -f -- ${p} 2>/dev/null) && [ -e "$r" ]; then ` +
+                            `printf 'Y%s\\n' "$(printf '%s' "$r" | base64 | tr -d '\\n')"; else echo N; fi`
+                        );
+                    })
+                    .join('\n')
+            );
+            lines = out.toString('utf8').split(/\r?\n/);
+        } catch (error) {
+            console.error(`Failed to resolve paths (${this.distro}):`, error);
+            return paths.map(() => null);
+        }
+        return paths.map((_, i) => {
+            const line = lines[i] ?? '';
+            return line.startsWith('Y') ? Buffer.from(line.slice(1), 'base64').toString('utf8') : null;
+        });
     }
 
     async lockStates(paths: string[]): Promise<LockState[]> {
@@ -793,6 +1051,12 @@ class WslCleanupProbe implements CleanupProbe {
             'if rm --help 2>&1 | grep -q -- --one-file-system; then one_fs=--one-file-system; else one_fs=; fi',
             'rm_one() {',
             `    if [ ! -e "$1" ] && [ ! -L "$1" ]; then printf 'R\\0'; return; fi`,
+            '    if [ "$2" = link ]; then',
+            `        if [ ! -L "$1" ]; then printf 'K\\0'; return; fi`,
+            '        rm -f -- "$1" 2>/dev/null',
+            `        if [ -L "$1" ]; then printf 'K\\0'; else printf 'R\\0'; fi`,
+            '        return',
+            '    fi',
             `    if [ -L "$1" ]; then printf 'K\\0'; return; fi`,
             '    if [ "$2" = dir ]; then',
             `        if [ ! -d "$1" ]; then printf 'K\\0'; return; fi`,

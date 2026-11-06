@@ -14,26 +14,31 @@ export const GrokMcpManager: React.FC = () => {
     const { t } = useTranslation();
     const [environments, setEnvironments] = useState<GrokMcpEnvInfo[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [reloadNonce, setReloadNonce] = useState(0);
     const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
         open: false,
         message: '',
         severity: 'success',
     });
 
-    const load = async () => {
-        setLoading(true);
+    // 更新中は環境セクションを表示したまま読み直す。
+    const load = async (refresh = false) => {
+        setRefreshing(true);
         try {
-            const envs = await window.agentCliDevkit.grok.mcp.getEnvironments();
+            const envs = await window.agentCliDevkit.grok.mcp.getEnvironments(refresh);
             setEnvironments(envs);
+            setReloadNonce(value => value + 1);
         } catch (error) {
             console.error('Failed to load Grok MCP environments:', error);
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     };
 
     useEffect(() => {
-        load();
+        void load();
     }, []);
 
     const notify = (message: string, severity: 'success' | 'error') => {
@@ -57,7 +62,12 @@ export const GrokMcpManager: React.FC = () => {
                 <Typography variant='h4' component='h1'>
                     {t('grok.grokMcp.title')}
                 </Typography>
-                <Button variant='outlined' startIcon={<RefreshIcon />} onClick={load} sx={{ textTransform: 'none' }}>
+                <Button
+                    variant='outlined'
+                    startIcon={<RefreshIcon />}
+                    disabled={refreshing}
+                    onClick={() => void load(true)}
+                >
                     {t('common.refresh')}
                 </Button>
             </Box>
@@ -67,7 +77,7 @@ export const GrokMcpManager: React.FC = () => {
                     <Typography variant='h6' sx={{ mb: 1 }}>
                         {info.label}
                     </Typography>
-                    <GrokEnvMcpSection info={info} onNotify={notify} />
+                    <GrokEnvMcpSection info={info} onNotify={notify} reloadNonce={reloadNonce} />
                 </Box>
             ))}
 
@@ -82,7 +92,7 @@ export const GrokMcpManager: React.FC = () => {
                             <Typography variant='h6' sx={{ mb: 1 }}>
                                 {t('grok.grokMcp.wslSection', { distro: info.label })}
                             </Typography>
-                            <GrokEnvMcpSection info={info} onNotify={notify} />
+                            <GrokEnvMcpSection info={info} onNotify={notify} reloadNonce={reloadNonce} />
                         </Box>
                     ))}
                 </>

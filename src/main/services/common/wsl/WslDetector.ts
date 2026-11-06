@@ -1,24 +1,94 @@
 import { execFile, spawn } from 'child_process';
-import { WslDistroInfo } from '../../../../shared/agents/types';
+import { WslDistroInfo, WslMissingCommands } from '../../../../shared/agents/types';
 import { system32Command } from '../../../utils/system32Command';
+import { buildMissingCommandsScript, parseMissingCommandsOutput } from './wslRequiredCommands';
 
 // wsl.exe は System32 の絶対パスで起動する（PATH や作業ディレクトリにある同名のファイルを起動しない）。
 const WSL_EXE = system32Command('wsl.exe');
 
+// wsl.exe の出力として受け取る上限。超えた場合はエラーにする。
+const WSL_MAX_OUTPUT_BYTES = 256 * 1024 * 1024;
+
+// ログインシェルが出力するメッセージとスクリプトの出力を区切る目印
+const OUTPUT_MARKER = '__AGENT_CLI_DEVKIT_OUTPUT__';
+// スクリプトの出力と、その後にログインシェルが出力するメッセージ（.bash_logout など）を区切る目印
+const OUTPUT_END_MARKER = '__AGENT_CLI_DEVKIT_OUTPUT_END__';
+
 /**
  * execFile を Promise 化し、stdout を Buffer で受け取るヘルパー。
  * wsl -l -q の出力は UTF-16LE のため、文字列ではなく Buffer で扱う必要がある。
+ * 出力が WSL_MAX_OUTPUT_BYTES を超えると reject する。
  */
 function execFileBuffer(file: string, args: string[]): Promise<{ stdout: Buffer; stderr: Buffer }> {
     return new Promise((resolve, reject) => {
-        execFile(file, args, { encoding: 'buffer', windowsHide: true }, (error, stdout, stderr) => {
-            if (error) {
-                reject(error);
-                return;
+        execFile(
+            file,
+            args,
+            { encoding: 'buffer', windowsHide: true, maxBuffer: WSL_MAX_OUTPUT_BYTES },
+            (error, stdout, stderr) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
+                resolve({ stdout: stdout as Buffer, stderr: stderr as Buffer });
             }
-            resolve({ stdout: stdout as Buffer, stderr: stderr as Buffer });
-        });
+        );
     });
+}
+
+/**
+ * スクリプトの前後に目印の出力を足す。終了コードはスクリプトのものを保つ。
+ * ログインシェルの設定が変えたシェルオプションのうち、スクリプトの動作を変えるもの（errexit・nounset・noclobber）は戻す。
+ */
+export function withOutputMarkers(script: string): string {
+    return [
+        'set +e +u +C',
+        `printf '%s\\n' ${OUTPUT_MARKER}`,
+        script,
+        'adk_rc=$?',
+        `printf '%s' ${OUTPUT_END_MARKER}`,
+        'exit $adk_rc',
+        '',
+    ].join('\n');
+}
+
+/**
+ * withOutputMarkers と同じ目印で、スクリプトの全体を { } にまとめて bash に先に読ませる。続けて渡す入力は、
+ * スクリプトの中のコマンドが読むもので、bash がコマンドとして解釈することはない（読み残しがあっても exit で終わる）。
+ * 入力の途中で切れて } まで届かなければ構文エラーになり、何も実行されない。
+ */
+function withStreamedInput(script: string): string {
+    return [
+        'set +e +u +C',
+        `printf '%s\\n' ${OUTPUT_MARKER}`,
+        '{',
+        script,
+        'adk_rc=$?',
+        `printf '%s' ${OUTPUT_END_MARKER}`,
+        'exit $adk_rc',
+        '}',
+        '',
+    ].join('\n');
+}
+
+/** 最初の目印より後の出力を返す。目印がなければ null。 */
+function sliceAfterOutputMarker(out: Buffer): Buffer | null {
+    const marker = Buffer.from(`${OUTPUT_MARKER}\n`);
+    const at = out.indexOf(marker);
+    return at === -1 ? null : out.subarray(at + marker.length);
+}
+
+/**
+ * withOutputMarkers の前後の目印の間の出力を返す。先頭の目印がなければ null。
+ * 終わりの目印がない場合は、requireEnd なら null、それ以外は先頭の目印より後のすべてを返す
+ * （スクリプト自身が exit すると終わりの目印は出力されない）。
+ */
+function sliceMarkedOutput(out: Buffer, requireEnd: boolean): Buffer | null {
+    const body = sliceAfterOutputMarker(out);
+    if (body === null) return null;
+    const end = body.lastIndexOf(OUTPUT_END_MARKER);
+    if (end !== -1) return body.subarray(0, end);
+    return requireEnd ? null : body;
 }
 
 /**
@@ -54,6 +124,8 @@ export class WslDetector {
     private distrosCache = new Map<string, WslDistroInfo[]>();
     private serenaDistrosCache: string[] | null = null;
     private homeCache = new Map<string, string>();
+    // distro ごとに一度だけ調べた事実
+    private distroFacts = new Map<string, Promise<unknown>>();
 
     /** 現在のプラットフォームが Windows か */
     isWindows(): boolean {
@@ -92,15 +164,19 @@ export class WslDetector {
 
     /**
      * distro の Linux ホームディレクトリを解決する（/home/<windowsuser> を仮定しない）。
+     * '/' で始まる単一行だけを受け付け、それ以外は reject する。
      */
     async resolveHome(distro: string): Promise<string> {
         const cached = this.homeCache.get(distro);
         if (cached) {
             return cached;
         }
-        const { stdout } = await execFileBuffer(WSL_EXE, ['-d', distro, '--exec', 'bash', '-lc', 'echo -n $HOME']);
+        const out = await this.runInDistro(distro, `printf '%s' "$HOME"`);
         // bash の出力は基本 UTF-8。NUL 密度判定で安全に復号する。
-        const home = decodeWslBuffer(stdout).replace(/\0/g, '').trim();
+        const home = decodeWslBuffer(out).replace(/\0/g, '').trim();
+        if (!/^\/[^\r\n]*$/.test(home)) {
+            throw new Error(`Invalid home directory reported by WSL distro ${distro}`);
+        }
         this.homeCache.set(distro, home);
         return home;
     }
@@ -189,28 +265,59 @@ export class WslDetector {
     }
 
     /**
-     * distro 内で bash コマンドを実行し、stdout を Buffer で返す。
+     * distro 内で bash コマンドを実行し、ログインシェルの出力を除いた stdout を Buffer で返す。
      * `--exec` で既定シェルを介さずに bash を起動するため、command 内の `$` や引用符は bash だけが解釈する。
+     * 終了コードが 0 以外の場合、出力が上限を超えた場合、command まで実行が届かなかった場合は reject する。
      */
     async runInDistro(distro: string, command: string): Promise<Buffer> {
-        const { stdout } = await execFileBuffer(WSL_EXE, ['-d', distro, '--exec', 'bash', '-lc', command]);
-        return stdout;
+        const { stdout } = await execFileBuffer(WSL_EXE, [
+            '-d',
+            distro,
+            '--exec',
+            'bash',
+            '-lc',
+            withOutputMarkers(command),
+        ]);
+        const output = sliceMarkedOutput(stdout, false);
+        if (output === null) {
+            throw new Error(`The output marker was not found in the WSL command output (${distro})`);
+        }
+        return output;
     }
 
     /**
      * distro 内のログインシェル（bash -l）へ標準入力でスクリプトを渡して実行し、stdout を Buffer で返す。
      * スクリプトを wsl.exe の引数として渡さないため、変数参照・引用符・長さの制約を受けずにそのまま実行できる。
-     * 終了コードが 0 以外の場合は reject する。
+     * 終了コードが 0 以外の場合と、出力が上限を超えた場合は reject する。
      */
-    runScriptInDistro(distro: string, script: string): Promise<Buffer> {
+    runScriptInDistro(distro: string, script: string | Buffer): Promise<Buffer> {
         return new Promise((resolve, reject) => {
             const child = spawn(WSL_EXE, ['-d', distro, '--exec', 'bash', '-l', '-s'], { windowsHide: true });
             const stdout: Buffer[] = [];
             const stderr: Buffer[] = [];
-            child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
-            child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+            let received = 0;
+            let overflowed = false;
+            const collect = (chunks: Buffer[]) => (chunk: Buffer) => {
+                received += chunk.length;
+                if (received > WSL_MAX_OUTPUT_BYTES) {
+                    overflowed = true;
+                    child.kill();
+                    return;
+                }
+                chunks.push(chunk);
+            };
+            child.stdout.on('data', collect(stdout));
+            child.stderr.on('data', collect(stderr));
             child.on('error', reject);
             child.on('close', code => {
+                if (overflowed) {
+                    reject(
+                        Object.assign(new Error('WSL script output exceeded the limit'), {
+                            code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+                        })
+                    );
+                    return;
+                }
                 if (code === 0) {
                     resolve(Buffer.concat(stdout));
                     return;
@@ -224,11 +331,65 @@ export class WslDetector {
         });
     }
 
+    /**
+     * runScriptInDistro と同じ方法でスクリプトを実行し、ログインシェルの出力を除いた stdout を返す。
+     * input を渡すと、スクリプトの後ろに続けて標準入力へ流す（bash は 1 バイトずつ読むので、大きな本文をスクリプトの中に書かない）。
+     * 前後の目印がそろわない場合（スクリプトが最後まで実行されなかった場合）は reject する。
+     */
+    async runMarkedScriptInDistro(distro: string, script: string, input?: Buffer): Promise<Buffer> {
+        const stdin = input
+            ? Buffer.concat([Buffer.from(withStreamedInput(script), 'utf8'), input])
+            : withOutputMarkers(script);
+        const output = sliceMarkedOutput(await this.runScriptInDistro(distro, stdin), true);
+        if (output === null) {
+            throw Object.assign(new Error(`The output markers were not found in the WSL script output (${distro})`), {
+                code: 'EWSLOUTPUT',
+            });
+        }
+        return output;
+    }
+
+    /**
+     * エージェントを使っている distro のうち、必須のコマンドが足りないものを返す。
+     * agentTests はエージェントを使っているかの判定式で、distro ごとに一度だけ調べる。bash の無い distro は対象にしない。
+     */
+    async getMissingCommands(agentTests: readonly string[]): Promise<WslMissingCommands[]> {
+        if (!(await this.isAvailable())) return [];
+        const results: WslMissingCommands[] = [];
+        for (const distro of await this.rawListDistros()) {
+            try {
+                const commands = await this.factOfDistro(distro, 'missing-commands', async () =>
+                    parseMissingCommandsOutput(
+                        await this.runMarkedScriptInDistro(distro, buildMissingCommandsScript(agentTests))
+                    )
+                );
+                if (commands.length > 0) results.push({ distro, commands });
+            } catch {
+                // bash の無い distro と、起動できない distro は対象にしない。
+            }
+        }
+        return results;
+    }
+
+    /** distro の事実を一度だけ調べ、次の invalidate まで結果を保持する。調べられなかった場合は保持しない。 */
+    factOfDistro<T>(distro: string, fact: string, load: () => Promise<T>): Promise<T> {
+        const key = `${distro}\u0000${fact}`;
+        const known = this.distroFacts.get(key);
+        if (known) return known as Promise<T>;
+        const loading = load();
+        this.distroFacts.set(key, loading);
+        loading.catch(() => {
+            if (this.distroFacts.get(key) === loading) this.distroFacts.delete(key);
+        });
+        return loading;
+    }
+
     /** キャッシュを破棄して次回再検出させる */
     invalidate(): void {
         this.available = null;
         this.distrosCache.clear();
         this.serenaDistrosCache = null;
         this.homeCache.clear();
+        this.distroFacts.clear();
     }
 }

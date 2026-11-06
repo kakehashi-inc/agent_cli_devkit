@@ -11,6 +11,10 @@ import { registerCodexAssetHandlers } from './codexAssetHandlers';
 import { registerCodexCleanupHandlers } from './codexCleanupHandlers';
 import { registerCodexConfigHandlers } from './codexConfigHandlers';
 import { registerCodexPluginHandlers } from './codexPluginHandlers';
+import { profileChannels } from '../../../shared/agents/profile/channels';
+import { CODEX_PROFILE_SPEC } from '../../../shared/agents/codex/profileTabs';
+import { ProfileManager } from '../../services/common/profile/ProfileManager';
+import { registerProfileHandlers } from '../common/profileHandlers';
 
 /**
  * Codex 系の IPC ハンドラを一括登録する。
@@ -26,4 +30,5 @@ export function registerCodexIpcHandlers(
     registerCodexCleanupHandlers(new CodexCleanupManager(detector));
     registerCodexConfigHandlers(new CodexConfigManager(detector));
     registerCodexPluginHandlers(new CodexPluginManager(detector, cliRunner));
+    registerProfileHandlers(profileChannels('codex'), new ProfileManager(detector, CODEX_PROFILE_SPEC), getMainWindow);
 }

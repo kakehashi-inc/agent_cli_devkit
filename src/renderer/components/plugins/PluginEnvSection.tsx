@@ -339,6 +339,24 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify, onBusyCh
                                                             {note}
                                                         </Typography>
                                                     )}
+                                                    {p.definedIn && p.definedIn.length > 0 && (
+                                                        <Typography
+                                                            variant='caption'
+                                                            color='text.secondary'
+                                                            sx={{
+                                                                display: 'block',
+                                                                fontWeight: 400,
+                                                                wordBreak: 'normal',
+                                                            }}
+                                                        >
+                                                            {t('pluginManager.definedIn', {
+                                                                files: p.definedIn.join(', '),
+                                                            })}
+                                                            {p.enabled &&
+                                                                p.definedIn.length > 1 &&
+                                                                ` ${t('pluginManager.definedInMultiple')}`}
+                                                        </Typography>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell sx={{ wordBreak: 'break-all' }}>
                                                     {p.version ?? '-'}
@@ -373,7 +391,6 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify, onBusyCh
                                                                 startIcon={<DeleteIcon />}
                                                                 disabled={busy || p.uninstallable === false}
                                                                 onClick={() => setUninstallTarget(p)}
-                                                                sx={{ textTransform: 'none' }}
                                                             >
                                                                 {t('pluginManager.uninstall')}
                                                             </Button>
@@ -419,7 +436,6 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify, onBusyCh
                                                 startIcon={<DeleteIcon />}
                                                 disabled={busy || disabledReason !== null}
                                                 onClick={() => setRemoveMarketTarget(m)}
-                                                sx={{ textTransform: 'none' }}
                                             >
                                                 {t('pluginManager.remove')}
                                             </Button>
@@ -476,10 +492,8 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify, onBusyCh
                     )}
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setUninstallTarget(null)} sx={{ textTransform: 'none' }}>
-                        {t('pluginManager.cancel')}
-                    </Button>
-                    <Button color='error' variant='contained' onClick={handleUninstall} sx={{ textTransform: 'none' }}>
+                    <Button onClick={() => setUninstallTarget(null)}>{t('pluginManager.cancel')}</Button>
+                    <Button color='error' variant='contained' onClick={handleUninstall}>
                         {t('pluginManager.uninstall')}
                     </Button>
                 </DialogActions>
@@ -494,15 +508,8 @@ export const PluginEnvSection: React.FC<Props> = ({ api, env, onNotify, onBusyCh
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setRemoveMarketTarget(null)} sx={{ textTransform: 'none' }}>
-                        {t('pluginManager.cancel')}
-                    </Button>
-                    <Button
-                        color='error'
-                        variant='contained'
-                        onClick={handleRemoveMarketplace}
-                        sx={{ textTransform: 'none' }}
-                    >
+                    <Button onClick={() => setRemoveMarketTarget(null)}>{t('pluginManager.cancel')}</Button>
+                    <Button color='error' variant='contained' onClick={handleRemoveMarketplace}>
                         {t('pluginManager.remove')}
                     </Button>
                 </DialogActions>

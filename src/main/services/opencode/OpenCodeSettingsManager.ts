@@ -6,13 +6,15 @@ import {
 } from '../../../shared/agents/opencode/constants';
 import type {
     OpenCodeEnvironment,
+    SettingsFieldValue,
+    SettingsRawResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
 } from '../../../shared/agents/opencode/types';
 import { parseJsoncObject } from '../../utils/jsoncEdit';
+import { failureDetail, readConfigFile, saveFailure, unreadableRawResult } from '../common/fs/configFile';
 import { JsonSettingsManager } from '../common/json/JsonSettingsManager';
-import { stripBom } from '../common/json/stripBom';
 import type { AgentCliRunner } from '../common/cli/AgentCliRunner';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
@@ -48,6 +50,17 @@ function modelState(root: Record<string, unknown>): ModelState {
     return { kind: 'object', text: `${providerID}/${model}${variant === undefined ? '' : `#${variant}`}` };
 }
 
+/** 画面に見せる model の値。オブジェクト形式は文字列表記、編集できない形は未設定にする。 */
+function withDisplayedModel(
+    root: Record<string, unknown>,
+    values: Record<string, SettingsFieldValue>
+): Record<string, SettingsFieldValue> {
+    const state = modelState(root);
+    if (state.kind === 'object') return { ...values, [MODEL_KEY]: state.text };
+    if (state.kind === 'unsupported') return { ...values, [MODEL_KEY]: undefined };
+    return values;
+}
+
 /**
  * OpenCode のグローバル設定ファイル（opencode.json / opencode.jsonc。両方あれば OpenCode が値を優先する
  * opencode.jsonc）を環境ごとに解決して編集する。
@@ -68,6 +81,7 @@ export class OpenCodeSettingsManager {
             wslAvailable: env => openCodeCliAvailable(this.runner, env),
             fields: SETTINGS_FIELDS,
             initial: { $schema: OPENCODE_CONFIG_SCHEMA_URL },
+            displayValues: withDisplayedModel,
         });
     }
 
@@ -77,10 +91,9 @@ export class OpenCodeSettingsManager {
 
     /** 設定ファイルの model の形。ファイルが無い・壊れている場合は absent とする。 */
     private parseModelState(text: string | null): ModelState {
-        const raw = stripBom(text);
-        if (raw === null || raw.trim().length === 0) return { kind: 'absent' };
+        if (text === null || text.trim().length === 0) return { kind: 'absent' };
         try {
-            return modelState(parseJsoncObject(raw));
+            return modelState(parseJsoncObject(text));
         } catch {
             return { kind: 'absent' };
         }
@@ -94,21 +107,30 @@ export class OpenCodeSettingsManager {
      * 設定ファイルを読み、表の値と注記を返す。
      * opencode.jsonc を編集対象にしていて opencode.json もある場合は、OpenCode が両方を読み込み opencode.json だけに
      * ある設定も有効になる（表には出ない）ため、ファイル全体への注記を付ける。
+     * ファイルの有無を確かめられない環境は readFailed を付けて返す。
      */
     async read(env: OpenCodeEnvironment): Promise<SettingsReadResult> {
         const fs = new HomeFs(env, this.detector);
-        const rel = await resolveOpenCodeSettingsRel(fs);
         const [jsonRel, jsoncRel] = OPENCODE_CONFIG_CANDIDATES_REL;
+        let rel: string;
+        let jsonAlsoExists: boolean;
+        try {
+            rel = await resolveOpenCodeSettingsRel(fs);
+            jsonAlsoExists = rel === jsoncRel && (await fs.exists(jsonRel));
+        } catch (error) {
+            return this.managerWith(jsonRel).unreadable(env, failureDetail(error));
+        }
         const base = await this.managerWith(rel).read(env);
-        const result: SettingsReadResult =
-            rel === jsoncRel && (await fs.exists(jsonRel)) ? { ...base, fileNotice: 'notice.jsonAlsoExists' } : base;
-        const state = this.parseModelState(result.exists ? result.raw : null);
+        const result: SettingsReadResult = jsonAlsoExists ? { ...base, fileNotice: 'notice.jsonAlsoExists' } : base;
+        if (result.readFailed !== undefined || !result.exists) return result;
+        let state: ModelState;
+        try {
+            state = this.parseModelState((await readConfigFile(fs, rel)).text);
+        } catch (error) {
+            return this.managerWith(rel).unreadable(env, failureDetail(error));
+        }
         if (state.kind === 'object') {
-            return {
-                ...result,
-                values: { ...result.values, [MODEL_KEY]: state.text },
-                notices: { ...result.notices, [MODEL_KEY]: 'notice.modelObjectForm' },
-            };
+            return { ...result, notices: { ...result.notices, [MODEL_KEY]: 'notice.modelObjectForm' } };
         }
         if (state.kind === 'unsupported') {
             return {
@@ -116,26 +138,46 @@ export class OpenCodeSettingsManager {
                 fields: result.fields.map(field =>
                     field.key === MODEL_KEY ? { ...field, type: 'directEdit' as const } : field
                 ),
-                values: { ...result.values, [MODEL_KEY]: undefined },
                 notices: { ...result.notices, [MODEL_KEY]: 'notice.modelUnsupported' },
             };
         }
         return result;
     }
 
-    async write(env: OpenCodeEnvironment, values: SettingsValues): Promise<SettingsWriteResult> {
-        const rel = await this.configRel(env);
-        const next = { ...values };
-        if (Object.prototype.hasOwnProperty.call(next, MODEL_KEY)) {
-            const state = this.parseModelState(await new HomeFs(env, this.detector).readText(rel));
-            // 読み取り専用の形と、オブジェクト形式を同じ内容のまま送られた場合は model に触れない。
-            if (state.kind === 'unsupported' || (state.kind === 'object' && next[MODEL_KEY] === state.text))
-                delete next[MODEL_KEY];
+    /** 直接編集のために設定ファイルの全文を読む。 */
+    async readRaw(env: OpenCodeEnvironment): Promise<SettingsRawResult> {
+        try {
+            return await this.managerWith(await this.configRel(env)).readRaw(env);
+        } catch (error) {
+            return unreadableRawResult(error);
         }
-        return this.managerWith(rel).write(env, next);
     }
 
-    async writeRaw(env: OpenCodeEnvironment, raw: string): Promise<SettingsWriteResult> {
-        return this.managerWith(await this.configRel(env)).writeRaw(env, raw);
+    async write(env: OpenCodeEnvironment, values: SettingsValues, base: SettingsValues): Promise<SettingsWriteResult> {
+        let rel: string = OPENCODE_CONFIG_CANDIDATES_REL[0];
+        const next = { ...values };
+        try {
+            rel = await this.configRel(env);
+            if (Object.prototype.hasOwnProperty.call(next, MODEL_KEY)) {
+                const file = await readConfigFile(new HomeFs(env, this.detector), rel);
+                const state = this.parseModelState(file.exists ? file.text : null);
+                // 読み取り専用の形と、オブジェクト形式を同じ内容のまま送られた場合は model に触れない。
+                if (state.kind === 'unsupported' || (state.kind === 'object' && next[MODEL_KEY] === state.text))
+                    delete next[MODEL_KEY];
+            }
+            return await this.managerWith(rel).write(env, next, base);
+        } catch (error) {
+            return saveFailure(error, rel);
+        }
+    }
+
+    async writeRaw(env: OpenCodeEnvironment, raw: string, baseRevision: string): Promise<SettingsWriteResult> {
+        let rel: string = OPENCODE_CONFIG_CANDIDATES_REL[0];
+        try {
+            rel = await this.configRel(env);
+        } catch (error) {
+            return saveFailure(error, rel);
+        }
+        return this.managerWith(rel).writeRaw(env, raw, baseRevision);
     }
 }

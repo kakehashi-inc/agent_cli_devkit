@@ -9,49 +9,47 @@ Agent CLI DevKit is an Electron desktop tool that manages the development enviro
 **Claude group**
 
 - **Claude Desktop MCP Manager** — Enable, disable, and reorder Claude Desktop MCP servers.
-- **Claude Code MCP Manager** — Manage Claude Code (CLI) profile MCP servers (`~/.claude.json`). Supports both the native OS and WSL distributions.
-- **Claude Code Agent / Skill Manager** — List Claude Code agents and skills, download/upload them as ZIP archives, and import official Anthropic skills.
-- **Claude Code Plugin Manager** — Install, uninstall, enable, and disable plugins and manage marketplaces with `claude plugin`.
-- **Claude Code Settings** — Edit `~/.claude/settings.json` items in a table, or edit the file directly.
-- **Claude Code Cleanup** — Reclaim disk space by deleting history, caches, temporary files, and logs under `~/.claude`. Deleting a project also removes that project's auto memory and its leftover temporary files and MCP logs outside `~/.claude`; a project whose sessions may still be running is deleted only if you check it in the confirmation. Any files that cannot be deleted are listed at the end.
+- **Claude Code MCP Manager** — Manage Claude Code MCP servers.
+- **Claude Code Agent / Skill Manager** — Manage agents, skills, and commands, download and upload them as ZIP files, and import official Anthropic skills.
+- **Claude Code Plugin Manager** — Manage plugins and marketplaces.
+- **Claude Code Settings** — Edit settings, hooks, status lines, external commands, permissions, instructions, output styles, rules, and workflows.
+- **Claude Code Cleanup** — Delete history, caches, temporary files, logs, and per-project data.
 
 **Codex group**
 
-- **Codex MCP Manager** — Enable, disable, and reorder Codex (CLI) MCP servers (`~/.codex/config.toml`). Supports both the native OS and WSL distributions.
-- **Codex Agent / Skill Manager** — Manage Codex custom agents (`~/.codex/agents`) and skills (`~/.agents/skills`), and import official OpenAI skills.
-- **Codex Plugin Manager** — Install, uninstall, enable, and disable plugins and manage marketplaces with `codex plugin`.
-- **Codex Settings** — Edit `~/.codex/config.toml` items in a table, or edit the file directly.
-- **Codex Cleanup** — Reclaim disk space by deleting history, caches, temporary files, logs, and sessions under `~/.codex`, plus temporary files that are no longer in use (including the Windows sandbox logs) and old Codex versions left behind by updates.
+- **Codex MCP Manager** — Enable, disable, and reorder Codex MCP servers.
+- **Codex Agent / Skill Manager** — Manage custom agents and skills, and import official OpenAI skills.
+- **Codex Plugin Manager** — Manage plugins and marketplaces.
+- **Codex Settings** — Edit settings, hooks, status lines, external commands, permissions, and instructions.
+- **Codex Cleanup** — Delete history, caches, temporary files, logs, sessions, and old versions. Sessions can be selected by date or by project.
 
 **Agy group (Antigravity CLI only)**
 
-- **Agy CLI MCP Manager** — Manage the global MCP configuration shared with Gemini CLI at `~/.gemini/config/mcp_config.json`.
-- **Agy CLI Agent / Skill Manager** — Manage shared custom agents at `~/.gemini/config/agents/<name>/agent.md` and the one Agy CLI skill location at `~/.gemini/antigravity-cli/skills/<name>/SKILL.md`. Locations owned by the separate Agy product and Antigravity IDE are excluded.
-- **Agy CLI Plugin Manager** — Install (from a plugin name, GitHub URL, or local folder), uninstall, enable, and disable plugins with `agy plugin`, including plugins in the Gemini-shared `~/.gemini/config/plugins` directory.
-- **Agy CLI Settings** — Edit scalar settings in `~/.gemini/antigravity-cli/settings.json`, with arrays and objects available through direct JSON editing.
-- **Agy CLI Cleanup** — Selectively remove Agy CLI caches, logs, crashes, history, conversation data, agent work folders, and old executables left behind by updates without touching settings, skills, the current binary, or shared Gemini configuration.
+- **Agy CLI MCP Manager** — Enable, disable, and reorder global MCP servers.
+- **Agy CLI Agent / Skill Manager** — Manage custom agents and skills.
+- **Agy CLI Plugin Manager** — Install, uninstall, enable, and disable plugins.
+- **Agy CLI Settings** — Edit settings, hooks, status lines, external commands, permissions, instructions, and rules.
+- **Agy CLI Cleanup** — Delete caches, logs, history, conversation data, per-project data, and old executables.
 
 **Grok group**
 
-- **Grok MCP Manager** — Enable, disable, and reorder Grok (CLI) MCP servers (`~/.grok/config.toml`). Supports both the native OS and WSL distributions.
-- **Grok Agent / Skill Manager** — Manage Grok custom agents (`~/.grok/agents`) and skills (`~/.grok/skills`).
-- **Grok Plugin Manager** — Install, uninstall, enable, and disable plugins and manage marketplace sources with `grok plugin`.
-- **Grok Settings** — Edit `~/.grok/config.toml` items in a table, or edit the file directly.
-- **Grok Cleanup** — Reclaim disk space by deleting history, memory, logs, diagnostics, and caches under `~/.grok`, plus temporary files in the system temp folder that are no longer in use and old executable versions (about 130 MB each) left behind by updates.
+- **Grok MCP Manager** — Enable, disable, and reorder Grok MCP servers.
+- **Grok Agent / Skill Manager** — Manage custom agents, skills, and commands.
+- **Grok Plugin Manager** — Manage plugins and marketplace sources.
+- **Grok Settings** — Edit settings, hooks, status lines, external commands, permissions, instructions, rules, and workflows.
+- **Grok Cleanup** — Delete history, memory, logs, caches, temporary files, per-project data, and old executables.
 
 **OpenCode group (OpenCode 2)**
 
-The OpenCode screens are shown where `opencode --version` succeeds and reports version 2.x. All operations use the `opencode` command. The result is cached per environment and checked again when you press Refresh. On macOS and Linux, standard installation folders (including `~/.bun/bin`, `~/.opencode/bin`, `~/.local/bin`, and Homebrew) are searched even when they are absent from the app's PATH. The version check can create OpenCode logs. OpenCode also runs when you install a plugin package or list or delete session history.
+- **OpenCode MCP Manager** — Enable, disable, and reorder OpenCode MCP servers.
+- **OpenCode Agent / Skill Manager** — Manage custom agents, skills, and commands.
+- **OpenCode Plugin Manager** — Install, uninstall, enable, and disable plugins.
+- **OpenCode Settings** — Edit settings, external commands, permissions, and instructions.
+- **OpenCode Cleanup** — Delete caches, logs, snapshots, prompt history, session history, and per-project data.
 
-- **OpenCode MCP Manager** — Enable, disable, and reorder the MCP servers (`mcp.servers`) in the global configuration file (`~/.config/opencode/opencode.json` or `opencode.jsonc`, whichever exists first) while preserving all other settings and comments.
-- **OpenCode Agent / Skill Manager** — Manage `~/.config/opencode/agents/**/*.md` and `~/.config/opencode/skills/<name>/SKILL.md`. Claude-compatible and agents-compatible directories are deliberately excluded.
-- **OpenCode Plugin Manager** — Install packages (npm or Git) with `opencode plugin add`, copy local .ts/.js plugins and plugin folders into `~/.config/opencode/plugins`, and enable, disable, or uninstall them. Re-enabling a plugin puts it back where it was in the `plugins` list.
-- **OpenCode Settings** — Edit scalar settings and the model in a table or edit the JSONC file directly (`opencode.jsonc` when both files exist); arrays, maps, and objects are direct-edit only. TUI keybindings are outside this feature scope.
-- **OpenCode Cleanup** — Selectively remove caches, logs, tool output, snapshots, prompt history, and session history from the official XDG directories while keeping configuration, assets, and credentials. Session history is deleted per session through OpenCode and is listed only when there are sessions; sessions updated in the last 5 minutes, including those with a recently updated subagent session, are deleted only if you check them in the confirmation.
+Every feature works on the native OS and in WSL distributions. Cleanup that uses a CLI's database in WSL needs sqlite3 (3.33 or newer) in the distribution.
 
-Agent / Skill managers show each entry's model, reasoning level, and key settings, and apply uploads only after they have been fully extracted, so a failed upload leaves existing agents and skills unchanged. Cleanup screens show items that are in use as not selectable, ask before deleting items that may be in use, list folders even when they contain no files, and list any files that could not be deleted at the end; deletions never follow symbolic links or junctions.
-
-The dashboard shows the Claude / Codex / Agy / Grok / OpenCode groups as an exclusive accordion (the last expanded group is restored on the next launch), and every feature is reachable from the title bar and the burger menu (a two-level cascading menu per agent). Theme (light/dark) and language (Japanese/English) are changed on the App Settings screen and take effect when you press Save (the OS settings are inherited until saved). The internal structure is split into per-agent files with shared agent-independent managers (see `Documents/システム仕様.md` for details).
+See `Documents/システム仕様.md` for detailed behavior.
 
 ### Naming / Distribution
 
@@ -155,7 +153,7 @@ src/
 │   │   ├── agy/             #   Antigravity CLI managers
 │   │   ├── grok/            #   Grok managers
 │   │   ├── opencode/        #   OpenCode managers
-│   │   └── common/          #   Agent-agnostic shared implementations (WSL / CLI runner / cleanup / assets / JSON / git)
+│   │   └── common/          #   Agent-agnostic shared implementations (WSL / CLI runner / cleanup / assets / profile tabs / files / JSON / TOML / SQLite / git)
 │   └── utils/               # Utilities
 ├── preload/                 # Safely bridges APIs to the renderer
 │   └── agents/              #   Per-agent bridges

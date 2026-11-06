@@ -8,28 +8,36 @@ import {
     ClaudeEnvironment,
     MCPServerConfig,
     MCPServerInfo,
+    MCPServers,
+    McpFileProblem,
     OSType,
 } from '../../../shared/agents/claude/types';
+import { mcpDisplayConfig } from '../../utils/mcpDisplayConfig';
+import { commitConfigChanges, problemOf } from '../common/fs/configFile';
+import {
+    jsonServerMap,
+    moveJsonEntry,
+    readStrictJsonFile,
+    reorderJsonEntries,
+    sidecarChange,
+    type JsonFileState,
+} from '../common/json/jsonConfigFile';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
+import { resolveClaudeGlobalConfigRel } from './claudeGlobalConfig';
 
-// ~/.claude.json は多数のトップレベルキーを持つ巨大ファイル。
-// mcpServers キーのみを操作し、その他のキーと順序は完全に保持する。
-interface ClaudeCodeConfig {
-    mcpServers?: Record<string, MCPServerConfig>;
-    [key: string]: unknown;
-}
-
-interface DisabledConfig {
-    mcpServers: Record<string, MCPServerConfig>;
-}
+const MCP_SERVERS_KEY = 'mcpServers';
 
 /**
  * Claude Code (CLI) のプロファイル MCP を管理する。
- * - グローバル MCP は ~/.claude.json のトップレベル mcpServers。
+ * - グローバル MCP は全体設定ファイル（resolveClaudeGlobalConfigRel が選ぶ ~/.claude.json か ~/.claude/.config.json）の
+ *   トップレベル mcpServers。
  * - 無効化した MCP は ~/.claude-disabled-mcp.json（sidecar）へ退避。
  * - native とすべての Claude 入り WSL distro を環境として扱う。
  * - プロジェクト単位 MCP（projects[path].mcpServers）は対象外。
+ * - 全体設定ファイルは多数のトップレベルキーを持つ。編集は mcpServers の該当エントリの文字列だけに行い、その他のキー、
+ *   順序、整形、大きな数値はバイト単位で保つ。
+ * - 未作成のファイルだけを空のオブジェクトとして扱う。読み取りと解釈に失敗したら何も書かない。
  */
 export class ClaudeCodeManager {
     private readonly detector: WslDetector;
@@ -51,9 +59,10 @@ export class ClaudeCodeManager {
     }
 
     /**
-     * 管理対象の環境一覧（native + Claude 入り WSL distro）。
+     * 管理対象の環境一覧（native + Claude 入り WSL distro）。refresh なら WSL distro の検出結果を破棄して検出し直す。
      */
-    async getEnvironments(): Promise<ClaudeCodeEnvInfo[]> {
+    async getEnvironments(refresh = false): Promise<ClaudeCodeEnvInfo[]> {
+        if (refresh) this.detector.invalidate();
         const result: ClaudeCodeEnvInfo[] = [];
 
         const nativeEnv: ClaudeEnvironment = { kind: 'native' };
@@ -68,151 +77,103 @@ export class ClaudeCodeManager {
         return result;
     }
 
+    /** 全体設定ファイルを選べなければ既定のファイル名を示し、一覧の段階で理由を出せるよう存在するものとして返す。 */
     private async buildEnvInfo(env: ClaudeEnvironment, label: string): Promise<ClaudeCodeEnvInfo> {
         const fs = this.fsFor(env);
-        const configPath = await fs.displayPath(CLAUDE_CODE_CONFIG_FILENAME);
+        let configRel: string = CLAUDE_CODE_CONFIG_FILENAME;
+        let configExists = true;
+        try {
+            configRel = await resolveClaudeGlobalConfigRel(fs);
+            configExists = await fs.exists(configRel);
+        } catch (error) {
+            console.error(`Failed to inspect the Claude Code config (${JSON.stringify(env)}):`, error);
+        }
+        const configPath = await fs.displayPath(configRel);
         const disabledConfigPath = await fs.displayPath(CLAUDE_CODE_DISABLED_FILENAME);
-        const configExists = await fs.exists(CLAUDE_CODE_CONFIG_FILENAME);
         return { env, label, configPath, configExists, disabledConfigPath };
     }
 
-    /**
-     * 有効/無効の MCP サーバー一覧を取得する。
-     */
-    async getMCPServers(env: ClaudeEnvironment): Promise<{ enabled: MCPServerInfo[]; disabled: MCPServerInfo[] }> {
-        const fs = this.fsFor(env);
-        const config = await fs.readJson<ClaudeCodeConfig>(CLAUDE_CODE_CONFIG_FILENAME);
-        const disabledConfig = await fs.readJson<DisabledConfig>(CLAUDE_CODE_DISABLED_FILENAME);
+    private async readConfig(fs: HomeFs): Promise<JsonFileState> {
+        return readStrictJsonFile(fs, await resolveClaudeGlobalConfigRel(fs));
+    }
 
-        const enabled: MCPServerInfo[] = [];
-        const disabled: MCPServerInfo[] = [];
+    private readDisabled(fs: HomeFs): Promise<JsonFileState> {
+        return readStrictJsonFile(fs, CLAUDE_CODE_DISABLED_FILENAME);
+    }
 
-        if (config?.mcpServers) {
-            for (const [name, cfg] of Object.entries(config.mcpServers)) {
-                enabled.push({ name, config: cfg, enabled: true });
-            }
-        }
-        if (disabledConfig?.mcpServers) {
-            for (const [name, cfg] of Object.entries(disabledConfig.mcpServers)) {
-                disabled.push({ name, config: cfg, enabled: false });
-            }
-        }
-
-        return { enabled, disabled };
+    private infos(servers: Record<string, MCPServerConfig>, enabled: boolean): MCPServerInfo[] {
+        return Object.entries(servers).map(([name, config]) => ({ name, config: mcpDisplayConfig(config), enabled }));
     }
 
     /**
-     * MCP サーバーを無効化（~/.claude.json から sidecar へ移動）。
+     * 有効/無効の MCP サーバー一覧を取得する。読めなかったファイルは problems に入れる。
      */
-    async disableMCPServer(
-        env: ClaudeEnvironment,
-        serverName: string
-    ): Promise<{ enabled: MCPServerInfo[]; disabled: MCPServerInfo[] }> {
+    async getMCPServers(env: ClaudeEnvironment): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const config = await fs.readJson<ClaudeCodeConfig>(CLAUDE_CODE_CONFIG_FILENAME);
-        if (!config?.mcpServers || !config.mcpServers[serverName]) {
-            throw new Error(`Server "${serverName}" not found in enabled config`);
-        }
+        const problems: McpFileProblem[] = [];
+        const load = async (read: () => Promise<JsonFileState>, rel: string, enabled: boolean) => {
+            try {
+                return this.infos(jsonServerMap((await read()).root, [MCP_SERVERS_KEY]), enabled);
+            } catch (error) {
+                problems.push(problemOf(error, rel));
+                return [];
+            }
+        };
+        const enabled = await load(() => this.readConfig(fs), CLAUDE_CODE_CONFIG_FILENAME, true);
+        const disabled = await load(() => this.readDisabled(fs), CLAUDE_CODE_DISABLED_FILENAME, false);
+        return { enabled, disabled, ...(problems.length > 0 ? { problems } : {}) };
+    }
 
-        // sidecar へ追加
-        let disabledConfig = await fs.readJson<DisabledConfig>(CLAUDE_CODE_DISABLED_FILENAME);
-        if (!disabledConfig || !disabledConfig.mcpServers) {
-            disabledConfig = { mcpServers: {} };
-        }
-        disabledConfig.mcpServers[serverName] = config.mcpServers[serverName];
-        await fs.writeJson(CLAUDE_CODE_DISABLED_FILENAME, disabledConfig);
-
-        // ~/.claude.json の mcpServers からのみ削除（他キーは保持）
-        delete config.mcpServers[serverName];
-        await fs.writeJson(CLAUDE_CODE_CONFIG_FILENAME, config);
-
+    /**
+     * MCP サーバーを無効化（全体設定ファイルから sidecar へ移動）。
+     * 全体設定ファイルの mcpServers は空になっても残す。
+     */
+    async disableMCPServer(env: ClaudeEnvironment, serverName: string): Promise<MCPServers> {
+        const fs = this.fsFor(env);
+        const config = await this.readConfig(fs);
+        const disabled = await this.readDisabled(fs);
+        const moved = moveJsonEntry(config, disabled, [MCP_SERVERS_KEY, serverName], { cascade: false });
+        await commitConfigChanges(fs, [
+            { file: disabled.file, next: moved.target },
+            { file: config.file, next: moved.source },
+        ]);
         return this.getMCPServers(env);
     }
 
     /**
-     * MCP サーバーを有効化（sidecar から ~/.claude.json へ移動）。
+     * MCP サーバーを有効化（sidecar から全体設定ファイルへ移動）。sidecar が空になったら削除する。
      */
-    async enableMCPServer(
-        env: ClaudeEnvironment,
-        serverName: string
-    ): Promise<{ enabled: MCPServerInfo[]; disabled: MCPServerInfo[] }> {
+    async enableMCPServer(env: ClaudeEnvironment, serverName: string): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const disabledConfig = await fs.readJson<DisabledConfig>(CLAUDE_CODE_DISABLED_FILENAME);
-        if (!disabledConfig?.mcpServers || !disabledConfig.mcpServers[serverName]) {
-            throw new Error(`Server "${serverName}" not found in disabled config`);
-        }
-
-        // ~/.claude.json の mcpServers へ追加（他キーは保持）
-        let config = await fs.readJson<ClaudeCodeConfig>(CLAUDE_CODE_CONFIG_FILENAME);
-        if (!config) {
-            config = {};
-        }
-        if (!config.mcpServers) {
-            config.mcpServers = {};
-        }
-        config.mcpServers[serverName] = disabledConfig.mcpServers[serverName];
-        await fs.writeJson(CLAUDE_CODE_CONFIG_FILENAME, config);
-
-        // sidecar から削除。空になったら sidecar ファイルを削除。
-        delete disabledConfig.mcpServers[serverName];
-        if (Object.keys(disabledConfig.mcpServers).length === 0) {
-            await fs.deleteFile(CLAUDE_CODE_DISABLED_FILENAME);
-        } else {
-            await fs.writeJson(CLAUDE_CODE_DISABLED_FILENAME, disabledConfig);
-        }
-
+        const disabled = await this.readDisabled(fs);
+        const config = await this.readConfig(fs);
+        const moved = moveJsonEntry(disabled, config, [MCP_SERVERS_KEY, serverName], { cascade: true });
+        await commitConfigChanges(fs, [
+            { file: config.file, next: moved.target },
+            sidecarChange(disabled.file, moved.source),
+        ]);
         return this.getMCPServers(env);
     }
 
     /**
-     * 有効な MCP サーバーの順序を変更する。
+     * 有効な MCP サーバーの順序を変更する。対象がなければ何も書かない。
      */
-    async reorderMCPServers(
-        env: ClaudeEnvironment,
-        serverNames: string[]
-    ): Promise<{ enabled: MCPServerInfo[]; disabled: MCPServerInfo[] }> {
+    async reorderMCPServers(env: ClaudeEnvironment, serverNames: string[]): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const config = await fs.readJson<ClaudeCodeConfig>(CLAUDE_CODE_CONFIG_FILENAME);
-        if (!config?.mcpServers) {
-            throw new Error('No enabled servers found');
-        }
-        config.mcpServers = this.reorder(config.mcpServers, serverNames);
-        await fs.writeJson(CLAUDE_CODE_CONFIG_FILENAME, config);
+        const config = await this.readConfig(fs);
+        const next = reorderJsonEntries(config, [MCP_SERVERS_KEY], serverNames);
+        await commitConfigChanges(fs, [{ file: config.file, next }]);
         return this.getMCPServers(env);
     }
 
     /**
-     * 無効な MCP サーバーの順序を変更する。
+     * 無効な MCP サーバーの順序を変更する。対象がなければ何も書かない。
      */
-    async reorderDisabledMCPServers(
-        env: ClaudeEnvironment,
-        serverNames: string[]
-    ): Promise<{ enabled: MCPServerInfo[]; disabled: MCPServerInfo[] }> {
+    async reorderDisabledMCPServers(env: ClaudeEnvironment, serverNames: string[]): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const disabledConfig = await fs.readJson<DisabledConfig>(CLAUDE_CODE_DISABLED_FILENAME);
-        if (!disabledConfig?.mcpServers) {
-            throw new Error('No disabled servers found');
-        }
-        disabledConfig.mcpServers = this.reorder(disabledConfig.mcpServers, serverNames);
-        await fs.writeJson(CLAUDE_CODE_DISABLED_FILENAME, disabledConfig);
+        const disabled = await this.readDisabled(fs);
+        const next = reorderJsonEntries(disabled, [MCP_SERVERS_KEY], serverNames);
+        await commitConfigChanges(fs, [{ file: disabled.file, next }]);
         return this.getMCPServers(env);
-    }
-
-    /**
-     * 指定順でオブジェクトを再構築する（未指定のキーは末尾に追加）。
-     */
-    private reorder(servers: Record<string, MCPServerConfig>, order: string[]): Record<string, MCPServerConfig> {
-        const reordered: Record<string, MCPServerConfig> = {};
-        for (const name of order) {
-            if (servers[name]) {
-                reordered[name] = servers[name];
-            }
-        }
-        for (const [name, cfg] of Object.entries(servers)) {
-            if (!reordered[name]) {
-                reordered[name] = cfg;
-            }
-        }
-        return reordered;
     }
 }

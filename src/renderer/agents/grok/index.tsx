@@ -16,7 +16,7 @@ import { Cleanup } from './Cleanup';
 // ダッシュボードのカード・タイトルバーのアイコン・ルートはこの配列から生成される。
 export const grokModule: AgentModule = {
     id: 'grok',
-    label: 'Grok',
+    labelKey: 'grok.nav.group',
     features: [
         {
             path: '/grok/mcp',

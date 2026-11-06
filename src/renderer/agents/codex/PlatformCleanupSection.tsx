@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Box,
@@ -12,7 +12,6 @@ import {
     TableRow,
     Checkbox,
     IconButton,
-    Collapse,
     Button,
     Alert,
     Dialog,
@@ -26,6 +25,11 @@ import {
     KeyboardArrowRight as CollapseIcon,
     DeleteSweep as DeleteIcon,
 } from '@mui/icons-material';
+import {
+    CODEX_ARCHIVED_SESSIONS_CLEANUP_KEY,
+    CODEX_SESSION_PROJECTS_CLEANUP_KEY,
+    CODEX_SESSIONS_CLEANUP_KEY,
+} from '@shared/agents/codex/constants';
 import type {
     CodexEnvironment,
     CleanupCandidate,
@@ -34,12 +38,28 @@ import type {
 } from '@shared/agents/codex/types';
 import { formatBytes, formatCount } from '../../utils/format';
 import { CleanupChildRow, isVisibleCandidate } from '../../components/agent/CleanupManagerView';
-import { FailedPathsDialog } from '../../components/agent/CleanupDeleteDialogs';
+import {
+    CleanupCandidateNotice,
+    CleanupConfirmWarnings,
+    FailedPathsDialog,
+    collectConfirmWarnings,
+} from '../../components/agent/CleanupDeleteDialogs';
+import { CleanupChildRegion, CleanupChildTable, CleanupColumns } from '../../components/agent/CleanupTableParts';
+import {
+    SessionDateRows,
+    SessionProjectRow,
+    SessionViewToggle,
+    flattenChildren,
+    toggleNestedSelection,
+    type SessionView,
+} from './SessionCleanupRows';
 
 interface Props {
     env: CodexEnvironment;
     label: string;
     onNotify: (message: string, severity: 'success' | 'error' | 'warning') => void;
+    // 更新のたびに変わる値。変わると読み直す（行の展開は保ち、選択は初期状態に戻す）。
+    reloadNonce: number;
 }
 
 // i18n キーは camelCase。ハイフン区切りキーを変換する。
@@ -52,17 +72,22 @@ function camelKey(key: string): string {
  * Codex のディレクトリリストと、その他のツール（Serena 等）のリストを 1 つにまとめ、
  * 末尾の「選択済みを削除」ボタン 1 つで両方をまとめて処理する。
  */
-export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }) => {
+export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify, reloadNonce }) => {
     const { t } = useTranslation();
     const [report, setReport] = useState<CleanupEnvReport | null>(null);
     const [otherReport, setOtherReport] = useState<OtherCleanupReport | null>(null);
     const [loading, setLoading] = useState(true);
+    // 読み直しの間は前の内容を表示したままにし、結果で選択が変わるので削除を始めさせない。
+    const [reloading, setReloading] = useState(false);
 
     const [checkedDirs, setCheckedDirs] = useState<Set<string>>(new Set());
     const [checkedChildren, setCheckedChildren] = useState<Record<string, Set<string>>>({});
     const [checkedOther, setCheckedOther] = useState<Set<string>>(new Set());
 
     const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
+    const [sessionView, setSessionView] = useState<SessionView>('date');
+    // 日付の階層で展開している子要素
+    const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
     // 削除できずに残ったパス（空でなければ一覧のダイアログを表示する）
@@ -82,27 +107,60 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
         setCheckedOther(new Set());
     };
 
+    // 最後に始めた読み込みだけを画面に反映する。
+    const loadRequest = useRef(0);
     const load = async () => {
+        const request = ++loadRequest.current;
+        setReloading(true);
         try {
             const [r, o] = await Promise.all([
                 window.agentCliDevkit.codex.cleanup.scan(env).catch(() => null),
                 window.agentCliDevkit.codex.cleanup.scanOther(env).catch(() => null),
             ]);
-            applyReports(r, o);
+            if (request === loadRequest.current) applyReports(r, o);
         } catch (error) {
             console.error('Failed to scan cleanup targets:', error);
         } finally {
             setLoading(false);
+            if (request === loadRequest.current) setReloading(false);
         }
     };
 
     useEffect(() => {
-        load();
+        void load();
+        // 表示名が変わったときと更新のたびに読み直す。レンダーごとに変わる関数は読み直しのきっかけにしない。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [label]);
+    }, [label, reloadNonce]);
 
-    const candidates = (report?.candidates ?? []).filter(isVisibleCandidate);
+    const allCandidates = report?.candidates ?? [];
+    // プロジェクト単位の表示を出せる環境で、出すパスがあるときと、使えない理由を伝えるときに切り替えられる。
+    const projectViewAvailable = allCandidates.some(
+        c => c.key === CODEX_SESSION_PROJECTS_CLEANUP_KEY && (c.exists || c.blocked)
+    );
+    const activeSessionView: SessionView = projectViewAvailable ? sessionView : 'date';
+    const candidates = allCandidates.filter(c => {
+        if (c.key === CODEX_SESSION_PROJECTS_CLEANUP_KEY) return activeSessionView === 'project';
+        const isDateRow = c.key === CODEX_SESSIONS_CLEANUP_KEY || c.key === CODEX_ARCHIVED_SESSIONS_CLEANUP_KEY;
+        if (isDateRow && activeSessionView === 'project') return false;
+        // sessions の行には切り替えを置くので、ファイルが無くてもプロジェクト単位の表示があれば出す。
+        if (c.key === CODEX_SESSIONS_CLEANUP_KEY && projectViewAvailable) return true;
+        return isVisibleCandidate(c);
+    });
     const otherItems = otherReport?.items ?? [];
+
+    /** 表示を切り替え、切り替え前の表示で選んでいたものを外す（見えない選択を残さない）。 */
+    const changeSessionView = (view: SessionView) => {
+        const sessionKeys = [
+            CODEX_SESSIONS_CLEANUP_KEY,
+            CODEX_ARCHIVED_SESSIONS_CLEANUP_KEY,
+            CODEX_SESSION_PROJECTS_CLEANUP_KEY,
+        ];
+        setSessionView(view);
+        setCheckedDirs(prev => new Set([...prev].filter(key => !sessionKeys.includes(key))));
+        setCheckedChildren(prev =>
+            Object.fromEntries(Object.entries(prev).filter(([key]) => !sessionKeys.includes(key)))
+        );
+    };
 
     const toggleDir = (key: string) => {
         setCheckedDirs(prev => {
@@ -125,14 +183,18 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
     };
 
     const toggleChild = (key: string, name: string) => {
-        setCheckedChildren(prev => {
-            const current = new Set(prev[key] ?? []);
-            if (current.has(name)) {
-                current.delete(name);
+        setCheckedChildren(prev => ({ ...prev, [key]: toggleNestedSelection(prev[key] ?? new Set(), name) }));
+    };
+
+    const toggleExpandedDate = (name: string) => {
+        setExpandedDates(prev => {
+            const next = new Set(prev);
+            if (next.has(name)) {
+                next.delete(name);
             } else {
-                current.add(name);
+                next.add(name);
             }
-            return { ...prev, [key]: current };
+            return next;
         });
     };
 
@@ -175,7 +237,7 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                     count += 1;
                 } else {
                     const sel = checkedChildren[c.key];
-                    for (const child of c.children ?? []) {
+                    for (const child of flattenChildren(c.children ?? [])) {
                         if (sel?.has(child.name)) {
                             count += 1;
                         }
@@ -190,6 +252,14 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
     }, [candidates, checkedDirs, checkedChildren, checkedOther]);
 
     const canDelete = selectedCount > 0;
+
+    // 選択したものの注意文。候補全体の選択でも子要素の個別選択でも表示する。
+    const warningKeys = useMemo(
+        () => collectConfirmWarnings(candidates, checkedDirs, checkedChildren),
+        [candidates, checkedDirs, checkedChildren]
+    );
+
+    // 使用中のものについての注意は、ファイルやフォルダーを消すものを選んだときだけ表示する。
 
     const handleDelete = async () => {
         setConfirmOpen(false);
@@ -225,6 +295,9 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
             onNotify(t('codex.cleanup.deleteError'), 'error');
             await load();
         } else {
+            // 削除の前に始めた読み込みの結果は古いので使わない。
+            loadRequest.current += 1;
+            setReloading(false);
             applyReports(r, o);
             if (skippedCount > 0 || failed.length > 0) {
                 onNotify(t('common.cleanupDeleteFailed'), 'warning');
@@ -239,12 +312,53 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
 
     const hasAnyTarget = candidates.length > 0 || otherItems.length > 0;
 
+    /** 展開した行の中身。 */
+    const renderChildRows = (c: CleanupCandidate, allChecked: boolean) => {
+        const childSel = checkedChildren[c.key];
+        const children = c.children ?? [];
+        if (c.key === CODEX_SESSIONS_CLEANUP_KEY) {
+            return (
+                <SessionDateRows
+                    nodes={children}
+                    selected={childSel ?? new Set()}
+                    ancestorChecked={allChecked}
+                    expanded={expandedDates}
+                    onToggle={name => toggleChild(c.key, name)}
+                    onToggleExpanded={toggleExpandedDate}
+                />
+            );
+        }
+        if (c.key === CODEX_SESSION_PROJECTS_CLEANUP_KEY) {
+            return children.map(child => (
+                <SessionProjectRow
+                    key={child.name}
+                    child={child}
+                    checked={allChecked || !!childSel?.has(child.name)}
+                    disabled={allChecked}
+                    onToggle={() => toggleChild(c.key, child.name)}
+                />
+            ));
+        }
+        return children.map(child => (
+            <CleanupChildRow
+                key={child.name}
+                child={child}
+                checked={allChecked || !!childSel?.has(child.name)}
+                disabled={allChecked}
+                onToggle={() => toggleChild(c.key, child.name)}
+            />
+        ));
+    };
+
     const renderExpandableRow = (c: CleanupCandidate) => {
         const allChecked = checkedDirs.has(c.key);
         const childSel = checkedChildren[c.key];
         const indeterminate = !allChecked && !!childSel && childSel.size > 0;
         const children = c.children ?? [];
         const isExpanded = expandedKeys[c.key] ?? false;
+        const hasViewToggle =
+            projectViewAvailable &&
+            (c.key === CODEX_SESSIONS_CLEANUP_KEY || c.key === CODEX_SESSION_PROJECTS_CLEANUP_KEY);
         return (
             <React.Fragment key={c.key}>
                 <TableRow sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
@@ -252,23 +366,28 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                         <Checkbox
                             checked={allChecked}
                             indeterminate={indeterminate}
+                            disabled={!c.exists}
                             onChange={() => toggleDir(c.key)}
                         />
                     </TableCell>
                     <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
                             <IconButton size='small' onClick={() => toggleExpanded(c.key)}>
                                 {isExpanded ? <ExpandIcon /> : <CollapseIcon />}
                             </IconButton>
                             <Typography variant='body2' sx={{ fontWeight: 'medium' }}>
                                 {t(`codex.cleanup.dir.${camelKey(c.key)}`)}
                             </Typography>
+                            {hasViewToggle && (
+                                <SessionViewToggle view={activeSessionView} onChange={changeSessionView} />
+                            )}
                         </Box>
                     </TableCell>
                     <TableCell>
                         <Typography variant='body2' color='text.secondary'>
                             {t(`codex.cleanup.desc.${camelKey(c.key)}`)}
                         </Typography>
+                        <CleanupCandidateNotice candidate={c} />
                     </TableCell>
                     <TableCell align='right'>
                         <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
@@ -277,37 +396,19 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                     </TableCell>
                     <TableCell align='right'>
                         <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                            {formatBytes(c.size)}
+                            {c.sizeUnknown ? '-' : formatBytes(c.size)}
                         </Typography>
                     </TableCell>
                 </TableRow>
-                <TableRow>
-                    <TableCell sx={{ py: 0, border: 0 }} colSpan={5}>
-                        <Collapse in={isExpanded} timeout='auto' unmountOnExit>
-                            <Box sx={{ pl: 6, py: 1 }}>
-                                {children.length === 0 ? (
-                                    <Typography variant='body2' color='text.secondary'>
-                                        {t('codex.cleanup.noCandidates')}
-                                    </Typography>
-                                ) : (
-                                    <Table size='small'>
-                                        <TableBody>
-                                            {children.map(child => (
-                                                <CleanupChildRow
-                                                    key={child.name}
-                                                    child={child}
-                                                    checked={allChecked || !!childSel?.has(child.name)}
-                                                    disabled={allChecked}
-                                                    onToggle={() => toggleChild(c.key, child.name)}
-                                                />
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                )}
-                            </Box>
-                        </Collapse>
-                    </TableCell>
-                </TableRow>
+                <CleanupChildRegion open={isExpanded}>
+                    {children.length === 0 ? (
+                        <Typography variant='body2' color='text.secondary'>
+                            {t('codex.cleanup.noCandidates')}
+                        </Typography>
+                    ) : (
+                        <CleanupChildTable>{renderChildRows(c, allChecked)}</CleanupChildTable>
+                    )}
+                </CleanupChildRegion>
             </React.Fragment>
         );
     };
@@ -326,6 +427,7 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                 <Typography variant='body2' color='text.secondary'>
                     {t(`codex.cleanup.desc.${camelKey(c.key)}`)}
                 </Typography>
+                <CleanupCandidateNotice candidate={c} />
             </TableCell>
             <TableCell align='right'>
                 <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
@@ -334,7 +436,7 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
             </TableCell>
             <TableCell align='right'>
                 <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
-                    {formatBytes(c.size)}
+                    {c.sizeUnknown ? '-' : formatBytes(c.size)}
                 </Typography>
             </TableCell>
         </TableRow>
@@ -362,18 +464,15 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
             {/* Codex のディレクトリリスト（見出しなし） */}
             {candidates.length > 0 && (
                 <TableContainer component={Paper}>
-                    <Table>
+                    <Table sx={{ tableLayout: 'fixed' }}>
+                        <CleanupColumns />
                         <TableHead>
                             <TableRow>
                                 <TableCell padding='checkbox'></TableCell>
                                 <TableCell>{t('codex.cleanup.columnName')}</TableCell>
                                 <TableCell>{t('codex.cleanup.columnDescription')}</TableCell>
-                                <TableCell align='right' width='110'>
-                                    {t('codex.cleanup.columnFiles')}
-                                </TableCell>
-                                <TableCell align='right' width='120'>
-                                    {t('codex.cleanup.columnSize')}
-                                </TableCell>
+                                <TableCell align='right'>{t('codex.cleanup.columnFiles')}</TableCell>
+                                <TableCell align='right'>{t('codex.cleanup.columnSize')}</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -390,18 +489,15 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                         {t('codex.cleanup.other.sectionTitle')}
                     </Typography>
                     <TableContainer component={Paper}>
-                        <Table>
+                        <Table sx={{ tableLayout: 'fixed' }}>
+                            <CleanupColumns />
                             <TableHead>
                                 <TableRow>
                                     <TableCell padding='checkbox'></TableCell>
                                     <TableCell>{t('codex.cleanup.columnName')}</TableCell>
                                     <TableCell>{t('codex.cleanup.columnDescription')}</TableCell>
-                                    <TableCell align='right' width='110'>
-                                        {t('codex.cleanup.columnFiles')}
-                                    </TableCell>
-                                    <TableCell align='right' width='150'>
-                                        {t('codex.cleanup.other.columnMetric')}
-                                    </TableCell>
+                                    <TableCell align='right'>{t('codex.cleanup.columnFiles')}</TableCell>
+                                    <TableCell align='right'>{t('codex.cleanup.other.columnMetric')}</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -449,9 +545,8 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                     variant='contained'
                     color='error'
                     startIcon={<DeleteIcon />}
-                    disabled={!canDelete || deleting}
+                    disabled={!canDelete || deleting || reloading}
                     onClick={() => setConfirmOpen(true)}
-                    sx={{ textTransform: 'none' }}
                 >
                     {t('codex.cleanup.deleteSelected')}
                 </Button>
@@ -461,15 +556,11 @@ export const PlatformCleanupSection: React.FC<Props> = ({ env, label, onNotify }
                 <DialogTitle>{t('codex.cleanup.confirmTitle')}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>{t('codex.cleanup.confirmBody', { count: selectedCount })}</DialogContentText>
-                    <Alert severity='info' sx={{ mt: 2 }}>
-                        {t('codex.cleanup.inUseNotice')}
-                    </Alert>
+                    <CleanupConfirmWarnings keys={warningKeys} />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setConfirmOpen(false)} sx={{ textTransform: 'none' }}>
-                        {t('codex.cleanup.cancel')}
-                    </Button>
-                    <Button onClick={handleDelete} color='error' variant='contained' sx={{ textTransform: 'none' }}>
+                    <Button onClick={() => setConfirmOpen(false)}>{t('codex.cleanup.cancel')}</Button>
+                    <Button onClick={handleDelete} color='error' variant='contained'>
                         {t('codex.cleanup.deleteSelected')}
                     </Button>
                 </DialogActions>

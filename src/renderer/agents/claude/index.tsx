@@ -18,7 +18,7 @@ import { Cleanup } from './Cleanup';
 // ダッシュボードのカード・タイトルバーのアイコン・ルートはこの配列から生成される。
 export const claudeModule: AgentModule = {
     id: 'claude',
-    label: 'Claude',
+    labelKey: 'claude.nav.group',
     features: [
         {
             path: '/claude/desktop-mcp',

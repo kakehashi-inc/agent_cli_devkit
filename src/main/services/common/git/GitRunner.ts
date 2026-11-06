@@ -44,6 +44,14 @@ export class GitRunner {
     }
 
     /**
+     * gitDir のリポジトリから worktree を外し、作業ツリーごと削除する（未コミットの変更があっても外す）。
+     * 失敗すると例外を投げる。
+     */
+    async removeWorktree(gitDir: string, worktree: string): Promise<void> {
+        await execGit([`--git-dir=${gitDir}`, 'worktree', 'remove', '--force', worktree]);
+    }
+
+    /**
      * destDir にリポジトリを用意する。
      * - 未存在: 親を作成して shallow clone する。
      * - 既存（.git あり）: fetch して origin/<branch> へ reset --hard で最新化する。

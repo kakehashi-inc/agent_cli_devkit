@@ -1,4 +1,3 @@
-import { parse } from 'smol-toml';
 import {
     GROK_BUILTIN_MARKETPLACES,
     GROK_CLI_COMMAND,
@@ -20,11 +19,12 @@ import {
     PluginOpResult,
 } from '../../../shared/agents/grok/types';
 import { AgentCliRunner, validateOperand } from '../common/cli/AgentCliRunner';
-import { stripBom } from '../common/json/stripBom';
+import { commitConfigChanges, readConfigFile } from '../common/fs/configFile';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { deepEqualLoose } from '../../utils/nestedValue';
 import { sameTomlPath, scanTomlStatements } from '../../utils/tomlStatements';
+import { parseToml } from '../../utils/tomlSubtree';
 
 const LIST_TIMEOUT_MS = 60_000;
 const MUTATE_TIMEOUT_MS = 180_000;
@@ -179,17 +179,19 @@ export class GrokPluginManager {
         return [stderr.trim(), stdout.trim()].filter(s => s.length > 0).join('\n');
     }
 
-    /** config.toml を読み込んでパースする。存在しない・読めない・壊れている場合は null。 */
-    private async readConfig(env: GrokEnvironment): Promise<Record<string, unknown> | null> {
+    /**
+     * config.toml を厳密に読み込んでパースする。存在しない場合は config が null、
+     * 読めない・壊れている場合は config が null で unreadable が true。
+     */
+    private async readConfig(
+        env: GrokEnvironment
+    ): Promise<{ config: Record<string, unknown> | null; unreadable: boolean }> {
         try {
-            const raw = stripBom(await this.fsFor(env).readText(GROK_CONFIG_REL));
-            if (raw === null) {
-                return null;
-            }
-            return asRecord(parse(raw));
+            const file = await readConfigFile(this.fsFor(env), GROK_CONFIG_REL);
+            return { config: file.exists ? asRecord(parseToml(file.text)) : null, unreadable: false };
         } catch (error) {
             console.error('Failed to read grok config.toml:', error);
-            return null;
+            return { config: null, unreadable: true };
         }
     }
 
@@ -308,11 +310,14 @@ export class GrokPluginManager {
             return base;
         }
 
-        const [listResult, marketResult, config] = await Promise.all([
+        const [listResult, marketResult, { config, unreadable }] = await Promise.all([
             this.runner.run(env, GROK_CLI_COMMAND, ['plugin', 'list', '--json'], LIST_TIMEOUT_MS),
             this.runner.run(env, GROK_CLI_COMMAND, ['plugin', 'marketplace', 'list', '--json'], LIST_TIMEOUT_MS),
             this.readConfig(env),
         ]);
+        if (unreadable) {
+            base.warningKey = 'grok.pluginManager.configUnreadable';
+        }
         if (!listResult.ok || !marketResult.ok) {
             const failed = !listResult.ok ? listResult : marketResult;
             return { ...base, error: this.failureMessage(failed.stdout, failed.stderr) };
@@ -329,7 +334,7 @@ export class GrokPluginManager {
 
     /**
      * `grok plugin list --json` の出力を共通型へ変換する。
-     * stateLists が null（config.toml を読めない）の場合は、インストール時に自動で有効化される
+     * stateLists が null（config.toml が無いか読めない）の場合は、インストール時に自動で有効化される
      * CLI の既定動作に合わせて有効として扱う。同じ repo_key の他のプラグイン名を sameRepoPlugins に添える。
      */
     private parsePlugins(json: string, stateLists: PluginStateLists | null): PluginEntry[] {
@@ -375,7 +380,7 @@ export class GrokPluginManager {
      * ここで組み立てて返す（qualifier は marketplace list から導出）。
      */
     async catalog(env: GrokEnvironment): Promise<PluginCatalogReport> {
-        const [availResult, marketResult, config] = await Promise.all([
+        const [availResult, marketResult, { config }] = await Promise.all([
             this.runner.run(env, GROK_CLI_COMMAND, ['plugin', 'list', '--available', '--json'], LIST_TIMEOUT_MS),
             this.runner.run(env, GROK_CLI_COMMAND, ['plugin', 'marketplace', 'list', '--json'], LIST_TIMEOUT_MS),
             this.readConfig(env),
@@ -611,16 +616,17 @@ export class GrokPluginManager {
      * 代入の書き方（[plugins] テーブル内・引用符付きのキー・ルートの `plugins.enabled`・インラインテーブル）を
      * 問わず、対象の配列の値だけを 1 行の配列に書き換え、キーの表記・他の行・コメントは保持する
      * （配列の内側に書かれたコメントは書き換えで失われる）。
-     * 書き換え後の TOML が「対象要素の除去だけを適用した内容」と一致しない場合は書き込まない。
+     * 書き換え後の TOML が「対象要素の除去だけを適用した内容」と一致しない場合と、ファイルを読めない場合は書き込まない。
      */
     private async removePluginStateEntries(env: GrokEnvironment, names: string[]): Promise<void> {
         try {
             const fs = this.fsFor(env);
-            const raw = stripBom(await fs.readText(GROK_CONFIG_REL));
-            if (raw === null) {
+            const file = await readConfigFile(fs, GROK_CONFIG_REL);
+            if (!file.exists) {
                 return;
             }
-            const before = asRecord(parse(raw));
+            const raw = file.text;
+            const before = asRecord(parseToml(raw));
             const plugins = asRecord(before?.plugins);
             if (!before || !plugins) {
                 return;
@@ -648,11 +654,11 @@ export class GrokPluginManager {
             if (!changed) {
                 return;
             }
-            if (!deepEqualLoose(parse(text), { ...before, plugins: expectedPlugins })) {
+            if (!deepEqualLoose(parseToml(text), { ...before, plugins: expectedPlugins })) {
                 console.error('Skipped cleaning grok [plugins] entries: edit verification mismatch');
                 return;
             }
-            await fs.writeText(GROK_CONFIG_REL, text);
+            await commitConfigChanges(fs, [{ file, next: text }]);
         } catch (error) {
             // 掃除は best-effort（本体のアンインストールは成功している）。
             console.error('Failed to clean up grok [plugins] enabled / disabled entries:', error);
@@ -671,7 +677,7 @@ export class GrokPluginManager {
     async removeMarketplace(env: GrokEnvironment, name: string): Promise<PluginOpResult> {
         // ~/.grok/config.toml に登録されたもの以外（組み込み・Claude 設定由来）は削除しない。
         // Claude 由来のソースを CLI で削除すると ~/.claude の設定ファイルまで書き換わるため。
-        const configNames = this.configSourceNames(await this.readConfig(env));
+        const configNames = this.configSourceNames((await this.readConfig(env)).config);
         if (GROK_BUILTIN_MARKETPLACES.includes(name) || !configNames.has(name)) {
             return { ok: false, message: `"${name}" is not a marketplace added in Grok's config.toml.` };
         }

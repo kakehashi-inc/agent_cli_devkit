@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import {
     Alert,
     Box,
@@ -23,17 +24,43 @@ import {
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import type { AgentEnvironment, AssetEntry, AssetKind, AssetListReport } from '@shared/agents/types';
+import type { ProfileApi } from '@shared/agents/profile/types';
+import { canDeleteAsset, canDownloadAsset, canSelectAsset } from '../../utils/assetEntry';
 import { envId } from '../../utils/format';
 import { filterAssetEntries } from '../../utils/assetSearch';
+import { AssetListNotices } from '../assets/AssetEntryMarks';
 import { AssetSearchField } from '../assets/AssetSearchField';
-import { AssetEntriesTable, computeFitWidth, type FmColumn } from '../assets/AssetEntriesTable';
+import { AssetEntriesTable, computeFitWidth, fitColumnLimit, type FmColumn } from '../assets/AssetEntriesTable';
+import { ProfileAssetTab } from '../profile/ProfileAssetTab';
 import type { AssetApi, Notify } from './types';
+import { useAgentEnvironments } from './useAgentEnvironments';
 
 interface Props {
     agentId: string;
     api: AssetApi;
     // 種別ごとの一覧の列構成。未指定の種別は name + description を使う。
     columns?: Partial<Record<AssetKind, FmColumn[]>>;
+    // 指定するとコマンドのタブを出す。
+    profileApi?: ProfileApi;
+}
+
+// セクションのタブ値: エージェント / スキル（AssetKind）に加え、コマンドのタブを持つ。
+type SectionTab = AssetKind | 'commands';
+
+/** アップロード失敗のメッセージコードを、i18n キーの末尾に変換する。 */
+function uploadErrorKey(message: string | undefined): string {
+    switch (message) {
+        case 'md-no-name':
+            return 'mdNoName';
+        case 'invalid-archive':
+            return 'invalidArchive';
+        case 'no-entry-file':
+            return 'noEntryFile';
+        case 'unavailable':
+            return 'unavailable';
+        default:
+            return 'uploadError';
+    }
 }
 
 const FRONTMATTER_COLUMNS: Record<AssetKind, FmColumn[]> = {
@@ -58,10 +85,18 @@ const AssetSection: React.FC<{
     env: AgentEnvironment;
     notify: Notify;
     columns?: Partial<Record<AssetKind, FmColumn[]>>;
-}> = ({ agentId, api, env, notify, columns: columnsByKind }) => {
+    profileApi?: ProfileApi;
+    // 更新のたびに変わる値。変わると一覧を読み直す（タブと検索語は保ち、選択は解除する）。
+    reloadNonce: number;
+}> = ({ agentId, api, env, notify, columns: columnsByKind, profileApi, reloadNonce }) => {
     const { t } = useTranslation();
-    const [tab, setTab] = useState<AssetKind>('agents');
-    const kind: AssetKind = tab;
+    const [searchParams] = useSearchParams();
+    const [tab, setTab] = useState<SectionTab>(() =>
+        profileApi && searchParams.get('tab') === 'commands' ? 'commands' : 'agents'
+    );
+    // コマンドのタブは一度開いたらマウントしたままにする。
+    const [commandsVisited, setCommandsVisited] = useState(tab === 'commands');
+    const kind: AssetKind = tab === 'commands' ? 'agents' : tab;
     const [reports, setReports] = useState<Record<AssetKind, AssetListReport | null>>({
         agents: null,
         skills: null,
@@ -77,7 +112,16 @@ const AssetSection: React.FC<{
     const [confirm, setConfirm] = useState<{
         srcPath: string;
         conflicts: string[];
+        nestedReplaced: string[];
         uploadKind: 'zip' | 'md';
+    } | null>(null);
+    // 種別の警告（続行 / キャンセル）。続行時は通常の流れ（上書き確認 → アップロード）へ進む。
+    const [kindWarn, setKindWarn] = useState<{
+        srcPath: string;
+        conflicts: string[];
+        nestedReplaced: string[];
+        uploadKind: 'zip' | 'md';
+        names: string[];
     } | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [viewEntry, setViewEntry] = useState<AssetEntry | null>(null);
@@ -92,12 +136,16 @@ const AssetSection: React.FC<{
         return () => window.removeEventListener('resize', onResize);
     }, []);
 
+    // 最後に始めた読み込みだけを画面に反映する。
+    const loadRequest = useRef(0);
     const load = async () => {
+        const request = ++loadRequest.current;
         try {
             const [agents, skills] = await Promise.all([
                 api.list(env, 'agents').catch(() => null),
                 api.list(env, 'skills').catch(() => null),
             ]);
+            if (request !== loadRequest.current) return;
             setReports({ agents, skills });
             setChecked({ agents: new Set(), skills: new Set() });
         } finally {
@@ -107,9 +155,9 @@ const AssetSection: React.FC<{
 
     useEffect(() => {
         void load();
-        // env は安定参照（親で固定）。マウント時に一度ロードする。
+        // env は安定参照（親で固定）。マウント時と更新のたびと api が変わったときにロードする。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [api, reloadNonce]);
 
     const report = reports[kind];
     const checkedKeys = checked[kind];
@@ -123,13 +171,13 @@ const AssetSection: React.FC<{
         if (!fitCol) {
             return 0;
         }
-        const maxWidthPx = Math.round(windowWidth * (fitCol.maxWidthPct ?? 0.25));
-        return computeFitWidth(filteredEntries, maxWidthPx, true);
-    }, [columns, filteredEntries, windowWidth]);
+        return computeFitWidth(filteredEntries, fitColumnLimit(columns, windowWidth, kind === 'skills'), true);
+    }, [columns, filteredEntries, kind, windowWidth]);
     // ファイル数列は skills のみ表示（agents は 1 ファイル固定なので不要）。
     const showFileCount = kind === 'skills';
     const selectedEntries = filteredEntries.filter(entry => checkedKeys.has(entry.relPath));
-    const someChecked = selectedEntries.length > 0;
+    const downloadableEntries = selectedEntries.filter(canDownloadAsset);
+    const deletableEntries = selectedEntries.filter(canDeleteAsset);
 
     const setKindSearchQuery = (query: string) => {
         setSearchQueries(prev => ({ ...prev, [kind]: query }));
@@ -149,10 +197,11 @@ const AssetSection: React.FC<{
         setKindChecked(next);
     };
 
-    const allChecked = filteredEntries.length > 0 && filteredEntries.every(e => checkedKeys.has(e.relPath));
+    const selectableEntries = filteredEntries.filter(canSelectAsset);
+    const allChecked = selectableEntries.length > 0 && selectableEntries.every(e => checkedKeys.has(e.relPath));
     const toggleAll = () => {
         const next = new Set(checkedKeys);
-        for (const entry of filteredEntries) {
+        for (const entry of selectableEntries) {
             if (allChecked) {
                 next.delete(entry.relPath);
             } else {
@@ -187,7 +236,7 @@ const AssetSection: React.FC<{
     };
 
     const handleDownload = async () => {
-        const relPaths = selectedEntries.map(entry => entry.relPath);
+        const relPaths = downloadableEntries.map(entry => entry.relPath);
         if (relPaths.length === 0) {
             return;
         }
@@ -217,7 +266,7 @@ const AssetSection: React.FC<{
                 return;
             }
             if (!result.ok) {
-                notify(t(`${agentId}.assets.uploadError`), 'error');
+                notify(t(`${agentId}.assets.${uploadErrorKey(result.message)}`), 'error');
                 return;
             }
             const uploadKind = (result.uploadKind ?? 'zip') as 'zip' | 'md';
@@ -227,11 +276,42 @@ const AssetSection: React.FC<{
                 return;
             }
             const conflicts = result.conflicts ?? [];
-            if (conflicts.length > 0) {
-                setConfirm({ srcPath, conflicts, uploadKind });
+            const nestedReplaced = result.nestedReplaced ?? [];
+            if (result.kindCheck === 'warn') {
+                setKindWarn({ srcPath, conflicts, nestedReplaced, uploadKind, names: result.kindNames ?? [] });
                 return;
             }
-            await runUpload(srcPath, uploadKind, false);
+            await proceedUpload(srcPath, uploadKind, conflicts, nestedReplaced);
+        } catch {
+            notify(t(`${agentId}.assets.uploadError`), 'error');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    // 検査後の通常の流れ: 同じ名前があれば上書き確認、無ければそのまま取り込む。
+    const proceedUpload = async (
+        srcPath: string,
+        uploadKind: 'zip' | 'md',
+        conflicts: string[],
+        nestedReplaced: string[]
+    ) => {
+        if (conflicts.length > 0) {
+            setConfirm({ srcPath, conflicts, nestedReplaced, uploadKind });
+            return;
+        }
+        await runUpload(srcPath, uploadKind, false);
+    };
+
+    const handleConfirmKindWarn = async () => {
+        if (!kindWarn) {
+            return;
+        }
+        const { srcPath, uploadKind, conflicts, nestedReplaced } = kindWarn;
+        setKindWarn(null);
+        setBusy(true);
+        try {
+            await proceedUpload(srcPath, uploadKind, conflicts, nestedReplaced);
         } catch {
             notify(t(`${agentId}.assets.uploadError`), 'error');
         } finally {
@@ -248,7 +328,7 @@ const AssetSection: React.FC<{
             notify(t(`${agentId}.assets.uploadSuccess`, { count: result.importedCount ?? 0 }), 'success');
             await load();
         } else {
-            notify(t(`${agentId}.assets.uploadError`), 'error');
+            notify(t(`${agentId}.assets.${uploadErrorKey(result.message)}`), 'error');
         }
     };
 
@@ -270,7 +350,7 @@ const AssetSection: React.FC<{
 
     const handleConfirmDelete = async () => {
         setDeleteConfirmOpen(false);
-        const relPaths = selectedEntries.map(entry => entry.relPath);
+        const relPaths = deletableEntries.map(entry => entry.relPath);
         if (relPaths.length === 0) {
             return;
         }
@@ -304,14 +384,18 @@ const AssetSection: React.FC<{
         <Paper variant='outlined' sx={{ mb: 3 }}>
             <Tabs
                 value={tab}
-                onChange={(_, v: AssetKind) => setTab(v)}
+                onChange={(_, v: SectionTab) => {
+                    setTab(v);
+                    if (v === 'commands') setCommandsVisited(true);
+                }}
                 sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
                 <Tab value='agents' label={t(`${agentId}.assets.tabAgents`)} />
                 <Tab value='skills' label={t(`${agentId}.assets.tabSkills`)} />
+                {profileApi && <Tab value='commands' label={t(`${agentId}.profile.tab.commands`)} />}
             </Tabs>
 
-            <Box sx={{ p: 2 }}>
+            <Box sx={{ p: 2, display: tab === 'commands' ? 'none' : 'block' }}>
                 {report && !report.available ? (
                     <Alert severity='info'>{t(`${agentId}.assets.unavailable`)}</Alert>
                 ) : (
@@ -321,7 +405,7 @@ const AssetSection: React.FC<{
                                 variant='contained'
                                 size='small'
                                 startIcon={<DownloadIcon />}
-                                disabled={busy || !someChecked}
+                                disabled={busy || downloadableEntries.length === 0}
                                 onClick={handleDownload}
                             >
                                 {t(`${agentId}.assets.download`)}
@@ -340,12 +424,14 @@ const AssetSection: React.FC<{
                                 color='error'
                                 size='small'
                                 startIcon={<DeleteIcon />}
-                                disabled={busy || !someChecked}
+                                disabled={busy || deletableEntries.length === 0}
                                 onClick={() => setDeleteConfirmOpen(true)}
                             >
                                 {t(`${agentId}.assets.delete`)}
                             </Button>
                         </Box>
+
+                        <AssetListNotices report={report} i18nPrefix={`${agentId}.assets`} />
 
                         <AssetSearchField value={searchQuery} onChange={setKindSearchQuery} />
 
@@ -370,12 +456,44 @@ const AssetSection: React.FC<{
                                 onToggleAll={toggleAll}
                                 onView={setViewEntry}
                                 onReveal={handleReveal}
+                                revealDisabledReason={
+                                    report?.revealUnavailable ? t('common.revealUnavailable') : undefined
+                                }
                                 onViewFull={handleViewFull}
                             />
                         )}
                     </>
                 )}
             </Box>
+
+            {profileApi && commandsVisited && (
+                <Box sx={{ p: 2, display: tab === 'commands' ? 'block' : 'none' }}>
+                    <ProfileAssetTab
+                        agentId={agentId}
+                        env={env}
+                        api={profileApi}
+                        notify={notify}
+                        tabId='commands'
+                        reloadNonce={reloadNonce}
+                    />
+                </Box>
+            )}
+
+            {/* 種別の警告ダイアログ（続行 / キャンセル） */}
+            <Dialog open={kindWarn !== null} onClose={() => setKindWarn(null)}>
+                <DialogTitle>{t(`${agentId}.assets.kindWarnTitle`)}</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        {t(`${agentId}.assets.kindWarnNoEntryFile`, { names: (kindWarn?.names ?? []).join(', ') })}
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setKindWarn(null)}>{t(`${agentId}.assets.cancel`)}</Button>
+                    <Button color='warning' variant='contained' onClick={handleConfirmKindWarn}>
+                        {t(`${agentId}.assets.kindWarnContinue`)}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* 上書き確認ダイアログ（zip / md 共通） */}
             <Dialog open={confirm !== null} onClose={() => setConfirm(null)}>
@@ -387,6 +505,11 @@ const AssetSection: React.FC<{
                             names: (confirm?.conflicts ?? []).join(', '),
                         })}
                     </DialogContentText>
+                    {(confirm?.nestedReplaced.length ?? 0) > 0 && (
+                        <Alert severity='warning' sx={{ mt: 2, overflowWrap: 'anywhere' }}>
+                            {t('common.assetOverwriteNested', { names: confirm?.nestedReplaced.join(', ') })}
+                        </Alert>
+                    )}
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setConfirm(null)}>{t(`${agentId}.assets.cancel`)}</Button>
@@ -401,7 +524,7 @@ const AssetSection: React.FC<{
                 <DialogTitle>{t(`${agentId}.assets.deleteConfirmTitle`)}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        {t(`${agentId}.assets.deleteConfirmBody`, { count: selectedEntries.length })}
+                        {t(`${agentId}.assets.deleteConfirmBody`, { count: deletableEntries.length })}
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
@@ -465,34 +588,19 @@ const AssetSection: React.FC<{
     );
 };
 
-export const AssetManagerView: React.FC<Props> = ({ agentId, api, columns }) => {
+export const AssetManagerView: React.FC<Props> = ({ agentId, api, columns, profileApi }) => {
     const { t } = useTranslation();
-    const [environments, setEnvironments] = useState<{ env: AgentEnvironment; label: string }[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [reload, setReload] = useState(0);
+    // 更新中は環境セクションを表示したまま読み直し、タブと検索語を保つ。
+    const { environments, loading, refreshing, reloadNonce, load } = useAgentEnvironments(
+        agentId,
+        api,
+        'Failed to load asset manager environments:'
+    );
     const [snackbar, setSnackbar] = useState<{
         open: boolean;
         message: string;
         severity: 'success' | 'error' | 'warning';
     }>({ open: false, message: '', severity: 'success' });
-
-    const load = async (refresh = false) => {
-        setLoading(true);
-        try {
-            setEnvironments(await api.getEnvironments(refresh));
-            setReload(value => value + 1);
-        } catch (error) {
-            console.error('Failed to load asset manager environments:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        void load();
-        // api is a stable preload bridge.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     const notify: Notify = (message, severity) => setSnackbar({ open: true, message, severity });
 
@@ -521,8 +629,9 @@ export const AssetManagerView: React.FC<Props> = ({ agentId, api, columns }) => 
                 <Button
                     variant='outlined'
                     startIcon={<RefreshIcon />}
+                    disabled={refreshing}
                     onClick={() => void load(true)}
-                    sx={{ textTransform: 'none', flexShrink: 0 }}
+                    sx={{ flexShrink: 0 }}
                 >
                     {t('common.refresh')}
                 </Button>
@@ -534,11 +643,19 @@ export const AssetManagerView: React.FC<Props> = ({ agentId, api, columns }) => 
                 </Alert>
             )}
             {nativeEnvs.map(item => (
-                <Box key={`${envId(item.env)}-${reload}`}>
+                <Box key={`${agentId}:${envId(item.env)}`}>
                     <Typography variant='h6' sx={{ mb: 1 }}>
                         {item.label}
                     </Typography>
-                    <AssetSection agentId={agentId} api={api} env={item.env} notify={notify} columns={columns} />
+                    <AssetSection
+                        agentId={agentId}
+                        api={api}
+                        env={item.env}
+                        notify={notify}
+                        columns={columns}
+                        profileApi={profileApi}
+                        reloadNonce={reloadNonce}
+                    />
                 </Box>
             ))}
 
@@ -549,7 +666,7 @@ export const AssetManagerView: React.FC<Props> = ({ agentId, api, columns }) => 
                         WSL
                     </Typography>
                     {wslEnvs.map(item => (
-                        <Box key={`${envId(item.env)}-${reload}`}>
+                        <Box key={`${agentId}:${envId(item.env)}`}>
                             <Typography variant='h6' sx={{ mb: 1 }}>
                                 {t(`${agentId}.assets.wslSection`, { distro: item.label })}
                             </Typography>
@@ -559,6 +676,8 @@ export const AssetManagerView: React.FC<Props> = ({ agentId, api, columns }) => 
                                 env={item.env}
                                 notify={notify}
                                 columns={columns}
+                                profileApi={profileApi}
+                                reloadNonce={reloadNonce}
                             />
                         </Box>
                     ))}

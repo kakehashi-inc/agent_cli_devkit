@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Box,
@@ -9,12 +9,7 @@ import {
     TableContainer,
     TableHead,
     TableRow,
-    TextField,
     Typography,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
     Alert,
 } from '@mui/material';
 import {
@@ -24,7 +19,19 @@ import {
     KeyboardArrowDown as ExpandIcon,
     KeyboardArrowRight as CollapseIcon,
 } from '@mui/icons-material';
+import { DirectEditDialog, useDirectEdit } from '../../components/settings/DirectEditDialog';
+import { SettingsConflictDialog } from '../../components/settings/SettingsConflictDialog';
+import { SettingsFileBanner } from '../../components/settings/SettingsFileBanner';
+import { directSaveErrorKey, tableSaveErrorKey } from '../../components/settings/settingsFileMessage';
 import { SettingsValueEditor } from '../../components/settings/SettingsValueEditor';
+import {
+    baseValuesOf,
+    overlayUnsavedValues,
+    useSettingsFieldLink,
+    useSettingsLoadEffect,
+    type SettingsLoadMode,
+    type SettingsTabContext,
+} from '../../components/settings/settingsTabContext';
 import { settingsValueProblemMessage } from '../../components/settings/settingsValueMessage';
 import { AssetSearchField } from '../../components/assets/AssetSearchField';
 import { filterSettingsFields } from '../../utils/settingsSearch';
@@ -33,12 +40,15 @@ import type {
     ClaudeEnvironment,
     SettingsFieldSpec,
     SettingsFieldValue,
+    SettingsParseError,
     SettingsValues,
 } from '@shared/agents/claude/types';
 
 interface Props {
     env: ClaudeEnvironment;
     onNotify: (message: string, severity: 'success' | 'error' | 'warning') => void;
+    // タブの枠から受け取る情報。リンク行の移動先と、別のタブの保存への追従に使う。
+    profile?: SettingsTabContext;
 }
 
 /**
@@ -46,15 +56,16 @@ interface Props {
  *
  * - read() が返す項目定義（result.fields）だけをテーブルに展開して編集する。
  *   各項目は 3 状態 boolean・envFlag・候補入力・セレクト・テキスト・数値で表示し、
- *   構造化設定はファイルの直接編集が必要なことを値欄へ表示する。
+ *   構造化設定は編集先のタブへのリンクか、ファイルの直接編集が必要なことを値欄へ表示する。
  * - 個々の変更は即保存せず、テーブル下の「保存」「キャンセル」で確定/破棄する。
  *   - 保存: 変更した編集可能項目だけを settings.json へ差分マージ（登録外・未編集項目には触れない）。
  *   - キャンセル: 再取得して編集前の状態へ戻す。
  * - 保存/キャンセル行の右端「直接編集」で settings.json の生 JSON を直接編集できる。
  *   ダイアログ内の保存で書き込み、キャンセルで破棄する。
  */
-export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
+export const SettingsSection: React.FC<Props> = ({ env, onNotify, profile }) => {
     const { t } = useTranslation();
+    const fieldLink = useSettingsFieldLink('claude', profile?.selectTab);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [available, setAvailable] = useState(true);
@@ -63,10 +74,9 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
     const [editValues, setEditValues] = useState<Record<string, SettingsFieldValue>>({});
     const [originalValues, setOriginalValues] = useState<Record<string, SettingsFieldValue>>({});
 
-    // 直接編集ダイアログ。
-    const [rawOpen, setRawOpen] = useState(false);
-    const [rawText, setRawText] = useState('');
-    const [rawError, setRawError] = useState(false);
+    // 設定ファイルを読めない、または CLI が読めない内容である理由。
+    const [readFailed, setReadFailed] = useState<string | undefined>(undefined);
+    const [parseError, setParseError] = useState<SettingsParseError | undefined>(undefined);
 
     // 編集対象項目の定義は read() の戻り値（result.fields）から受け取る。
     // これによりレンダラーは os 依存の shared/constants を import しない。
@@ -130,17 +140,26 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         return t('claude.settings.unset');
     };
 
-    const load = async () => {
-        setLoading(true);
+    // テーブルの保存で、読み込んだ後に値が変わっていた項目の key。null の間は確認を出さない。
+    const [conflictKeys, setConflictKeys] = useState<string[] | null>(null);
+
+    const load = async (mode: SettingsLoadMode = 'replace', discard: readonly string[] = []) => {
+        if (mode === 'replace') setLoading(true);
         try {
             const result = await window.agentCliDevkit.claude.settings.read(env);
             setAvailable(result.available);
+            setReadFailed(result.readFailed);
+            setParseError(result.parseError);
             setFields(result.fields);
             const next: Record<string, SettingsFieldValue> = {};
             for (const f of result.fields) {
                 next[f.key] = result.values[f.key];
             }
-            setEditValues(next);
+            setEditValues(
+                mode === 'overlay'
+                    ? previous => overlayUnsavedValues(result.fields, previous, originalValues, next, discard)
+                    : next
+            );
             setOriginalValues(next);
         } catch (error) {
             console.error('Failed to read settings:', error);
@@ -150,11 +169,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         }
     };
 
-    useEffect(() => {
-        load();
-        // env は親で固定の安定参照。マウント時に一度ロードする。
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    useSettingsLoadEffect(load, profile?.docVersion, profile?.reloadNonce);
 
     // 未編集項目と直接編集項目は送らず、将来の設定や構造値を壊さない。
     const collectValues = (): SettingsValues =>
@@ -182,21 +197,19 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         }
         setBusy(true);
         try {
-            const result = await window.agentCliDevkit.claude.settings.write(env, values);
+            const result = await window.agentCliDevkit.claude.settings.write(
+                env,
+                values,
+                baseValuesOf(values, originalValues)
+            );
             if (result.ok) {
                 onNotify(t('claude.settings.saveSuccess'), 'success');
                 await load();
+                profile?.onSaved();
+            } else if (result.message === 'conflict') {
+                setConflictKeys(result.conflictKeys ?? []);
             } else {
-                onNotify(
-                    t(
-                        result.message === 'invalid-existing-json'
-                            ? 'claude.settings.invalidExisting'
-                            : result.message === 'verify-failed'
-                              ? 'claude.settings.verifyFailed'
-                              : 'claude.settings.saveError'
-                    ),
-                    'error'
-                );
+                onNotify(t(tableSaveErrorKey('claude.settings', result.message, 'invalid-existing-json')), 'error');
             }
         } catch {
             onNotify(t('claude.settings.saveError'), 'error');
@@ -207,56 +220,32 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
 
     // キャンセル: 再取得して編集前へ戻す。
     const handleCancel = () => {
-        load();
+        void load();
     };
 
-    // 直接編集を開く: 最新の生 JSON を取得して表示する。
-    const handleOpenRaw = async () => {
-        setBusy(true);
-        try {
-            const result = await window.agentCliDevkit.claude.settings.read(env);
-            const text = result.raw ?? '{}\n';
-            setRawText(text);
-            setRawError(false);
-            setRawOpen(true);
-        } catch {
-            onNotify(t('claude.settings.readError'), 'error');
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    const handleRawTextChange = (text: string) => {
-        setRawText(text);
-        // 構文チェック（保存ボタンの活性とエラー表示に使う）。
-        try {
-            const parsed = JSON.parse(text);
-            setRawError(!(parsed && typeof parsed === 'object' && !Array.isArray(parsed)));
-        } catch {
-            setRawError(true);
-        }
-    };
-
-    const handleSaveRaw = async () => {
-        setBusy(true);
-        try {
-            const result = await window.agentCliDevkit.claude.settings.writeRaw(env, rawText);
-            if (result.ok) {
-                onNotify(t('claude.settings.saveSuccess'), 'success');
-                setRawOpen(false);
-                await load();
-            } else {
-                onNotify(
-                    t(result.message === 'invalid-json' ? 'claude.settings.invalidJson' : 'claude.settings.saveError'),
-                    'error'
-                );
+    // 直接編集: 開いた時点の生 JSON を編集する。保存できるのは CLI が読める厳密な JSON だけ。
+    const directEditor = useDirectEdit({
+        read: () => window.agentCliDevkit.claude.settings.readRaw(env),
+        writeRaw: (raw, baseRevision) => window.agentCliDevkit.claude.settings.writeRaw(env, raw, baseRevision),
+        initialText: '{}\n',
+        isValid: text => {
+            try {
+                const parsed = JSON.parse(text);
+                return Boolean(parsed && typeof parsed === 'object' && !Array.isArray(parsed));
+            } catch {
+                return false;
             }
-        } catch {
-            onNotify(t('claude.settings.saveError'), 'error');
-        } finally {
-            setBusy(false);
-        }
-    };
+        },
+        setBusy,
+        onSaved: async () => {
+            onNotify(t('claude.settings.saveSuccess'), 'success');
+            await load();
+            profile?.onSaved();
+        },
+        onReadFailed: () => onNotify(t('claude.settings.readError'), 'error'),
+        onSaveFailed: message =>
+            onNotify(t(directSaveErrorKey('claude.settings', message, 'invalid-json', 'invalidJson')), 'error'),
+    });
 
     const setValue = (key: string, value: SettingsFieldValue) => {
         setEditValues(prev => ({ ...prev, [key]: value }));
@@ -274,17 +263,31 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
         return <Alert severity='info'>{t('claude.settings.unavailable')}</Alert>;
     }
 
+    // 値を確定できないあいだは、未設定に見える表と保存の操作を出さない。
+    const blocked = readFailed !== undefined || parseError !== undefined;
+
     return (
         <Box>
-            <AssetSearchField value={searchQuery} onChange={setSearchQuery} label={t('common.settingsSearchLabel')} />
+            <SettingsFileBanner
+                readFailed={readFailed}
+                parseError={parseError}
+                parseErrorKey='claude.settings.parseError'
+            />
+            {!blocked && (
+                <AssetSearchField
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    label={t('common.settingsSearchLabel')}
+                />
+            )}
 
-            {searching && groupedFields.length === 0 ? (
+            {blocked ? null : searching && groupedFields.length === 0 ? (
                 <Typography color='text.secondary' sx={{ py: 1 }}>
                     {t('common.noSearchResults')}
                 </Typography>
             ) : (
                 <TableContainer>
-                    <Table size='small'>
+                    <Table size='small' sx={{ tableLayout: 'fixed' }}>
                         <TableHead>
                             <TableRow>
                                 <TableCell sx={{ width: '40%' }}>{t('claude.settings.colItem')}</TableCell>
@@ -325,7 +328,9 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                         {expanded &&
                                             items.map(f => (
                                                 <TableRow key={f.key}>
-                                                    <TableCell sx={{ verticalAlign: 'top', pl: 3 }}>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', pl: 3, overflowWrap: 'anywhere' }}
+                                                    >
                                                         <Typography variant='body2' sx={{ fontWeight: 600 }}>
                                                             {t(`claude.settings.field.${f.key}.label`)}
                                                         </Typography>
@@ -351,6 +356,7 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
                                                                 ),
                                                             }))}
                                                             onChange={value => setValue(f.key, value)}
+                                                            {...fieldLink(f)}
                                                         />
                                                     </TableCell>
                                                 </TableRow>
@@ -365,83 +371,60 @@ export const SettingsSection: React.FC<Props> = ({ env, onNotify }) => {
 
             {/* テーブル下部: 左に 保存 / キャンセル、右端に 直接編集 */}
             <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'center' }}>
-                <Button variant='contained' size='small' startIcon={<SaveIcon />} disabled={busy} onClick={handleSave}>
-                    {t('claude.settings.save')}
-                </Button>
-                <Button
-                    variant='outlined'
-                    size='small'
-                    startIcon={<CloseIcon />}
-                    disabled={busy}
-                    onClick={handleCancel}
-                >
-                    {t('claude.settings.cancel')}
-                </Button>
+                {!blocked && (
+                    <>
+                        <Button
+                            variant='contained'
+                            size='small'
+                            startIcon={<SaveIcon />}
+                            disabled={busy}
+                            onClick={handleSave}
+                        >
+                            {t('claude.settings.save')}
+                        </Button>
+                        <Button
+                            variant='outlined'
+                            size='small'
+                            startIcon={<CloseIcon />}
+                            disabled={busy}
+                            onClick={handleCancel}
+                        >
+                            {t('claude.settings.cancel')}
+                        </Button>
+                    </>
+                )}
                 <Box sx={{ flexGrow: 1 }} />
                 <Button
                     variant='outlined'
                     size='small'
                     startIcon={<CodeIcon />}
-                    disabled={busy}
-                    onClick={handleOpenRaw}
+                    disabled={busy || readFailed !== undefined}
+                    onClick={() => void directEditor.start()}
                 >
                     {t('claude.settings.directEdit')}
                 </Button>
             </Box>
 
-            {/* 直接編集ダイアログ */}
-            <Dialog
-                open={rawOpen}
-                onClose={() => !busy && setRawOpen(false)}
-                maxWidth='md'
-                fullWidth
-                // ダイアログを固定高にし、スクロールはテキストエリア内の 1 本のみにする
-                slotProps={{ paper: { sx: { height: '85vh' } } }}
-            >
-                <DialogTitle>{t('claude.settings.directEditTitle')}</DialogTitle>
-                <DialogContent sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <Typography variant='body2' color='text.secondary' sx={{ mb: 1.5, flexShrink: 0 }}>
-                        {t('claude.settings.directEditDesc')}
-                    </Typography>
-                    <TextField
-                        multiline
-                        fullWidth
-                        value={rawText}
-                        onChange={e => handleRawTextChange(e.target.value)}
-                        error={rawError}
-                        helperText={rawError ? t('claude.settings.invalidJson') : ' '}
-                        sx={{ flexGrow: 1, minHeight: 0 }}
-                        slotProps={{
-                            input: {
-                                sx: {
-                                    fontFamily: 'monospace',
-                                    fontSize: '0.85rem',
-                                    height: '100%',
-                                    alignItems: 'flex-start',
-                                    // TextareaAutosize の自動高さを無効化し、固定高＋内部スクロールにする
-                                    '& textarea': {
-                                        height: '100% !important',
-                                        overflow: 'auto !important',
-                                    },
-                                },
-                            },
-                        }}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setRawOpen(false)} disabled={busy}>
-                        {t('claude.settings.cancel')}
-                    </Button>
-                    <Button
-                        variant='contained'
-                        startIcon={<SaveIcon />}
-                        onClick={handleSaveRaw}
-                        disabled={busy || rawError}
-                    >
-                        {t('claude.settings.save')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <SettingsConflictDialog
+                labels={conflictKeys?.map(key => t(`claude.settings.field.${key}.label`)) ?? null}
+                busy={busy}
+                onBack={() => setConflictKeys(null)}
+                onReload={() => {
+                    const keys = conflictKeys ?? [];
+                    setConflictKeys(null);
+                    void load('overlay', keys);
+                }}
+            />
+
+            <DirectEditDialog
+                editor={directEditor}
+                busy={busy}
+                title={t('claude.settings.directEditTitle')}
+                description={t('claude.settings.directEditDesc')}
+                cancelLabel={t('claude.settings.cancel')}
+                saveLabel={t('claude.settings.save')}
+                invalidText={t('claude.settings.invalidJson')}
+            />
         </Box>
     );
 };

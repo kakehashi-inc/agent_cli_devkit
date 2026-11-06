@@ -16,10 +16,13 @@ import type {
     SettingsValues,
 } from '../../shared/agents/codex/types';
 import type { CodexIpcApi } from '../../shared/agents/codex/ipc';
+import { profileChannels } from '../../shared/agents/profile/channels';
+import { createProfileApi } from './profileApi';
 
 export const codexApi: CodexIpcApi = {
+    profile: createProfileApi(profileChannels('codex')),
     mcp: {
-        getEnvironments: () => ipcRenderer.invoke(CODEX_MCP_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CODEX_MCP_CHANNELS.GET_ENVIRONMENTS, refresh),
         getMCPServers: (env: CodexEnvironment) => ipcRenderer.invoke(CODEX_MCP_CHANNELS.GET_MCP_SERVERS, env),
         enableMCPServer: (env: CodexEnvironment, serverName: string) =>
             ipcRenderer.invoke(CODEX_MCP_CHANNELS.ENABLE, env, serverName),
@@ -31,7 +34,7 @@ export const codexApi: CodexIpcApi = {
             ipcRenderer.invoke(CODEX_MCP_CHANNELS.REORDER_DISABLED, env, serverNames),
     },
     asset: {
-        getEnvironments: () => ipcRenderer.invoke(CODEX_ASSET_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CODEX_ASSET_CHANNELS.GET_ENVIRONMENTS, refresh),
         list: (env: CodexEnvironment, kind: AssetKind) => ipcRenderer.invoke(CODEX_ASSET_CHANNELS.LIST, env, kind),
         readEntry: (env: CodexEnvironment, kind: AssetKind, relPath: string) =>
             ipcRenderer.invoke(CODEX_ASSET_CHANNELS.READ_ENTRY, env, kind, relPath),
@@ -53,7 +56,7 @@ export const codexApi: CodexIpcApi = {
             ipcRenderer.invoke(CODEX_ASSET_CHANNELS.IMPORT_OFFICIAL_SKILLS, env, relPaths),
     },
     cleanup: {
-        getEnvironments: () => ipcRenderer.invoke(CODEX_CLEANUP_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CODEX_CLEANUP_CHANNELS.GET_ENVIRONMENTS, refresh),
         scan: (env: CodexEnvironment) => ipcRenderer.invoke(CODEX_CLEANUP_CHANNELS.SCAN, env),
         delete: (env: CodexEnvironment, selection: CleanupSelection) =>
             ipcRenderer.invoke(CODEX_CLEANUP_CHANNELS.DELETE, env, selection),
@@ -63,12 +66,13 @@ export const codexApi: CodexIpcApi = {
             ipcRenderer.invoke(CODEX_CLEANUP_CHANNELS.DELETE_OTHER, env, selection),
     },
     config: {
-        getEnvironments: () => ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.GET_ENVIRONMENTS, refresh),
         read: (env: CodexEnvironment) => ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.READ, env),
-        write: (env: CodexEnvironment, values: SettingsValues) =>
-            ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.WRITE, env, values),
-        writeRaw: (env: CodexEnvironment, rawToml: string) =>
-            ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.WRITE_RAW, env, rawToml),
+        readRaw: (env: CodexEnvironment) => ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.READ_RAW, env),
+        write: (env: CodexEnvironment, values: SettingsValues, base: SettingsValues) =>
+            ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.WRITE, env, values, base),
+        writeRaw: (env: CodexEnvironment, rawToml: string, baseRevision: string) =>
+            ipcRenderer.invoke(CODEX_CONFIG_CHANNELS.WRITE_RAW, env, rawToml, baseRevision),
     },
     plugin: {
         getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(CODEX_PLUGIN_CHANNELS.GET_ENVIRONMENTS, refresh),

@@ -1,5 +1,6 @@
 export default {
     nav: {
+        group: 'Agy',
         mcp: 'Agy CLI MCP Management',
         assets: 'Agy CLI Agent / Skill Management',
         plugins: 'Agy CLI Plugin Manager',
@@ -7,8 +8,9 @@ export default {
         cleanup: 'Agy CLI Cleanup',
     },
     noEnvironment:
-        'Agy CLI was not found. Install Antigravity CLI so that the agy command is available on Windows or in WSL, then press Refresh. If it is not found right after installing, you may need to restart the app.',
+        'Agy CLI was not found. Install Antigravity CLI so that the agy command is available on Windows or in WSL, then press Refresh.',
     dashboard: {
+        group: 'Agy (Antigravity CLI)',
         mcpDesc: 'Enable/disable/reorder the global MCP servers used by Agy CLI.',
         assetsDesc: 'Manage Agy CLI custom agents and its global skills directory.',
         pluginsDesc: 'Manage plugins through Agy CLI and its Gemini-shared plugin directory.',
@@ -18,7 +20,7 @@ export default {
     mcp: {
         title: 'Agy CLI MCP Management',
         wslSection: 'WSL: {{distro}}',
-        notFound: '~/.gemini/config/mcp_config.json was not found. It will be created when settings are changed.',
+        notFound: '~/.gemini/config/mcp_config.json was not found.',
         configPath: 'Config',
         disabledConfigPath: 'Disabled',
         enabledServers: 'Enabled MCP servers',
@@ -35,7 +37,7 @@ export default {
     assets: {
         title: 'Agy CLI Agent / Skill Management',
         descriptionText:
-            'List your Agy CLI custom agents and skills, download selected ones together as a ZIP, or upload a ZIP/md file to import them. Only ~/.gemini/config/agents/<name>/agent.md (agents) and ~/.gemini/antigravity-cli/skills/<name>/SKILL.md (skills) are managed.',
+            'List your Agy CLI custom agents and skills, download selected ones together as a ZIP, or upload a ZIP/md file to import them.',
         wslSection: 'WSL: {{distro}}',
         tabAgents: 'Agents',
         tabSkills: 'Skills',
@@ -74,34 +76,101 @@ export default {
         deletePartial: 'Some items could not be deleted because they are in use',
         deleteError: 'Failed to delete the selected items',
         noEntries: 'No data available',
-        unavailable: 'This environment cannot be accessed for archive operations (the WSL path is unreachable).',
+        unavailable: 'The files of this environment cannot be reached.',
         downloadSuccess: 'Archive saved',
         downloadError: 'Failed to create the archive',
         uploadSuccess: 'Imported {{count}} item(s)',
         uploadError: 'Import failed',
+        mdNoName: 'Could not read the name from the file',
+        invalidArchive: 'This archive cannot be imported. It may be damaged or contain nothing to import.',
+        noEntryFile:
+            'This archive has nothing to import. Each folder needs a SKILL.md (skills) or an agent.md (agents).',
+        kindWarnTitle: 'Some folders will not be imported',
+        kindWarnContinue: 'Import the rest',
+        kindWarnNoEntryFile:
+            'These folders have no definition file and will not be imported: {{names}}. Import the other items?',
+        listTruncated: 'Folders deeper than {{depth}} levels are not listed.',
+        listIncomplete: 'Some folders could not be read, so this list may be incomplete.',
+        entryMark: {
+            link: {
+                self: 'Link',
+                via: 'In a linked folder',
+            },
+            linkHint: {
+                self: 'This is a symbolic link. Deleting removes only the link.',
+                via: 'This is read through a linked folder, so it cannot be deleted here. To remove it, delete the folder link.',
+            },
+            status: {
+                'dangling-link': 'Not loaded: link target is missing',
+                'no-entry-file': 'Not loaded: no definition file',
+                'link-folder': 'Folder link',
+                'link-loop': 'Not read: folder already listed',
+                'refused-name': 'Cannot be managed: unsafe name',
+            },
+            statusHint: {
+                'dangling-link':
+                    'The link points to a path that does not exist, so the CLI does not load it. Deleting it removes only the link.',
+                'no-entry-file': 'This folder has no definition file, so the CLI does not load it.',
+                'link-folder': 'This link points to a folder. Deleting it removes only the link.',
+                'link-loop':
+                    'This link points to a folder that was already read, so its contents are not listed again. Deleting it removes only the link.',
+                'refused-name':
+                    'This name could point to a different location, so it cannot be viewed, downloaded, or deleted here. Rename it outside this app.',
+            },
+            overriddenBy: 'Not used: {{origin}} takes priority',
+            overriddenByHint: 'A skill with the same name in {{origin}} takes priority over this one.',
+            sameNameIn: 'Same name in {{origin}}',
+            sameNameInHint: 'A skill with the same name is also in {{origin}}.',
+        },
+        origin: {
+            cli: '~/.gemini/antigravity-cli/skills',
+            shared: '~/.gemini/skills',
+            config: '~/.gemini/config/skills',
+        },
         overwriteTitle: 'Overwrite items with the same name?',
         overwriteBody:
             'The following {{count}} item(s) already exist and will be deleted and replaced: {{names}}. Continue?',
     },
     plugins: {
         title: 'Agy CLI Plugin Manager',
-        description:
-            'Manage plugins in the Gemini-shared ~/.gemini/config/plugins directory with the official agy plugin commands.',
-        sourceHelp:
-            'Installs with agy plugin install from a plugin name (for example name@antigravity-plugins-official from the official marketplace), a GitHub repository URL, or a local directory.',
+        description: 'List, install, and uninstall Agy CLI plugins, and turn them on and off.',
         invalidNameNote:
             'The plugin name (the name in plugin.json, or the folder name if it has none) starts with "-" or contains characters that cannot be passed to the CLI, so it cannot be enabled, disabled, or removed here.',
+    },
+    profile: {
+        tab: {
+            settings: 'Settings',
+            hooks: 'Hooks',
+            statusLine: 'Status Line',
+            externalCommands: 'External commands',
+            permissions: 'Permissions',
+            instructions: 'Instructions',
+            rules: 'Rules',
+        },
+        sharedNotice: 'This file is shared with the Antigravity App and IDE.',
+        externalCommands: {
+            sidecarsTitle: 'Sidecars',
+        },
+        permissions: {
+            allow: 'Allow (allow)',
+            ask: 'Ask (ask)',
+            deny: 'Deny (deny)',
+        },
+        rules: {
+            filesTitle: 'Files',
+            manifestTitle: 'rules.json',
+        },
     },
     settings: {
         title: 'Agy CLI Settings',
         description:
-            'Edit scalar values in ~/.gemini/antigravity-cli/settings.json. Arrays, maps, and objects are direct-edit only.',
+            'Edit Agy CLI settings, hooks, permissions, instruction files, and more. The main settings file is ~/.gemini/antigravity-cli/settings.json.',
         wslSection: 'WSL: {{distro}}',
         item: 'Item',
         value: 'Value',
         directEdit: 'Direct edit',
         directTitle: 'Edit settings.json directly',
-        directDesc: 'Saving replaces the file contents. Enter valid JSON.',
+        directDesc: 'Saving replaces the file contents.',
         directEditValue: 'Edit the file directly',
         unknownValue: '{{value}} (saved value; not in current suggestions)',
         save: 'Save',
@@ -126,14 +195,17 @@ export default {
             advanced: 'Direct edit',
         },
         field: {
-            colorScheme: { label: 'Color scheme (colorScheme)', desc: 'Color theme used by the Agy CLI terminal UI.' },
+            colorScheme: {
+                label: 'Color scheme (colorScheme)',
+                desc: "Color theme of the terminal UI. terminal uses your terminal's colors.",
+            },
             altScreenMode: {
-                label: 'Alternate screen mode (altScreenMode)',
-                desc: 'Controls whether the TUI uses the terminal alternate screen.',
+                label: 'Rendering mode (altScreenMode)',
+                desc: "How much the TUI uses the terminal's alternate screen. default uses it for full-screen views only, always for the whole TUI, and never not at all.",
             },
             notifications: {
                 label: 'Notifications (notifications)',
-                desc: 'Sends a desktop notification and a terminal bell when a task completes or needs your attention.',
+                desc: 'Rings the terminal bell and shows a desktop notification when the agent needs your approval or an answer, or finishes its turn.',
             },
             showTips: {
                 label: 'Show tips (showTips)',
@@ -141,89 +213,123 @@ export default {
             },
             showFeedbackSurvey: {
                 label: 'Feedback survey (showFeedbackSurvey)',
-                desc: 'Shows brief feedback surveys after tasks complete.',
+                desc: 'Shows a brief feedback survey from time to time after a task finishes.',
             },
             verbosity: {
                 label: 'Verbosity (verbosity)',
-                desc: 'Conversation detail level: high shows every tool call and thought, medium groups related steps into summaries, and low shows only minimal progress.',
+                desc: "How much of the agent's work the conversation shows. high shows every tool call and thought, medium groups related steps into summaries, and low shows only responses and collapses tool activity into a token usage summary.",
             },
             runningLightSpeed: {
-                label: 'Running light speed (runningLightSpeed)',
-                desc: 'Controls the activity indicator speed, or turns it off.',
+                label: 'Animation speed (runningLightSpeed)',
+                desc: 'Speed of the progress indicator animation. off stops the animation.',
+            },
+            hideActiveItems: {
+                label: 'Hide active items (hideActiveItems)',
+                desc: 'Hides the list of active subagents and background tasks below the prompt box.',
+            },
+            useTerminalCursor: {
+                label: 'Use terminal cursor (useTerminalCursor)',
+                desc: "Uses your terminal's own cursor shape instead of a block cursor.",
+            },
+            clearScrollbackOnResize: {
+                label: 'Clear scrollback on redraw (clearScrollbackOnResize)',
+                desc: 'Clears the terminal scrollback when the CLI redraws the conversation, such as after you resize the window. Disabled keeps earlier output.',
             },
             editor: {
                 label: 'Editor (editor)',
-                desc: 'External editor used to view artifacts and to compose prompts with Ctrl+G. auto follows $EDITOR.',
+                desc: 'External editor for opening artifacts and files and for composing prompts with Ctrl+G. auto uses $EDITOR.',
             },
             editorMode: {
                 label: 'Editor mode (editorMode)',
-                desc: 'Editing model of the prompt box. vim enables modal editing with Normal, Insert, and Visual modes.',
+                desc: 'Editing model of the prompt. default is flat text editing, and vim is modal editing.',
             },
             vimInsertFirst: {
                 label: 'Start in Insert mode (vimInsertFirst)',
-                desc: 'Starts each prompt in Vim Insert mode, where a bare Enter submits. Takes effect when editorMode is vim.',
+                desc: 'Starts each prompt in Vim Insert mode, where a bare Enter submits.',
             },
             copyOnSelect: {
                 label: 'Copy on select (copyOnSelect)',
-                desc: 'Copies mouse-selected text to the clipboard when the selection is released in alternate screen mode.',
+                desc: 'Copies the selected text to the clipboard when you release a mouse selection.',
             },
             queuedMessages: {
-                label: 'Messages sent while working (queuedMessages)',
-                desc: 'How messages sent while the agent is working are handled: send-immediately delivers them right away; when unset they wait until the current turn ends.',
+                label: 'Queued messages (queuedMessages)',
+                desc: 'What happens to a message you send while the agent is working. queue holds it until the current turn ends, and send-immediately interrupts the agent and sends it right away.',
+            },
+            pickerGrouping: {
+                label: 'Conversation picker grouping (pickerGrouping)',
+                desc: 'How the /resume picker lists conversations: none shows one list, most recent first, and grouped groups them by workspace.',
+            },
+            historySize: {
+                label: 'Prompt history size (historySize)',
+                desc: 'Number of prompt history entries kept on disk. -1 keeps every entry, and 0 clears the history.',
+            },
+            disableSlashCommands: {
+                label: 'Disable slash commands (disableSlashCommands)',
+                desc: 'Sends headless mode (-p) prompts that start with / to the model as typed.',
             },
             toolPermission: {
                 label: 'Tool permission (toolPermission)',
-                desc: 'Default permission policy for tool execution.',
+                desc: 'When the agent asks before using a tool. request-review asks before write, shell, web, and MCP tools, proceed-in-sandbox runs sandboxed commands without asking, always-proceed runs commands, web requests, and MCP tools without asking, and strict asks before every action, including file reads.',
             },
             agentMode: {
-                label: 'Execution mode (agentMode)',
-                desc: 'Execution mode at startup: accept-edits auto-approves file edits, and plan outlines the steps before changing code.',
+                label: 'Agent mode (agentMode)',
+                desc: 'Execution mode the CLI starts in. Unset asks before file edits, accept-edits approves workspace file edits automatically, auto approves edits and safe commands and asks before irreversible actions, and plan researches and plans before making changes.',
             },
             artifactReviewPolicy: {
                 label: 'Artifact review policy (artifactReviewPolicy)',
-                desc: 'Controls when generated artifacts require review.',
+                desc: 'Whether the agent waits for your review when it asks for feedback on an artifact, such as an implementation plan. asks-for-review and agent-decides wait, and always-proceed continues without waiting.',
             },
             allowNonWorkspaceAccess: {
                 label: 'Non-workspace access (allowNonWorkspaceAccess)',
-                desc: 'Allows access to paths outside the active workspace.',
+                desc: 'Lets the agent read and edit files outside your workspace folders.',
             },
             enableTerminalSandbox: {
-                label: 'Terminal sandbox (enableTerminalSandbox)',
-                desc: 'Restricts terminal commands run by the agent to an OS-level sandbox.',
+                label: 'Sandbox mode (enableTerminalSandbox)',
+                desc: "Runs the agent's terminal commands in the terminal sandbox.",
+            },
+            model: {
+                label: 'Model (model)',
+                desc: 'Label of the model chosen with /model.',
             },
             modelProvider: {
                 label: 'Model provider (modelProvider)',
-                desc: 'Set to gemini to call the Gemini API directly with the key in the GEMINI_API_KEY environment variable instead of signing in.',
-            },
-            enableTelemetry: {
-                label: 'Telemetry (enableTelemetry)',
-                desc: 'Sends anonymous usage statistics and crash reports to Google.',
+                desc: 'Where model requests go. gemini sends them directly to the Gemini API with the key in the GEMINI_API_KEY environment variable, and unset uses your signed-in account.',
             },
             useG1Credits: {
                 label: 'Use AI credits (useG1Credits)',
-                desc: 'Uses your personal AI credits for model calls once the plan quota is exhausted.',
+                desc: "Uses your AI credits for model requests after your plan's quota runs out.",
             },
             permissions: {
                 label: 'Permissions (permissions)',
-                desc: 'Defines which tool actions are allowed without a prompt and which are denied.',
+                desc: "Allow, ask, and deny rules for the agent's tools.",
             },
             statusLine: {
                 label: 'Status line (statusLine)',
-                desc: 'How the status line is produced and the command that prints its contents.',
+                desc: 'Custom script that draws the status line below the prompt box.',
             },
             title: {
                 label: 'Terminal title (title)',
-                desc: 'How the window title is produced and the command that prints its contents.',
+                desc: 'Custom script that sets the terminal window title.',
             },
-            hooks: { label: 'Hooks (hooks)', desc: 'Scripts run automatically before and after operations.' },
+            hooks: {
+                label: 'Hooks (hooks)',
+                desc: 'Scripts that run right before or right after agent actions.',
+            },
+            customModelsConfig: {
+                label: 'Custom models (customModelsConfig)',
+                desc: 'Custom Gemini API models added to /model.',
+            },
+            sandboxProxy: {
+                label: 'Sandbox proxy (sandboxProxy)',
+                desc: 'Sends network traffic from sandboxed terminal commands through your own HTTP proxy instead of the built-in one.',
+            },
         },
     },
     cleanup: {
         title: 'Agy CLI Cleanup',
         description:
-            'Delete selected cache, log, crash, history, and conversation data under ~/.gemini/antigravity-cli, plus old agy executables moved aside by auto-update. Settings, keybindings, skills, the current executable, built-ins, MCP runtime files, plugin data, knowledge, credentials, and shared Gemini configuration are excluded.',
+            'Delete cache, logs, crash data, history, and conversations under ~/.gemini/antigravity-cli, plus old agy executables moved aside by auto-update.',
         wslSection: 'WSL: {{distro}}',
-        inUseNotice: 'Close running Agy CLI sessions before cleanup. Open files may be skipped.',
         noCandidates: 'No cleanup targets found',
         name: 'Item',
         descriptionColumn: 'Description',
@@ -236,27 +342,51 @@ export default {
         deleteSuccess: 'Cleanup completed',
         deleteError: 'Cleanup failed',
         item: {
+            projects: {
+                label: 'Projects (workspace paths)',
+                desc: 'Conversations per workspace path. Also deleted: subagent conversations and related data, matching input history lines, the latest conversation record, and that folder in project definitions.',
+            },
+            'trusted-workspaces': {
+                label: 'Trusted folders (trustedWorkspaces)',
+                desc: 'Trusted folders listed in trustedWorkspaces of settings.json.',
+            },
             cache: {
                 label: 'cache',
-                desc: 'Agy CLI cache (latest conversation per workspace, project mappings, changelog, and more).',
+                desc: 'Agy CLI cache, such as the latest conversation per workspace.',
             },
             log: { label: 'log', desc: 'Agy CLI logs, including the latest log that cli.log points to.' },
             crashes: { label: 'crashes', desc: 'Crash reports produced by Agy CLI.' },
             conversations: {
                 label: 'conversations',
-                desc: 'Saved conversations (one SQLite file per conversation); expandable by file.',
+                desc: 'Saved conversations. Also deleted: brain, annotations, chapter_titles, voice_chats, browser_recordings, and worktrees of the conversation, its rows in the conversation summary database, and its entry in the summary cache.',
+            },
+            annotations: {
+                label: 'annotations',
+                desc: 'Annotation data left after its conversation is gone.',
+            },
+            'chapter-titles': {
+                label: 'chapter_titles',
+                desc: 'Chapter titles left after their conversation is gone.',
+            },
+            'voice-chats': {
+                label: 'voice_chats',
+                desc: 'Voice chat records left after their conversation is gone.',
+            },
+            'browser-recordings': {
+                label: 'browser_recordings',
+                desc: 'Browser recordings left after their conversation is gone.',
             },
             brain: {
                 label: 'brain',
-                desc: 'Per-conversation artifacts and working data, including transcripts; expandable by conversation.',
+                desc: 'Outputs and work data per conversation, including transcripts.',
             },
             scratch: {
                 label: 'scratch',
-                desc: 'Agent scratch workspace, including generated output such as images; expandable by entry.',
+                desc: 'Agent work directories, including output such as generated images.',
             },
             worktrees: {
                 label: 'worktrees',
-                desc: 'Git worktrees used by subagents; uncommitted changes in them are deleted too. Expandable by entry.',
+                desc: 'Git worktrees that subagents work in. Also deleted: uncommitted changes.',
             },
             'conversation-summaries': {
                 label: 'conversation_summaries.db',
@@ -273,11 +403,11 @@ export default {
             history: { label: 'history.jsonl', desc: 'Prompt and command input history.' },
             'update-lock': {
                 label: 'updater/update.lock',
-                desc: 'Updater lock file left by a stopped update. It is hidden and never deleted while the auto-updater holds the lock.',
+                desc: 'Lock files left by a stopped update.',
             },
             'old-binaries': {
                 label: 'Old agy executables (*.old)',
-                desc: 'Old executables moved aside by auto-update (agy*.<number>.old in %LOCALAPPDATA%\\agy\\bin on Windows, ~/.local/bin on Linux). Only those moved aside 15 minutes or more ago are targeted; nothing is deleted while an auto-update is running, and executables in use (cannot be opened for writing) are never deleted. The current agy is excluded.',
+                desc: 'Old versions of the executable moved aside by auto-update.',
             },
         },
     },

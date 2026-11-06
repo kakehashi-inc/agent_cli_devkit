@@ -5,7 +5,7 @@
 // Claude 系コードが Claude 固有の名前（ClaudeEnvironment など）で参照するエイリアスと
 // Claude 固有の型をここに定義する。
 // ============================================================
-import type { AgentEnvironment, AgentEnvKind, MCPServerConfig } from '../types';
+import type { AgentEnvironment, AgentEnvKind } from '../types';
 
 export * from '../types';
 
@@ -20,12 +20,6 @@ export interface ClaudeCodeEnvInfo {
     configPath: string;
     configExists: boolean;
     disabledConfigPath: string;
-}
-
-// Claude Desktop の設定ファイル（claude_desktop_config.json）
-export interface ClaudeDesktopConfig {
-    mcpServers: Record<string, MCPServerConfig>;
-    [key: string]: unknown;
 }
 
 // Claude Desktop の情報

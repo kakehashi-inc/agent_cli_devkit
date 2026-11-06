@@ -20,16 +20,24 @@ import {
     OtherCleanupSelection,
 } from '../../../shared/agents/codex/types';
 import { createCleanupProbe } from '../common/cleanup/CleanupProbe';
+import { createSqliteStore } from '../common/sqlite/createSqliteStore';
 import {
+    candidateTextKeys,
     deleteResolvedChildren,
     removeHomeTargets,
     resolveChildren,
     toResolvedCandidate,
 } from '../common/cleanup/resolvedCleanup';
+import { isSafePathSegment } from '../common/fs/archiveEntryPath';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { clearYamlList, countYamlListEntries, needsYamlListNormalize } from '../../utils/yamlPreserve';
 import { CODEX_CLEANUP_RESOLVERS } from './codexCleanupResolvers';
+import {
+    CODEX_SESSION_CLEANUP_KEYS,
+    deleteCodexSessionSelection,
+    scanCodexSessionCandidates,
+} from './codexSessionCleanup';
 import { compareCodexVersions } from './codexVersion';
 
 const VALID_KEYS = new Set(CLEANUP_CANDIDATES.map(c => c.key));
@@ -38,8 +46,8 @@ const OTHER_VALID_KEYS = new Set(OTHER_CLEANUP_ITEMS.map(i => i.key));
 /**
  * Codex CLI のデータディレクトリ（~/.codex 配下）のクリーンアップを行う。
  * - 対象は履歴／キャッシュ／一時／ログ／セッション／旧バージョン実体のみ（CLEANUP_CANDIDATES）。
- * - expandable 候補（sessions=サブディレクトリ単位、archived_sessions=ファイル単位）は
- *   個別 + 全体の両方を削除可能。
+ * - セッションの候補（sessions=年月日の階層、archived_sessions=ファイル単位、session-projects=パス単位）と
+ *   project-records は CODEX_SESSION_CLEANUP_KEYS の候補で、スレッド ID の集合や config.toml のキーで削除する。
  * - それ以外はディレクトリ/ファイルごと削除（Codex が必要時に自動再作成する）。
  * - 'standalone-old-releases' は特別候補: packages/standalone/releases 配下のうち、
  *   current が指す使用中バージョン・auto-update-version が示す切り替え予定バージョン・
@@ -73,7 +81,8 @@ export class CodexCleanupManager {
     }
 
     /** 管理対象の環境一覧（native + Codex 入り WSL distro）。 */
-    async getEnvironments(): Promise<{ env: CodexEnvironment; label: string }[]> {
+    async getEnvironments(refresh = false): Promise<{ env: CodexEnvironment; label: string }[]> {
+        if (refresh) this.detector.invalidate();
         const result: { env: CodexEnvironment; label: string }[] = [];
         result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         const distros = await this.detector.getDistrosWithTest(CODEX_WSL_CLI_TEST);
@@ -85,12 +94,20 @@ export class CodexCleanupManager {
 
     /** 環境ごとのクリーンアップ候補をスキャンする。 */
     async scan(env: CodexEnvironment): Promise<CleanupEnvReport> {
+        const sqlite = createSqliteStore(env, this.detector);
+        await sqlite.removeStaleCopies();
         const fs = this.fsFor(env);
         const probe = createCleanupProbe(env, this.detector);
         const label = env.kind === 'wsl' ? (env.distro ?? 'WSL') : this.nativeLabel();
         const candidates: CleanupCandidate[] = [];
+        const sessionCandidates = await scanCodexSessionCandidates({ env, fs, probe, sqlite });
 
         for (const spec of CLEANUP_CANDIDATES) {
+            const sessionCandidate = sessionCandidates.get(spec.key);
+            if (sessionCandidate) {
+                candidates.push(sessionCandidate);
+                continue;
+            }
             const resolver = CODEX_CLEANUP_RESOLVERS[spec.key];
             if (resolver) {
                 candidates.push(toResolvedCandidate(spec, await resolveChildren(resolver, probe, spec.key, env)));
@@ -117,6 +134,7 @@ export class CodexCleanupManager {
                 defaultChecked: spec.defaultChecked,
                 expandable: spec.expandable,
                 childKind: spec.childKind,
+                ...candidateTextKeys(spec),
             };
 
             if (spec.expandable && spec.childKind && exists) {
@@ -156,8 +174,13 @@ export class CodexCleanupManager {
         // OS のファイルロックなどで削除できずに残ったパス
         const failedPaths: string[] = [];
 
+        const sqlite = createSqliteStore(env, this.detector);
+        const sessionResult = await deleteCodexSessionSelection({ env, fs, probe, sqlite }, selection);
+        skipped.push(...sessionResult.skipped);
+        failedPaths.push(...sessionResult.failedPaths);
+
         for (const key of selection.dirs) {
-            if (!VALID_KEYS.has(key) || this.isUnsafeName(key)) {
+            if (!VALID_KEYS.has(key) || CODEX_SESSION_CLEANUP_KEYS.has(key)) {
                 continue;
             }
             const resolver = CODEX_CLEANUP_RESOLVERS[key];
@@ -198,7 +221,7 @@ export class CodexCleanupManager {
         // expandable 候補の個別削除。
         const childSelections = selection.childSelections ?? {};
         for (const spec of CLEANUP_CANDIDATES) {
-            if (!spec.expandable || !spec.childKind) {
+            if (!spec.expandable || !spec.childKind || CODEX_SESSION_CLEANUP_KEYS.has(spec.key)) {
                 continue;
             }
             if (selection.dirs.includes(spec.key)) {
@@ -226,7 +249,9 @@ export class CodexCleanupManager {
                         : await fs.listDirs(baseRel)
             );
             // 消せないものを飛ばして削除し、残ったものを報告する。
-            const childNames = names.filter(name => !this.isUnsafeName(name) && existing.has(name));
+            // パスの 1 セグメントとして扱えない名前は削除せず、消せなかったものとして報告する。
+            const childNames = names.filter(name => isSafePathSegment(name) && existing.has(name));
+            skipped.push(...names.filter(name => !isSafePathSegment(name)));
             const removed = await removeHomeTargets(
                 probe,
                 env,
@@ -251,11 +276,6 @@ export class CodexCleanupManager {
             report.failedPaths = failedPaths;
         }
         return report;
-    }
-
-    /** パストラバーサル対策: 区切り文字や .. を含む名前を拒否する。 */
-    private isUnsafeName(name: string): boolean {
-        return name.includes('/') || name.includes('\\') || name.includes('..') || name.trim().length === 0;
     }
 
     // ===== スタンドアロン版の旧バージョン候補（CLEANUP_OLD_RELEASES_KEY）の特別処理 =====

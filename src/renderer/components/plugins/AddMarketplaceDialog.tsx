@@ -120,15 +120,10 @@ export const AddMarketplaceDialog: React.FC<Props> = ({ api, env, capabilities, 
                 )}
             </DialogContent>
             <DialogActions>
-                <Button disabled={busy} onClick={() => onClose(false)} sx={{ textTransform: 'none' }}>
+                <Button disabled={busy} onClick={() => onClose(false)}>
                     {t('pluginManager.cancel')}
                 </Button>
-                <Button
-                    variant='contained'
-                    disabled={busy || !isValidSource(source)}
-                    onClick={handleAdd}
-                    sx={{ textTransform: 'none' }}
-                >
+                <Button variant='contained' disabled={busy || !isValidSource(source)} onClick={handleAdd}>
                     {t('pluginManager.trustProceedAdd')}
                 </Button>
             </DialogActions>

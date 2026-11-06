@@ -50,8 +50,8 @@ const ASSET_COLUMNS: Partial<Record<AssetKind, FmColumn[]>> = {
 
 export const opencodeModule: AgentModule = {
     id: 'opencode',
-    label: 'OpenCode',
-    dashboardLabel: 'OpenCode 2',
+    labelKey: 'opencode.nav.group',
+    dashboardLabelKey: 'opencode.dashboard.group',
     features: [
         {
             path: '/opencode/mcp',
@@ -69,7 +69,9 @@ export const opencodeModule: AgentModule = {
             descKey: 'opencode.dashboard.assetsDesc',
             Icon: AssetIcon,
             color: '#d98a3a',
-            element: <AssetManagerView agentId='opencode' api={api.asset} columns={ASSET_COLUMNS} />,
+            element: (
+                <AssetManagerView agentId='opencode' api={api.asset} columns={ASSET_COLUMNS} profileApi={api.profile} />
+            ),
         },
         {
             path: '/opencode/plugins',
@@ -94,7 +96,7 @@ export const opencodeModule: AgentModule = {
             descKey: 'opencode.dashboard.settingsDesc',
             Icon: SettingsIcon,
             color: '#8a6df0',
-            element: <SettingsManagerView agentId='opencode' api={api.settings} />,
+            element: <SettingsManagerView agentId='opencode' api={api.settings} profileApi={api.profile} />,
         },
         {
             path: '/opencode/cleanup',

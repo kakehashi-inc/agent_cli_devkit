@@ -77,6 +77,7 @@ export const GROK_CLEANUP_CHANNELS = {
 export const GROK_CONFIG_CHANNELS = {
     GET_ENVIRONMENTS: 'grok-config:get-environments',
     READ: 'grok-config:read',
+    READ_RAW: 'grok-config:read-raw',
     WRITE: 'grok-config:write',
     WRITE_RAW: 'grok-config:write-raw',
 } as const;
@@ -126,6 +127,7 @@ export const GROK_SELECTABLE_EXTERNAL_MARKETPLACES = ['claude-plugins-official']
 // - marketplaceRemoteUrl=false: marketplace.json への直接 URL 指定は非対応。
 export const GROK_PLUGIN_CAPABILITIES: PluginCapabilities = {
     directInstall: true,
+    sourceHelpKey: 'pluginManager.sourceHelpDirect',
     marketplaceRemoteUrl: false,
     catalog: true,
     marketplaceManagement: true,
@@ -135,6 +137,17 @@ export const GROK_PLUGIN_CAPABILITIES: PluginCapabilities = {
 // ============================================================
 // クリーンアップ候補
 // ============================================================
+
+// セッションの候補キー。~/.grok/sessions/<符号化したパス> を、同じパスごとにまとめた子要素にする。
+export const GROK_SESSIONS_CLEANUP_KEY = 'sessions';
+// プロジェクト記録の候補キー。~/.grok/trusted_folders.toml の [folders.<key>] をパスごとにまとめた子要素にする。
+export const GROK_PROJECT_RECORDS_CLEANUP_KEY = 'project-records';
+// プロジェクト別の許可の候補キー。~/.grok/sessions/<符号化したパス> の permission*.toml と sandbox_grants.toml を
+// パスごとにまとめた子要素にする。
+export const GROK_PROJECT_GRANTS_CLEANUP_KEY = 'project-grants';
+// プロジェクトメモリの候補キー。~/.grok/memory-v2/workspaces/<スコープ> と同名の ~/.grok/memory/<スコープ> を
+// スコープごとの子要素にする。
+export const GROK_PROJECT_MEMORY_CLEANUP_KEY = 'project-memory';
 
 // クリーンアップ候補（~/.grok 配下と OS の一時フォルダ）。
 // 対象は履歴／メモリ／ログ／診断データ／キャッシュ／旧バイナリ／一時ファイルのみ。
@@ -148,9 +161,39 @@ export const GROK_PLUGIN_CAPABILITIES: PluginCapabilities = {
 // 更新時に退避された実行ファイル（grok.exe.old など *.old）だけを対象とする特別候補
 // （現行バージョンと起動用の grok / grok.exe は除外して保護する）。
 // 'temp-*' は OS の一時フォルダ直下に Grok が作る一時ファイル・フォルダの特別候補（GROK_TEMP_CLEANUP_KEYS）。
+// sessions、プロジェクト記録、プロジェクト別の許可の子要素はワークスペースのパスごと、プロジェクトメモリの子要素は
+// スコープごとの行にする。
 // デフォルトはすべてチェック OFF（ユーザーが明示的に選択する）。
 export const CLEANUP_CANDIDATES: CleanupCandidateSpec[] = [
-    { key: 'sessions', defaultChecked: false, expandable: true, childKind: 'dir' },
+    {
+        key: GROK_SESSIONS_CLEANUP_KEY,
+        defaultChecked: false,
+        expandable: true,
+        childKind: 'dir',
+        confirmWarningKey: 'grok.cleanup.confirmWarning.sessions',
+    },
+    {
+        key: GROK_PROJECT_RECORDS_CLEANUP_KEY,
+        defaultChecked: false,
+        expandable: true,
+        childKind: 'file',
+        confirmWarningKey: 'grok.cleanup.confirmWarning.projectRecords',
+        editsFileOnly: true,
+    },
+    {
+        key: GROK_PROJECT_GRANTS_CLEANUP_KEY,
+        defaultChecked: false,
+        expandable: true,
+        childKind: 'file',
+        confirmWarningKey: 'grok.cleanup.confirmWarning.projectGrants',
+    },
+    {
+        key: GROK_PROJECT_MEMORY_CLEANUP_KEY,
+        defaultChecked: false,
+        expandable: true,
+        childKind: 'dir',
+        confirmWarningKey: 'grok.cleanup.confirmWarning.projectMemory',
+    },
     { key: 'sandbox-events', defaultChecked: false, kind: 'file', path: 'sessions/sandbox-events.jsonl' },
     { key: 'logs', defaultChecked: false },
     { key: 'debug', defaultChecked: false },
@@ -223,8 +266,8 @@ export const OTHER_CLEANUP_ITEMS: OtherCleanupItem[] = [
 // Grok 設定（config.toml）編集レジストリ
 // ============================================================
 
-// モデル ID の候補（同梱カタログの ID。リモートカタログやカスタムモデルの ID も入力できる）。
-const MODEL_CHOICES = ['grok-4.6', 'grok-4.5', 'grok-build'];
+// モデル ID の候補（公式ドキュメントに載る ID。リモートカタログやカスタムモデルの ID も入力できる）。
+const MODEL_CHOICES = ['grok-4.7', 'grok-4.6', 'grok-4.5', 'grok-build'];
 // 組み込みカラーテーマ（ui.theme / ui.auto_*_theme の候補）。
 const THEME_CHOICES = ['groknight', 'grokday', 'tokyonight', 'rosepine-moon', 'oscura-midnight', 'terminal'];
 // 外部 OpenTelemetry の送信プロトコル / 出力先。
@@ -232,7 +275,7 @@ const OTEL_PROTOCOL_CHOICES = ['http/protobuf', 'grpc'];
 const OTEL_EXPORTER_CHOICES = ['otlp', 'console', 'none'];
 
 // config.toml の設定項目 registry。公式の設定リファレンス（docs.x.ai/build/settings/reference と
-// CLI 同梱の 26-config-reference.md）と公式ソースに準拠する。
+// 26-config-reference.md）、公式ソース、公式 changelog（x.ai/changelog/build）に準拠する。
 // path はドット区切りキー（ネストは該当 [table] に書き込む）。配列・マップ・動的テーブル・型混在値は
 // directEdit として一覧へ表示するだけでテーブル保存から除外する。
 export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
@@ -258,7 +301,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'models.default_reasoning_effort',
         group: 'model',
         type: 'string',
-        choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+        choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
         allowCustom: true,
     },
     {
@@ -336,6 +379,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         min: 16,
         max: 256,
         integer: true,
+        defaultValue: 64,
     },
     {
         key: 'promptSuggestionsTemperature',
@@ -343,6 +387,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'model',
         type: 'number',
         min: 0,
+        defaultValue: 0.2,
     },
     {
         key: 'promptSuggestionsReasoningEffort',
@@ -411,6 +456,13 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultOn: false,
     },
     {
+        key: 'toolsDisableZdrIncompatibleTools',
+        path: 'tools.disable_zdr_incompatible_tools',
+        group: 'security',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
         key: 'toolsetFileToolset',
         path: 'toolset.file_toolset',
         group: 'security',
@@ -423,8 +475,9 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'toolset.bash.timeout_secs',
         group: 'security',
         type: 'number',
-        min: 1,
-        integer: true,
+        min: 0,
+        exclusiveMin: true,
+        defaultValue: 120,
     },
     {
         key: 'toolsetBashOutputByteLimit',
@@ -433,16 +486,17 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'number',
         min: 1,
         integer: true,
+        defaultValue: 20000,
     },
     {
         key: 'toolsetBashMaxTimeoutSecs',
         path: 'toolset.bash.max_timeout_secs',
         group: 'security',
         type: 'number',
-        min: 1,
-        integer: true,
+        min: 0,
+        exclusiveMin: true,
+        defaultValue: 36000,
     },
-    // 同梱の設定リファレンスの表には無いが、同梱ガイド 05-configuration に記載があり本体が読むキー。
     {
         key: 'toolsetBashAutoBackground',
         path: 'toolset.bash.auto_background_on_timeout',
@@ -462,7 +516,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'security',
         type: 'string',
     },
-    // 同梱の設定リファレンスの表には無いが、同梱ガイド 05-configuration に記載があり本体が読むキー。
+    // 26-config-reference の表にはないが、05-configuration に記載があり本体が読むキー。
     {
         key: 'toolsetWebFetchAllowLocal',
         path: 'toolset.web_fetch.allow_local',
@@ -470,7 +524,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: false,
     },
-    // 同梱の設定リファレンスの表には無いが、同梱ガイド 05-configuration に記載があり本体が読むキー。
+    // 26-config-reference の表にはないが、05-configuration に記載があり本体が読むキー。
     {
         key: 'toolsetAskUserQuestionTimeoutEnabled',
         path: 'toolset.ask_user_question.timeout_enabled',
@@ -487,8 +541,6 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         integer: true,
         defaultValue: 1800,
     },
-    { key: 'toolsetImageGenBaseUrl', path: 'toolset.image_gen.base_url', group: 'security', type: 'string' },
-    { key: 'toolsetVideoGenBaseUrl', path: 'toolset.video_gen.base_url', group: 'security', type: 'string' },
     {
         key: 'toolsMediaGenMaxParallelImageGenCalls',
         path: 'tools.media_gen.max_parallel_image_gen_calls',
@@ -496,6 +548,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'number',
         min: 1,
         integer: true,
+        defaultValue: 8,
     },
     {
         key: 'toolsMediaGenMaxParallelVideoGenCalls',
@@ -504,6 +557,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'number',
         min: 1,
         integer: true,
+        defaultValue: 4,
     },
     { key: 'disableWebSearch', path: 'disable_web_search', group: 'security', type: 'boolean' },
     {
@@ -513,6 +567,8 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'number',
         min: 0,
         max: 100,
+        integer: true,
+        defaultValue: 85,
     },
     { key: 'sessionLoadEnvrc', path: 'session.load_envrc', group: 'security', type: 'boolean', defaultOn: true },
     {
@@ -524,9 +580,15 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         integer: true,
     },
     { key: 'autoModeEnabled', path: 'auto_mode.enabled', group: 'security', type: 'boolean' },
-    { key: 'defaultAutoMode', path: 'default_auto_mode', group: 'security', type: 'boolean' },
-    { key: 'doomLoopRecoveryEnabled', path: 'doom_loop_recovery.enabled', group: 'security', type: 'boolean' },
-    { key: 'pathNotFoundHints', path: 'path_not_found_hints', group: 'security', type: 'boolean' },
+    { key: 'defaultAutoMode', path: 'default_auto_mode', group: 'security', type: 'boolean', defaultOn: false },
+    {
+        key: 'doomLoopRecoveryEnabled',
+        path: 'doom_loop_recovery.enabled',
+        group: 'security',
+        type: 'boolean',
+        defaultOn: true,
+    },
+    { key: 'pathNotFoundHints', path: 'path_not_found_hints', group: 'security', type: 'boolean', defaultOn: false },
     {
         key: 'harnessDisableWorkspaceTeleport',
         path: 'harness.disable_workspace_teleport',
@@ -540,6 +602,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'security',
         type: 'string',
         choices: ['queue', 'fail'],
+        defaultValue: 'queue',
     },
     {
         key: 'subagentsMaxConcurrent',
@@ -548,8 +611,26 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'number',
         min: 1,
         integer: true,
+        defaultValue: 32,
     },
-    { key: 'subagentsMaxDepth', path: 'subagents.max_depth', group: 'security', type: 'number', min: 1, integer: true },
+    {
+        key: 'subagentsMaxDepth',
+        path: 'subagents.max_depth',
+        group: 'security',
+        type: 'number',
+        min: 1,
+        integer: true,
+        defaultValue: 1,
+    },
+    // 26-config-reference の表にはないが、05-configuration に記載があり本体が読むキー。
+    {
+        key: 'subagentsSamplingLimit',
+        path: 'subagents.sampling_limit',
+        group: 'security',
+        type: 'number',
+        min: 1,
+        integer: true,
+    },
     {
         key: 'mcpMaxOutputBytes',
         path: 'mcp.max_output_bytes',
@@ -571,7 +652,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'shell_environment_policy.ignore_default_excludes',
         group: 'security',
         type: 'boolean',
-        defaultOn: false,
+        defaultOn: true,
     },
     {
         key: 'toolsetWebFetchAllowedDomains',
@@ -591,13 +672,12 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'security',
         type: 'directEdit',
     },
-    { key: 'toolsetImageGenEnvKey', path: 'toolset.image_gen.env_key', group: 'security', type: 'directEdit' },
-    { key: 'toolsetVideoGenEnvKey', path: 'toolset.video_gen.env_key', group: 'security', type: 'directEdit' },
+    { key: 'toolsZdrVideoOutputS3', path: 'tools.zdr_video_output_s3', group: 'security', type: 'directEdit' },
     { key: 'mcpServers', path: 'mcp_servers.<name>', group: 'security', type: 'directEdit' },
     { key: 'disabledMcpServers', path: 'disabled_mcp_servers', group: 'security', type: 'directEdit' },
     { key: 'disabledMcpTools', path: 'disabled_mcp_tools', group: 'security', type: 'directEdit' },
-    { key: 'permission', path: 'permission', group: 'security', type: 'directEdit' },
-    { key: 'hooks', path: 'hooks.<event>', group: 'security', type: 'directEdit' },
+    { key: 'permission', path: 'permission', group: 'security', type: 'directEdit', linkTab: 'permissions' },
+    { key: 'hooks', path: 'hooks.<event>', group: 'security', type: 'directEdit', linkTab: 'hooks' },
     {
         key: 'shellEnvPolicyExclude',
         path: 'shell_environment_policy.exclude',
@@ -613,21 +693,19 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'shellEnvPolicySet', path: 'shell_environment_policy.set', group: 'security', type: 'directEdit' },
     { key: 'subagentsToggle', path: 'subagents.toggle', group: 'security', type: 'directEdit' },
     { key: 'subagentsModels', path: 'subagents.models', group: 'security', type: 'directEdit' },
+    // 26-config-reference の表にはないが、16-subagents に記載があり本体が読むキー。
+    { key: 'subagentsRoles', path: 'subagents.roles', group: 'security', type: 'directEdit' },
+    { key: 'subagentsPersonas', path: 'subagents.personas', group: 'security', type: 'directEdit' },
 
     // === メモリ ===
     { key: 'memoryEnabled', path: 'memory.enabled', group: 'memory', type: 'boolean', defaultOn: false },
     { key: 'memoryV2Enabled', path: 'memory_v2.enabled', group: 'memory', type: 'boolean', defaultOn: false },
     {
-        key: 'memoryV2CompactIndexEnabled',
-        path: 'memory_v2.compact_index_enabled',
-        group: 'memory',
-        type: 'boolean',
-    },
-    {
         key: 'memoryV2BatchDreamEnabled',
         path: 'memory_v2.batch_dream_enabled',
         group: 'memory',
         type: 'boolean',
+        defaultOn: false,
     },
     {
         key: 'memoryV2BatchDreamMaxRunSecs',
@@ -637,6 +715,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         min: 60,
         max: 3600,
         integer: true,
+        defaultValue: 1800,
     },
     {
         key: 'memoryV2BatchDreamMaxCallsPerBatch',
@@ -646,6 +725,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         min: 2,
         max: 16,
         integer: true,
+        defaultValue: 6,
     },
     {
         key: 'memoryV2BatchDreamMaxBatchNoteBytes',
@@ -655,6 +735,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         min: 16384,
         max: 262144,
         integer: true,
+        defaultValue: 98304,
     },
     {
         key: 'memoryV2ArchivedRetentionDays',
@@ -674,14 +755,6 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         integer: true,
         defaultValue: 14,
     },
-    {
-        key: 'memoryV2DailyTokenCap',
-        path: 'memory_v2.daily_token_cap',
-        group: 'memory',
-        type: 'number',
-        min: 1000000,
-        integer: true,
-    },
 
     // === 表示・CLI ===
     { key: 'cliAutoUpdate', path: 'cli.auto_update', group: 'cli', type: 'boolean', defaultOn: true },
@@ -692,6 +765,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'string',
         choices: ['stable', 'alpha', 'enterprise'],
         allowCustom: true,
+        defaultValue: 'stable',
     },
     { key: 'cliShowTips', path: 'cli.show_tips', group: 'cli', type: 'boolean', defaultOn: true },
     { key: 'cliUseLeader', path: 'cli.use_leader', group: 'cli', type: 'boolean' },
@@ -727,7 +801,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['ask', 'always', 'never'],
         defaultValue: 'ask',
     },
-    // 同梱の設定リファレンスの表には無いが、同梱ガイド 05-configuration に記載があり本体が読むキー。
+    // 26-config-reference の表にはないが、05-configuration に記載があり本体が読むキー。
     {
         key: 'hintsMemoryModalFullscreen',
         path: 'hints.memory_modal_fullscreen',
@@ -735,21 +809,23 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: false,
     },
-    { key: 'dashboardEnabled', path: 'dashboard.enabled', group: 'cli', type: 'boolean' },
+    { key: 'dashboardEnabled', path: 'dashboard.enabled', group: 'cli', type: 'boolean', defaultOn: true },
     {
         key: 'dashboardGrouping',
         path: 'dashboard.grouping',
         group: 'cli',
         type: 'string',
         choices: ['state', 'directory'],
+        defaultValue: 'state',
     },
-    { key: 'uiCompactMode', path: 'ui.compact_mode', group: 'cli', type: 'boolean' },
+    { key: 'uiCompactMode', path: 'ui.compact_mode', group: 'cli', type: 'boolean', defaultOn: false },
     {
         key: 'uiScreenMode',
         path: 'ui.screen_mode',
         group: 'cli',
         type: 'string',
         choices: ['fullscreen', 'minimal'],
+        defaultValue: 'fullscreen',
     },
     {
         key: 'uiTimestamps',
@@ -757,22 +833,25 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'cli',
         type: 'string',
         choices: ['off', 'minimal', 'on'],
+        defaultValue: 'on',
     },
-    { key: 'uiShowTimeline', path: 'ui.show_timeline', group: 'cli', type: 'boolean' },
+    { key: 'uiShowTimeline', path: 'ui.show_timeline', group: 'cli', type: 'boolean', defaultOn: false },
     {
         key: 'uiToolCallDensity',
         path: 'ui.tool_call_density',
         group: 'cli',
         type: 'string',
         choices: ['detailed', 'compact-shells', 'compact-ungrouped', 'compact-grouped', 'compact-all-grouped'],
+        defaultValue: 'compact-all-grouped',
     },
-    { key: 'uiSimpleMode', path: 'ui.simple_mode', group: 'cli', type: 'boolean', defaultOn: true },
     {
         key: 'uiTheme',
         path: 'ui.theme',
         group: 'cli',
         type: 'string',
         choices: ['auto', ...THEME_CHOICES],
+        allowCustom: true,
+        defaultValue: 'groknight',
     },
     {
         key: 'uiAutoDarkTheme',
@@ -798,26 +877,44 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'cli',
         type: 'string',
         choices: ['auto', 'on', 'off'],
+        defaultValue: 'auto',
     },
-    { key: 'uiRememberToolApprovals', path: 'ui.remember_tool_approvals', group: 'cli', type: 'boolean' },
-    { key: 'uiShowThinkingBlocks', path: 'ui.show_thinking_blocks', group: 'cli', type: 'boolean' },
-    { key: 'uiPromptSuggestions', path: 'ui.prompt_suggestions', group: 'cli', type: 'boolean' },
-    { key: 'uiScrollSpeed', path: 'ui.scroll_speed', group: 'cli', type: 'number', min: 1, max: 100, integer: true },
+    {
+        key: 'uiRememberToolApprovals',
+        path: 'ui.remember_tool_approvals',
+        group: 'cli',
+        type: 'boolean',
+        defaultOn: true,
+    },
+    { key: 'uiShowThinkingBlocks', path: 'ui.show_thinking_blocks', group: 'cli', type: 'boolean', defaultOn: true },
+    { key: 'uiPromptSuggestions', path: 'ui.prompt_suggestions', group: 'cli', type: 'boolean', defaultOn: true },
+    {
+        key: 'uiScrollSpeed',
+        path: 'ui.scroll_speed',
+        group: 'cli',
+        type: 'number',
+        min: 1,
+        max: 100,
+        integer: true,
+        defaultValue: 50,
+    },
     {
         key: 'uiScrollMode',
         path: 'ui.scroll_mode',
         group: 'cli',
         type: 'string',
         choices: ['auto', 'wheel', 'trackpad'],
+        defaultValue: 'auto',
     },
     { key: 'uiScrollLines', path: 'ui.scroll_lines', group: 'cli', type: 'number', min: 1, max: 10, integer: true },
-    { key: 'uiInvertScroll', path: 'ui.invert_scroll', group: 'cli', type: 'boolean' },
+    { key: 'uiInvertScroll', path: 'ui.invert_scroll', group: 'cli', type: 'boolean', defaultOn: false },
     {
         key: 'uiKeepTextSelection',
         path: 'ui.keep_text_selection',
         group: 'cli',
         type: 'string',
         choices: ['flash', 'hold', 'word_select'],
+        defaultValue: 'flash',
     },
     {
         key: 'uiMaxThoughtsWidth',
@@ -845,7 +942,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'cli',
         type: 'string',
         choices: ['always_allow_all_sessions', 'allow_command_always', 'allow_once', 'reject'],
-        defaultValue: 'always_allow_all_sessions',
+        defaultValue: 'allow_once',
     },
     { key: 'uiPageFlipOnSend', path: 'ui.page_flip_on_send', group: 'cli', type: 'boolean', defaultOn: true },
     {
@@ -864,14 +961,21 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         choices: ['queue', 'steer'],
         defaultValue: 'queue',
     },
-    { key: 'uiVimMode', path: 'ui.vim_mode', group: 'cli', type: 'boolean', defaultOn: false },
+    {
+        key: 'keysVim',
+        path: 'keys.vim',
+        group: 'cli',
+        type: 'string',
+        choices: ['off', 'nav'],
+        defaultValue: 'off',
+    },
     {
         key: 'uiHunkTrackerMode',
         path: 'ui.hunk_tracker_mode',
         group: 'cli',
         type: 'string',
         choices: ['agent_only', 'all_dirty', 'off'],
-        defaultValue: 'off',
+        defaultValue: 'agent_only',
     },
     {
         key: 'uiVoiceCaptureMode',
@@ -882,8 +986,14 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultValue: 'hold',
     },
     { key: 'uiVoiceKeybindEnabled', path: 'ui.voice_keybind_enabled', group: 'cli', type: 'boolean', defaultOn: true },
-    { key: 'uiVoiceSttLanguage', path: 'ui.voice_stt_language', group: 'cli', type: 'string', defaultValue: 'en' },
-    { key: 'uiMouseReportingToggle', path: 'ui.mouse_reporting_toggle', group: 'cli', type: 'boolean' },
+    { key: 'uiVoiceSttLanguage', path: 'ui.voice_stt_language', group: 'cli', type: 'string' },
+    {
+        key: 'uiMouseReportingToggle',
+        path: 'ui.mouse_reporting_toggle',
+        group: 'cli',
+        type: 'boolean',
+        defaultOn: false,
+    },
     {
         key: 'uiCancelSubagentsOnTurnCancel',
         path: 'ui.cancel_subagents_on_turn_cancel',
@@ -900,22 +1010,36 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: false,
     },
+    { key: 'uiStatusLineType', path: 'ui.status_line.type', group: 'cli', type: 'directEdit', linkTab: 'statusLine' },
+    { key: 'uiStatusLineItems', path: 'ui.status_line.items', group: 'cli', type: 'directEdit', linkTab: 'statusLine' },
     {
-        key: 'uiStatusLineType',
-        path: 'ui.status_line.type',
+        key: 'uiStatusLineCommand',
+        path: 'ui.status_line.command',
         group: 'cli',
-        type: 'string',
-        choices: ['disabled', 'command'],
-        defaultValue: 'disabled',
+        type: 'directEdit',
+        linkTab: 'statusLine',
     },
-    { key: 'uiStatusLineCommand', path: 'ui.status_line.command', group: 'cli', type: 'string' },
+    {
+        key: 'uiStatusLinePadding',
+        path: 'ui.status_line.padding',
+        group: 'cli',
+        type: 'directEdit',
+        linkTab: 'statusLine',
+    },
+    {
+        key: 'uiStatusLineRefreshInterval',
+        path: 'ui.status_line.refresh_interval',
+        group: 'cli',
+        type: 'directEdit',
+        linkTab: 'statusLine',
+    },
     { key: 'voiceLanguage', path: 'voice.language', group: 'cli', type: 'string' },
     { key: 'voiceApiBase', path: 'voice.api_base', group: 'cli', type: 'string' },
     { key: 'voiceSampleRate', path: 'voice.sample_rate', group: 'cli', type: 'number', min: 1, integer: true },
     { key: 'uiContextualHints', path: 'ui.contextual_hints', group: 'cli', type: 'directEdit' },
     { key: 'uiDisplayRefresh', path: 'ui.display_refresh', group: 'cli', type: 'directEdit' },
-    // 同梱の設定リファレンスの表には無いが、同梱ガイド 05-configuration に記載があり本体が読むキー。
-    { key: 'uiNotifications', path: 'ui.notifications', group: 'cli', type: 'directEdit' },
+    // 26-config-reference の表にはないが、05-configuration に記載があり本体が読むキー。
+    { key: 'uiNotifications', path: 'ui.notifications', group: 'cli', type: 'directEdit', linkTab: 'externalCommands' },
     { key: 'cliGrove', path: 'cli.grove', group: 'cli', type: 'directEdit' },
     { key: 'cliGroveWorktree', path: 'cli.grove_worktree', group: 'cli', type: 'directEdit' },
     { key: 'worktreeAutoGc', path: 'worktree.auto_gc', group: 'cli', type: 'directEdit' },
@@ -940,7 +1064,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: true,
     },
-    { key: 'featuresImageGen', path: 'features.image_gen', group: 'features', type: 'boolean' },
+    { key: 'featuresImageGen', path: 'features.image_gen', group: 'features', type: 'boolean', defaultOn: true },
     {
         key: 'featuresImageGenModelOverride',
         path: 'features.image_gen_model_override',
@@ -953,7 +1077,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'features',
         type: 'string',
     },
-    { key: 'featuresVideoGen', path: 'features.video_gen', group: 'features', type: 'boolean' },
+    { key: 'featuresVideoGen', path: 'features.video_gen', group: 'features', type: 'boolean', defaultOn: true },
     { key: 'featuresVoiceMode', path: 'features.voice_mode', group: 'features', type: 'boolean', defaultOn: true },
     // features.telemetry は真偽値と文字列（session_metrics / off）の両方を受け付ける。
     {
@@ -989,6 +1113,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'features',
         type: 'string',
         choices: ['summary', 'transcript', 'segments'],
+        defaultValue: 'segments',
     },
     {
         key: 'featuresCompactionDetail',
@@ -996,6 +1121,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'features',
         type: 'string',
         choices: ['none', 'minimal', 'balanced', 'verbose'],
+        defaultValue: 'verbose',
     },
     {
         key: 'featuresCompactionToolChoice',
@@ -1048,13 +1174,6 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultOn: false,
     },
     {
-        key: 'featuresSubagentBundle',
-        path: 'features.subagent_bundle',
-        group: 'features',
-        type: 'boolean',
-        defaultOn: true,
-    },
-    {
         key: 'featuresSubagentModelInheritance',
         path: 'features.subagent_model_inheritance',
         group: 'features',
@@ -1068,9 +1187,10 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: false,
     },
+    // 26-config-reference の表にはないが、公式 changelog（1.0.67）に記載があるキー。
     {
-        key: 'featuresWorkflowConversion',
-        path: 'features.workflow_conversion',
+        key: 'featuresWorktreeInheritsMainApprovals',
+        path: 'features.worktree_inherits_main_approvals',
         group: 'features',
         type: 'boolean',
         defaultOn: true,
@@ -1080,6 +1200,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'features.support_permission',
         group: 'features',
         type: 'boolean',
+        defaultOn: false,
     },
     {
         key: 'featuresRememberMode',
@@ -1088,7 +1209,13 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: false,
     },
-    { key: 'featuresNonGitWarning', path: 'features.non_git_warning', group: 'features', type: 'boolean' },
+    {
+        key: 'featuresNonGitWarning',
+        path: 'features.non_git_warning',
+        group: 'features',
+        type: 'boolean',
+        defaultOn: false,
+    },
     {
         key: 'featuresMcpAutoRestart',
         path: 'features.mcp_auto_restart',
@@ -1101,18 +1228,21 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'features.mcp_liveness_watchers',
         group: 'features',
         type: 'boolean',
+        defaultOn: true,
     },
     {
         key: 'featuresMcpPushServerStatus',
         path: 'features.mcp_push_server_status',
         group: 'features',
         type: 'boolean',
+        defaultOn: true,
     },
     {
         key: 'featuresMcpRecursiveConfigWatch',
         path: 'features.mcp_recursive_config_watch',
         group: 'features',
         type: 'boolean',
+        defaultOn: true,
     },
     { key: 'featuresDock', path: 'features.dock', group: 'features', type: 'boolean', defaultOn: false },
     {
@@ -1130,7 +1260,14 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultOn: false,
     },
     { key: 'fileAccelerationRoutes', path: 'file_acceleration.routes', group: 'features', type: 'string' },
-    { key: 'featuresCampaigns', path: 'features.campaigns', group: 'features', type: 'boolean' },
+    { key: 'featuresCampaigns', path: 'features.campaigns', group: 'features', type: 'boolean', defaultOn: true },
+    {
+        key: 'featuresZdrAccessEnabled',
+        path: 'features.zdr_access_enabled',
+        group: 'features',
+        type: 'boolean',
+        defaultOn: false,
+    },
     { key: 'workflowsEnabled', path: 'workflows.enabled', group: 'features', type: 'boolean', defaultOn: true },
     { key: 'goalEnabled', path: 'goal.enabled', group: 'features', type: 'boolean', defaultOn: true },
     { key: 'relayEnabled', path: 'relay.enabled', group: 'features', type: 'boolean' },
@@ -1155,8 +1292,8 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     { key: 'compatClaudeHooks', path: 'compat.claude.hooks', group: 'extensions', type: 'boolean', defaultOn: true },
     { key: 'compatCodexSkills', path: 'compat.codex.skills', group: 'extensions', type: 'boolean', defaultOn: true },
     { key: 'compatCodexHooks', path: 'compat.codex.hooks', group: 'extensions', type: 'boolean', defaultOn: true },
-    // compat.<ツール>.sessions は同梱ガイドで「読み込む処理が未実装」とされる効果の無いキーのため登録しない。
     { key: 'marketplaceRequireSha', path: 'marketplace.require_sha', group: 'extensions', type: 'boolean' },
+    // cursor_worker.* は公式の文書になく、本体の設定項目（CursorWorkerConfig）として読まれるキー。
     {
         key: 'cursorWorkerAutoStart',
         path: 'cursor_worker.auto_start',
@@ -1190,7 +1327,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     },
     { key: 'skillsPaths', path: 'skills.paths', group: 'extensions', type: 'directEdit' },
     { key: 'skillsDisabled', path: 'skills.disabled', group: 'extensions', type: 'directEdit' },
-    // 同梱の設定リファレンスの表には無いが、同梱ガイド 05-configuration に記載があり本体が読むキー。
+    // 26-config-reference の表にはないが、05-configuration に記載があり本体が読むキー。
     { key: 'skillsIgnore', path: 'skills.ignore', group: 'extensions', type: 'directEdit' },
     { key: 'pathsExtraRuleDirs', path: 'paths.extra_rule_dirs', group: 'extensions', type: 'directEdit' },
     { key: 'pluginsPaths', path: 'plugins.paths', group: 'extensions', type: 'directEdit' },
@@ -1201,11 +1338,17 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
 
     // === テレメトリ・診断 ===
     { key: 'telemetryTraceUpload', path: 'telemetry.trace_upload', group: 'telemetry', type: 'boolean' },
-    // 次の 3 件は同梱の設定リファレンスの表には無いが、同梱ガイド 05-configuration に記載があり本体が読むキー。
+    // 次の 3 件は 26-config-reference の表にはないが、05-configuration に記載があり本体が読むキー。
     { key: 'telemetryMixpanelEnabled', path: 'telemetry.mixpanel_enabled', group: 'telemetry', type: 'boolean' },
     { key: 'telemetryEventsUrl', path: 'telemetry.events_url', group: 'telemetry', type: 'string' },
     { key: 'telemetryEventsApiKey', path: 'telemetry.events_api_key', group: 'telemetry', type: 'string' },
-    { key: 'telemetryOtelEnabled', path: 'telemetry.otel_enabled', group: 'telemetry', type: 'boolean' },
+    {
+        key: 'telemetryOtelEnabled',
+        path: 'telemetry.otel_enabled',
+        group: 'telemetry',
+        type: 'boolean',
+        defaultOn: false,
+    },
     { key: 'telemetryOtelEndpoint', path: 'telemetry.otel_endpoint', group: 'telemetry', type: 'string' },
     { key: 'telemetryOtelLogsEndpoint', path: 'telemetry.otel_logs_endpoint', group: 'telemetry', type: 'string' },
     {
@@ -1220,6 +1363,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'telemetry',
         type: 'string',
         choices: OTEL_PROTOCOL_CHOICES,
+        defaultValue: 'http/protobuf',
     },
     {
         key: 'telemetryOtelLogsProtocol',
@@ -1241,6 +1385,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'telemetry',
         type: 'string',
         choices: OTEL_EXPORTER_CHOICES,
+        defaultValue: 'none',
     },
     {
         key: 'telemetryOtelLogsExporter',
@@ -1248,6 +1393,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'telemetry',
         type: 'string',
         choices: OTEL_EXPORTER_CHOICES,
+        defaultValue: 'none',
     },
     {
         key: 'telemetryOtelTimeout',
@@ -1256,6 +1402,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'number',
         min: 1,
         integer: true,
+        defaultValue: 10000,
     },
     {
         key: 'telemetryOtelMetricExportInterval',
@@ -1264,18 +1411,21 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'number',
         min: 1,
         integer: true,
+        defaultValue: 60000,
     },
     {
         key: 'telemetryOtelMetricsIncludeSessionId',
         path: 'telemetry.otel_metrics_include_session_id',
         group: 'telemetry',
         type: 'boolean',
+        defaultOn: true,
     },
     {
         key: 'telemetryOtelLogUserPrompts',
         path: 'telemetry.otel_log_user_prompts',
         group: 'telemetry',
         type: 'boolean',
+        defaultOn: false,
     },
     {
         key: 'telemetryOtelLogAssistantResponses',
@@ -1288,6 +1438,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         path: 'telemetry.otel_log_tool_details',
         group: 'telemetry',
         type: 'boolean',
+        defaultOn: false,
     },
     {
         key: 'telemetryOtelLogToolContent',
@@ -1340,7 +1491,14 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         group: 'telemetry',
         type: 'string',
     },
-    { key: 'diagnosticsCrashHandler', path: 'diagnostics.crash_handler', group: 'telemetry', type: 'boolean' },
+    { key: 'diagnosticsErrorReporting', path: 'diagnostics.error_reporting', group: 'telemetry', type: 'boolean' },
+    {
+        key: 'diagnosticsCrashHandler',
+        path: 'diagnostics.crash_handler',
+        group: 'telemetry',
+        type: 'boolean',
+        defaultOn: false,
+    },
     {
         key: 'harnessWaitForUploads',
         path: 'harness.wait_for_uploads',
@@ -1348,7 +1506,13 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         type: 'boolean',
         defaultOn: false,
     },
-    { key: 'feedbackUserCommand', path: 'feedback.user.command', group: 'telemetry', type: 'string' },
+    {
+        key: 'feedbackUserCommand',
+        path: 'feedback.user.command',
+        group: 'telemetry',
+        type: 'directEdit',
+        linkTab: 'externalCommands',
+    },
     { key: 'feedbackUserEmail', path: 'feedback.user.email', group: 'telemetry', type: 'directEdit' },
     { key: 'feedbackUserName', path: 'feedback.user.name', group: 'telemetry', type: 'directEdit' },
 ];

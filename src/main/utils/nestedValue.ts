@@ -63,10 +63,9 @@ export function deleteNestedValue(obj: Record<string, unknown>, path: string[], 
 }
 
 /**
- * 空オブジェクトプロパティを再帰的に取り除いた正規化コピーを返す（検証用）。
- * テキスト編集側は「コメントの残る空オブジェクト」を保持し、期待モデル側は親ごと削除する、
- * といった差異を吸収する。空オブジェクトは設定のセマンティクスに影響しないため無視してよい。
- * 配列はそのまま返す（設定編集は配列に触れない）。
+ * 空オブジェクトプロパティを再帰的に取り除いたコピーを返す。空のオブジェクトやテーブルの有無を区別しない比較に使う。
+ * 空のテーブルにも意味がある形式で有無を区別するなら、このコピーではなく strictDeepEqual で比較する。
+ * 配列はそのまま返す（要素の内側の空オブジェクトも残す）。
  */
 export function withoutEmptyObjects(value: unknown): unknown {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
@@ -89,21 +88,24 @@ export function withoutEmptyObjects(value: unknown): unknown {
     return result;
 }
 
+/** bigint が number または bigint の値と数学的に等しいか。number を丸めずに比較する。 */
+function bigintEqualsNumeric(value: bigint, other: unknown): boolean {
+    if (typeof other === 'bigint') return value === other;
+    return typeof other === 'number' && Number.isInteger(other) && BigInt(other) === value;
+}
+
 /**
  * 順序非依存の deep 比較。設定書き込み検証用。
  * - オブジェクト: キー集合の一致 + 各値の再帰比較（宣言順は問わない）
  * - 配列: 長さと各要素（順序込み）
- * - bigint / number は数値として同一視（smol-toml は整数を bigint で返すため）
+ * - bigint / number は丸めずに数値として比較（2^53 を超える整数の差も区別する）
  * - プレーンオブジェクト以外のインスタンス（TomlDate 等）は文字列表現で比較
  */
 export function deepEqualLoose(a: unknown, b: unknown): boolean {
     if (Object.is(a, b)) return true;
     if (typeof a === 'number' && typeof b === 'number') return a === b; // +0 と -0 は同一視
-    if (typeof a === 'bigint' || typeof b === 'bigint') {
-        const aNum = typeof a === 'bigint' ? Number(a) : a;
-        const bNum = typeof b === 'bigint' ? Number(b) : b;
-        return typeof aNum === 'number' && typeof bNum === 'number' && aNum === bNum;
-    }
+    if (typeof a === 'bigint') return bigintEqualsNumeric(a, b);
+    if (typeof b === 'bigint') return bigintEqualsNumeric(b, a);
     if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
     if (Array.isArray(a) || Array.isArray(b)) {
         if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;

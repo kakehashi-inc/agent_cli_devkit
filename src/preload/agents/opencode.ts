@@ -13,8 +13,11 @@ import type {
     OpenCodeEnvironment,
     SettingsValues,
 } from '../../shared/agents/opencode/types';
+import { profileChannels } from '../../shared/agents/profile/channels';
+import { createProfileApi } from './profileApi';
 
 export const opencodeApi: OpenCodeIpcApi = {
+    profile: createProfileApi(profileChannels('opencode')),
     mcp: {
         getEnvironments: refresh => ipcRenderer.invoke(OPENCODE_MCP_CHANNELS.GET_ENVIRONMENTS, refresh),
         getMCPServers: env => ipcRenderer.invoke(OPENCODE_MCP_CHANNELS.GET_MCP_SERVERS, env),
@@ -47,9 +50,11 @@ export const opencodeApi: OpenCodeIpcApi = {
     settings: {
         getEnvironments: refresh => ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.GET_ENVIRONMENTS, refresh),
         read: env => ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.READ, env),
-        write: (env: OpenCodeEnvironment, values: SettingsValues) =>
-            ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.WRITE, env, values),
-        writeRaw: (env, raw) => ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.WRITE_RAW, env, raw),
+        readRaw: env => ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.READ_RAW, env),
+        write: (env: OpenCodeEnvironment, values: SettingsValues, base: SettingsValues) =>
+            ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.WRITE, env, values, base),
+        writeRaw: (env, raw, baseRevision) =>
+            ipcRenderer.invoke(OPENCODE_SETTINGS_CHANNELS.WRITE_RAW, env, raw, baseRevision),
     },
     plugin: {
         getEnvironments: refresh => ipcRenderer.invoke(OPENCODE_PLUGIN_CHANNELS.GET_ENVIRONMENTS, refresh),

@@ -9,12 +9,14 @@ import { AssetManagerSection } from './AssetManagerSection';
 /**
  * 画面: Codex Agent・Skill 管理。
  * native（Windows/macOS/Linux）と WSL distro ごとに、~/.codex/agents（エージェント）と
- * ~/.agents/skills（スキル）を管理し、config.toml 設定を編集する。
+ * ~/.agents/skills（スキル）を管理する。
  */
 export const CodexAssetManager: React.FC = () => {
     const { t } = useTranslation();
     const [environments, setEnvironments] = useState<{ env: CodexEnvironment; label: string }[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [reloadNonce, setReloadNonce] = useState(0);
     const [snackbar, setSnackbar] = useState<{
         open: boolean;
         message: string;
@@ -25,20 +27,23 @@ export const CodexAssetManager: React.FC = () => {
         severity: 'success',
     });
 
-    const load = async () => {
-        setLoading(true);
+    // 更新中は環境セクションを表示したまま読み直し、タブと検索語を保つ。
+    const load = async (refresh = false) => {
+        setRefreshing(true);
         try {
-            const envs = await window.agentCliDevkit.codex.asset.getEnvironments();
+            const envs = await window.agentCliDevkit.codex.asset.getEnvironments(refresh);
             setEnvironments(envs);
+            setReloadNonce(value => value + 1);
         } catch (error) {
             console.error('Failed to load asset manager environments:', error);
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     };
 
     useEffect(() => {
-        load();
+        void load();
     }, []);
 
     const notify = (message: string, severity: 'success' | 'error' | 'warning') => {
@@ -70,8 +75,9 @@ export const CodexAssetManager: React.FC = () => {
                 <Button
                     variant='outlined'
                     startIcon={<RefreshIcon />}
-                    onClick={load}
-                    sx={{ textTransform: 'none', flexShrink: 0 }}
+                    disabled={refreshing}
+                    onClick={() => void load(true)}
+                    sx={{ flexShrink: 0 }}
                 >
                     {t('common.refresh')}
                 </Button>
@@ -82,7 +88,7 @@ export const CodexAssetManager: React.FC = () => {
                     <Typography variant='h6' sx={{ mb: 1 }}>
                         {label}
                     </Typography>
-                    <AssetManagerSection env={env} onNotify={notify} />
+                    <AssetManagerSection env={env} onNotify={notify} reloadNonce={reloadNonce} />
                 </Box>
             ))}
 
@@ -97,7 +103,7 @@ export const CodexAssetManager: React.FC = () => {
                             <Typography variant='h6' sx={{ mb: 1 }}>
                                 {t('codex.assetManager.wslSection', { distro: label })}
                             </Typography>
-                            <AssetManagerSection env={env} onNotify={notify} />
+                            <AssetManagerSection env={env} onNotify={notify} reloadNonce={reloadNonce} />
                         </Box>
                     ))}
                 </>

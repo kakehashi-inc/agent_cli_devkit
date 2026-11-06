@@ -8,9 +8,9 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
             <TitleBar />
-            <Box sx={{ flexGrow: 1, overflow: 'auto' }}>{children}</Box>
+            <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>{children}</Box>
         </Box>
     );
 };

@@ -25,13 +25,16 @@ import {
     Refresh as RefreshIcon,
     DragIndicator as DragIcon,
 } from '@mui/icons-material';
-import type { ClaudeDesktopInfo, MCPServerInfo } from '@shared/agents/claude/types';
+import type { ClaudeDesktopInfo, McpFileProblem, MCPServerInfo, MCPServers } from '@shared/agents/claude/types';
+import { McpFileProblems } from '../../components/agent/McpServerParts';
+import { operationErrorText } from '../../utils/configFileFailure';
 
 export const ClaudeDesktopManager: React.FC = () => {
     const { t } = useTranslation();
     const [info, setInfo] = useState<ClaudeDesktopInfo | null>(null);
     const [enabledServers, setEnabledServers] = useState<MCPServerInfo[]>([]);
     const [disabledServers, setDisabledServers] = useState<MCPServerInfo[]>([]);
+    const [problems, setProblems] = useState<McpFileProblem[]>([]);
     const [loading, setLoading] = useState(true);
     const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
         open: false,
@@ -41,6 +44,12 @@ export const ClaudeDesktopManager: React.FC = () => {
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
     const [draggedDisabledIndex, setDraggedDisabledIndex] = useState<number | null>(null);
 
+    const applyServers = (servers: MCPServers) => {
+        setEnabledServers(servers.enabled);
+        setDisabledServers(servers.disabled);
+        setProblems(servers.problems ?? []);
+    };
+
     const loadData = async () => {
         try {
             const [infoData, serversData] = await Promise.all([
@@ -48,8 +57,7 @@ export const ClaudeDesktopManager: React.FC = () => {
                 window.agentCliDevkit.claude.desktop.getMCPServers(),
             ]);
             setInfo(infoData);
-            setEnabledServers(serversData.enabled);
-            setDisabledServers(serversData.disabled);
+            applyServers(serversData);
         } catch (error) {
             console.error('Failed to load data:', error);
         } finally {
@@ -59,6 +67,8 @@ export const ClaudeDesktopManager: React.FC = () => {
 
     useEffect(() => {
         loadData();
+        // マウント時に一度だけ読み込む（loadData は描画ごとに作り直されるので依存に含めない）。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleRefresh = async () => {
@@ -68,31 +78,21 @@ export const ClaudeDesktopManager: React.FC = () => {
 
     const handleDisable = async (serverName: string) => {
         try {
-            const result = await window.agentCliDevkit.claude.desktop.disableMCPServer(serverName);
-            setEnabledServers(result.enabled);
-            setDisabledServers(result.disabled);
+            applyServers(await window.agentCliDevkit.claude.desktop.disableMCPServer(serverName));
             setSnackbar({ open: true, message: t('common.success'), severity: 'success' });
         } catch (error) {
-            setSnackbar({
-                open: true,
-                message: error instanceof Error ? error.message : t('common.error'),
-                severity: 'error',
-            });
+            setSnackbar({ open: true, message: operationErrorText(t, error), severity: 'error' });
+            await loadData();
         }
     };
 
     const handleEnable = async (serverName: string) => {
         try {
-            const result = await window.agentCliDevkit.claude.desktop.enableMCPServer(serverName);
-            setEnabledServers(result.enabled);
-            setDisabledServers(result.disabled);
+            applyServers(await window.agentCliDevkit.claude.desktop.enableMCPServer(serverName));
             setSnackbar({ open: true, message: t('common.success'), severity: 'success' });
         } catch (error) {
-            setSnackbar({
-                open: true,
-                message: error instanceof Error ? error.message : t('common.error'),
-                severity: 'error',
-            });
+            setSnackbar({ open: true, message: operationErrorText(t, error), severity: 'error' });
+            await loadData();
         }
     };
 
@@ -131,14 +131,10 @@ export const ClaudeDesktopManager: React.FC = () => {
 
         try {
             const serverNames = enabledServers.map(s => s.name);
-            await window.agentCliDevkit.claude.desktop.reorderMCPServers(serverNames);
+            applyServers(await window.agentCliDevkit.claude.desktop.reorderMCPServers(serverNames));
             setSnackbar({ open: true, message: t('common.success'), severity: 'success' });
         } catch (error) {
-            setSnackbar({
-                open: true,
-                message: error instanceof Error ? error.message : t('common.error'),
-                severity: 'error',
-            });
+            setSnackbar({ open: true, message: operationErrorText(t, error), severity: 'error' });
             await loadData(); // エラー時は元に戻す
         } finally {
             setDraggedIndex(null);
@@ -167,14 +163,10 @@ export const ClaudeDesktopManager: React.FC = () => {
 
         try {
             const serverNames = disabledServers.map(s => s.name);
-            await window.agentCliDevkit.claude.desktop.reorderDisabledMCPServers(serverNames);
+            applyServers(await window.agentCliDevkit.claude.desktop.reorderDisabledMCPServers(serverNames));
             setSnackbar({ open: true, message: t('common.success'), severity: 'success' });
         } catch (error) {
-            setSnackbar({
-                open: true,
-                message: error instanceof Error ? error.message : t('common.error'),
-                severity: 'error',
-            });
+            setSnackbar({ open: true, message: operationErrorText(t, error), severity: 'error' });
             await loadData(); // エラー時は元に戻す
         } finally {
             setDraggedDisabledIndex(null);
@@ -207,21 +199,11 @@ export const ClaudeDesktopManager: React.FC = () => {
                     {t('claude.claudeDesktop.title')}
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button
-                        variant='outlined'
-                        startIcon={<RefreshIcon />}
-                        onClick={handleRefresh}
-                        sx={{ textTransform: 'none' }}
-                    >
+                    <Button variant='outlined' startIcon={<RefreshIcon />} onClick={handleRefresh}>
                         {t('common.refresh')}
                     </Button>
                     {info.claudeExecutable && (
-                        <Button
-                            variant='contained'
-                            startIcon={<RestartIcon />}
-                            onClick={handleRestart}
-                            sx={{ textTransform: 'none' }}
-                        >
+                        <Button variant='contained' startIcon={<RestartIcon />} onClick={handleRestart}>
                             {t('claude.claudeDesktop.restart')}
                         </Button>
                     )}
@@ -236,6 +218,8 @@ export const ClaudeDesktopManager: React.FC = () => {
                     {t('claude.claudeDesktop.disabledConfigPath')}: {info.disabledConfigPath}
                 </Typography>
             </Paper>
+
+            <McpFileProblems problems={problems} />
 
             {/* 有効なMCPサーバー */}
             <Box sx={{ mb: 4 }}>

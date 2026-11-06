@@ -4,8 +4,8 @@ import { GrokEnvironment, CleanupSelection, OtherCleanupSelection } from '../../
 import { GrokCleanupManager } from '../../services/grok/GrokCleanupManager';
 
 export function registerGrokCleanupHandlers(manager: GrokCleanupManager): void {
-    ipcMain.handle(GROK_CLEANUP_CHANNELS.GET_ENVIRONMENTS, () => {
-        return manager.getEnvironments();
+    ipcMain.handle(GROK_CLEANUP_CHANNELS.GET_ENVIRONMENTS, (_, refresh?: boolean) => {
+        return manager.getEnvironments(refresh === true);
     });
 
     ipcMain.handle(GROK_CLEANUP_CHANNELS.SCAN, (_, env: GrokEnvironment) => {

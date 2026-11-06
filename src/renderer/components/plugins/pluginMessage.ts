@@ -1,4 +1,5 @@
 // プラグイン操作の結果メッセージを画面表示用に整える（agent 非依存）。
+import { configFileFailureText } from '../../utils/configFileFailure';
 
 // main 側が失敗理由として返す機械コード。画面では pluginManager.errorCode.<コード> の文言に置き換える。
 const MESSAGE_CODES = [
@@ -7,7 +8,6 @@ const MESSAGE_CODES = [
     'cli-unavailable',
     'already-exists',
     'source-overlaps',
-    'unavailable',
     'invalid-id',
     'unsupported',
     'invalid-disabled-file',
@@ -31,7 +31,7 @@ function splitsSurrogatePair(text: string, index: number): boolean {
 }
 
 /**
- * 操作結果のメッセージを表示用の文字列にする。既知の機械コードは文言に置き換え、
+ * 操作結果のメッセージを表示用の文字列にする。既知の機械コードと設定ファイルの失敗は文言に置き換え、
  * それ以外（CLI の出力など）はそのまま返す。長い出力は先頭と末尾を残して中略する（サロゲートペアは分けない）。
  */
 export function formatPluginMessage(
@@ -41,6 +41,10 @@ export function formatPluginMessage(
     const text = (message ?? '').trim();
     if (MESSAGE_CODES.includes(text)) {
         return t(`pluginManager.errorCode.${text}`);
+    }
+    const failure = configFileFailureText(t, text);
+    if (failure !== null) {
+        return failure;
     }
     if (text.length <= HEAD_CHARS + TAIL_CHARS) {
         return text;

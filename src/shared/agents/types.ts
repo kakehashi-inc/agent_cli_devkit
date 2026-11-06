@@ -6,6 +6,8 @@
 // shared/agents/<agent>/types.ts に置くこと。
 // ============================================================
 
+import type { ConfigDetail, ConfigFileFailure, ConfigParseCode } from './configFileFailure';
+
 // アプリ共通型のうち agent コードからも頻繁に参照するものを再エクスポートする
 export type { OSType } from '../types';
 
@@ -21,6 +23,12 @@ export interface AgentEnvironment {
 export interface WslDistroInfo {
     distro: string;
     home: string;
+}
+
+// 必須のコマンドが足りない distro。
+export interface WslMissingCommands {
+    distro: string;
+    commands: string[];
 }
 
 // ============================================================
@@ -39,13 +47,39 @@ export interface MCPServerConfig {
     [key: string]: unknown;
 }
 
-export interface MCPServerInfo {
-    name: string;
-    config: MCPServerConfig;
-    enabled: boolean;
+// MCP の一覧に出す設定の項目。環境変数やヘッダーの値は含めない。
+export interface MCPServerDisplayConfig {
+    command?: string | string[];
+    args?: string[];
+    type?: string;
+    url?: string;
+    serverUrl?: string;
 }
 
-export type MCPServers = { enabled: MCPServerInfo[]; disabled: MCPServerInfo[] };
+export interface MCPServerInfo {
+    name: string;
+    config: MCPServerDisplayConfig;
+    enabled: boolean;
+    // 有効化・無効化・並べ替えができない。ファイル上の形（インラインテーブルなど）を保ったまま移せないサーバー。
+    readOnly?: boolean;
+    // 定義のあるファイルの名前。複数の設定ファイルを読む agent だけが返す。
+    definedIn?: string[];
+}
+
+// 一覧の読み取りで読めなかったファイル。
+export interface McpFileProblem {
+    failure: ConfigFileFailure;
+    // ファイルの表示パス。
+    path: string;
+    detail?: string;
+}
+
+export type MCPServers = {
+    enabled: MCPServerInfo[];
+    disabled: MCPServerInfo[];
+    // 読めなかったファイルがあれば、その分の一覧は空で返す。
+    problems?: McpFileProblem[];
+};
 
 // MCP 管理の環境ごとの情報
 export interface McpEnvInfo {
@@ -75,11 +109,50 @@ export interface CleanupCandidateSpec {
     path?: string;
     // kind='file' のロックファイル。他から保持されている間は候補に出さず、削除もしない。
     lockFile?: boolean;
+    // 削除の確認に表示する注意文の i18n キー（全キー）。候補全体の選択でも子要素の個別選択でも表示する。
+    confirmWarningKey?: string;
+    // 候補の行に表示する注記の i18n キー（全キー）。
+    noticeKey?: string;
+    // ファイルやフォルダーを消さず、設定ファイルの中の記録だけを編集する候補。
+    editsFileOnly?: boolean;
+}
+
+// クリーンアップ: 子要素に添える状態の表示。値そのものは持たず、種類と件数だけを持つ。
+export type CleanupChildBadgeKey =
+    'trusted' | 'untrusted' | 'trustUnset' | 'mcpServers' | 'duplicateKeys' | 'grants' | 'sessions' | 'savedApprovals';
+
+export interface CleanupChildBadge {
+    key: CleanupChildBadgeKey;
+    // 件数（省略すると種類だけを表示する）。
+    count?: number;
+}
+
+// クリーンアップ: 削除の確認で一緒に削除するかを選べる、同じ候補の子要素。
+export interface CleanupRelatedChild {
+    // 候補内の子要素の識別子
+    name: string;
+    // 画面に表示する名前
+    label: string;
+    // 一緒に削除されるファイルの名前
+    files: string[];
 }
 
 // クリーンアップ: 展開可能候補配下の個別の子要素
 export interface CleanupChild {
+    // 候補内で一意の識別子。選択と承認はこの値で行う。
     name: string;
+    // 画面に表示する名前（無ければ name を表示する）。複数の場合は改行で区切る。
+    displayName?: string;
+    // 対応するワークスペースのパスを特定できない子要素。name を「パス不明」として表示する。
+    pathUnknown?: boolean;
+    // パス不明の印に使う文言の i18n キー（全キー。無ければ共通の文言）。
+    pathUnknownLabelKey?: string;
+    // 名前の横に添える状態の表示。
+    badges?: CleanupChildBadge[];
+    // この子要素を共有している複数のパス。削除の確認に列挙する。
+    sharedPaths?: string[];
+    // 削除の確認で一緒に削除するかを選べる、同じ候補の子要素。
+    relatedChildren?: CleanupRelatedChild[];
     size: number;
     fileCount: number;
     // 大きさを取得できない子要素（画面にはサイズを表示しない）。
@@ -92,6 +165,12 @@ export interface CleanupChild {
     orphan?: boolean;
     // 使用中の可能性があると判定した根拠のセッション（削除時に子要素ごとに問い合わせる）。
     inUseSessions?: CleanupInUseSession[];
+    // 下の階層の子要素（階層で展開する子要素だけ）。name は階層をまたいで候補内で一意にする。
+    children?: CleanupChild[];
+    // 子要素に属するスレッドの数（スレッド単位で数える子要素だけ）。
+    threadCount?: number;
+    // 最終更新日時（エポックミリ秒。日時を表示する子要素だけ）。
+    mtimeMs?: number;
 }
 
 // クリーンアップ: 子要素を使用中の可能性があると判定した根拠のセッション。
@@ -121,6 +200,18 @@ export interface CleanupCandidate {
     children?: CleanupChild[];
     // すべての子要素の大きさを取得できない候補（画面にはサイズを表示しない）。
     sizeUnknown?: boolean;
+    // 削除の確認に表示する注意文の i18n キー（全キー）。候補全体の選択でも子要素の個別選択でも表示する。
+    confirmWarningKey?: string;
+    // 候補の行に表示する注記の i18n キー（全キー）。
+    noticeKey?: string;
+    // 注記の文言に渡す値。
+    noticeParams?: Record<string, string>;
+    // この環境では使えない候補。行と注記を表示し、選択できない。
+    blocked?: boolean;
+    // ファイルやフォルダーを消さず、設定ファイルの中の記録だけを編集する候補。
+    editsFileOnly?: boolean;
+    // 候補自体の種類。'file' は単一のファイルを消す候補。
+    kind?: 'dir' | 'file';
 }
 
 // クリーンアップの環境ごとのレポート
@@ -190,13 +281,28 @@ export type OtherCleanupSelection = string[];
 // 対象種別（agents / skills。実パスは agent ごとの constants で定義する）
 export type AssetKind = 'agents' | 'skills';
 
+// 行とリンクの関係。
+// - 'self': 行そのものがリンク。削除はリンクだけを外す。
+// - 'via': 途中のフォルダーがリンクで、実体はリンク先にある。参照はできるが、ここからは削除しない。
+export type AssetEntryLink = 'self' | 'via';
+
+// 通常の 1 件ではない行の状態。
+// - 'dangling-link': リンク先がなく CLI に読み込まれない。削除（リンクを外す）だけができる。
+// - 'no-entry-file': 定義ファイルがない、または CLI が飛ばす名前のフォルダーで CLI に読み込まれない。削除とダウンロードができる。
+// - 'link-folder': フォルダーへのリンク。配下の定義は別の行に出る。削除（リンクを外す）だけができる。
+// - 'link-loop': 既に読んだフォルダーへのリンクで、配下を読まない。削除（リンクを外す）だけができる。
+// - 'refused-name': 別の場所を指し得る名前で、何も操作できない。
+export type AssetEntryStatus = 'dangling-link' | 'no-entry-file' | 'link-folder' | 'link-loop' | 'refused-name';
+
 // 一覧の 1 件（= 各エージェント / 各スキル）
-// - skills: <skill>/ ディレクトリ（メタは <skill>/SKILL.md の YAML frontmatter から読む）
-// - agents: agents/ 直下および再帰サブディレクトリの単一ファイル（.md / .toml など agent による）
+// - skills: <skill>/ ディレクトリ（メタは <skill>/SKILL.md の YAML frontmatter から読む）。agent によっては単一ファイル。
+// - agents: agents/ 配下の単一ファイル（.md / .toml など agent による）。agent によっては <name>/ ディレクトリ。
 export interface AssetEntry {
-    name: string; // 表示名（skills=ディレクトリ名 / agents=ファイル名から拡張子を除いたもの）
-    relPath: string; // asset 親からの相対パス（DL/UL の単位）
-    isFile: boolean; // true=単一ファイル（agents） / false=ディレクトリ（skills）
+    name: string; // 表示名（ディレクトリ名、またはファイル名から拡張子を除いたもの）
+    // 操作に渡す識別子。読み取り元のルートからの相対パス（区切りは '/'）で、書き込み先以外のルートでは
+    // 先頭に「<読み取り元の識別子>::」が付く。
+    relPath: string;
+    isFile: boolean; // true=単一ファイル / false=ディレクトリ
     fileCount?: number; // 再帰ファイル数。skills でのみ取得・表示する。
     // メタ情報（YAML frontmatter や TOML フィールド）。無い場合は空。
     frontmatter: Record<string, string>;
@@ -204,6 +310,14 @@ export interface AssetEntry {
     frontmatterRaw: string | null;
     // 最終更新日時（エポックミリ秒）。取得できない場合は 0。
     mtimeMs: number;
+    link?: AssetEntryLink;
+    status?: AssetEntryStatus;
+    // 読み取り元の識別子。複数のルートを読む種別だけが返す。
+    origin?: string;
+    // 同じ名前の定義で優先される読み取り元の識別子。
+    overriddenBy?: string;
+    // 同じ名前の定義がある読み取り元の識別子。どちらが優先されるかは公式に示されていない。
+    sameNameIn?: string;
 }
 
 // Agent・Skill 管理の一覧レポート（環境 × 種別）
@@ -211,10 +325,15 @@ export interface AssetListReport {
     env: AgentEnvironment;
     label: string;
     kind: AssetKind;
-    // 実 OS パス（native 絶対パス / WSL UNC パス）に到達でき、ZIP 操作が可能か。
-    // false の場合（WSL コマンドモードで UNC 不可など）は DL/UL を行わない。
+    // 環境のファイルに届くか。false の場合（WSL のホームを解決できないなど）は一覧も DL/UL も行わない。
     available: boolean;
     entries: AssetEntry[];
+    // OS のファイルマネージャーで開けない（WSL で UNC に届かない）。他の操作は使える。
+    revealUnavailable?: boolean;
+    // 一覧を打ち切った深さ。これより深い階層にエントリがあるときだけ返す。
+    truncatedDepth?: number;
+    // 読み取れなかったフォルダーがあり、一覧が欠けている可能性がある。
+    incomplete?: boolean;
 }
 
 // Agent・Skill 管理の操作結果（ダウンロード / アップロード / アップロード前検査 / 公式スキル一覧）
@@ -223,6 +342,8 @@ export interface AssetOpResult {
     canceled?: boolean; // ダイアログをキャンセルした
     message?: string; // エラー詳細（任意）
     conflicts?: string[]; // アップロード前検査で検出した同名サブディレクトリ
+    // 上書きで一緒に置き換わる、衝突先のフォルダーの中のスキル（relPath）。
+    nestedReplaced?: string[];
     zipPath?: string; // アップロード前検査で選択された ZIP の実パス
     importedCount?: number; // アップロードで展開したサブディレクトリ数
     deletedCount?: number; // 削除に成功した件数
@@ -240,6 +361,8 @@ export interface AssetOpResult {
     kindCheck?: 'warn';
     // kindCheck の理由コード（i18n キーの末尾。例 'agent-md-into-skill'）。
     kindMessage?: string;
+    // kindCheck が対象とする名前（定義ファイルがなく取り込まれないフォルダーなど）。
+    kindNames?: string[];
     // readEntry の返却用: エントリの内容全体（agents=ファイル本体 / skills=SKILL.md）。
     content?: string;
 }
@@ -272,6 +395,8 @@ export interface PluginEntry {
     noteKey?: string;
     // アンインストールで一緒に削除される、同じリポジトリから導入された他のプラグイン名（grok のみ）。
     sameRepoPlugins?: string[];
+    // 指定のあるファイルの名前。複数の設定ファイルを読む agent だけが返す。
+    definedIn?: string[];
 }
 
 // マーケットプレイスの由来。
@@ -369,7 +494,8 @@ export interface PluginCapabilities {
 //            onValue と異なる保存済み値は string として表示・保持する。
 // - enum: 型が混在する固定候補から 1 つを選ぶ（例: true / false / "notify"）。候補ごとに実際の値と
 //         その型（boolean / string / number）を保持し、選択された値を型のまま読み書きする。
-// - directEdit: 配列・テーブル・オブジェクトなど、設定画面では編集せずファイルの直接編集へ案内する。
+// - directEdit: 配列・テーブル・オブジェクトなど、設定画面では編集しない項目。linkTab / linkRoute があれば編集先へのリンク、
+//               なければファイルの直接編集への案内を値欄に表示する。
 export type SettingsFieldType = 'boolean' | 'string' | 'number' | 'envFlag' | 'enum' | 'directEdit';
 
 // enum 型の候補 1 件。value は実際に読み書きする型付きの値、labelKey は i18n サフィックス
@@ -407,13 +533,20 @@ export interface SettingsFieldSpec {
     // type='string' のとき: 受け付ける値の形式（RegExp のパターン文字列。u フラグで評価する）。
     // 一致しない値は保存しない。
     pattern?: string;
+    // type='directEdit' のとき: この項目を編集する同じ画面のタブの ID。
+    linkTab?: string;
+    // type='directEdit' のとき: この項目を編集する別の画面のルート。
+    linkRoute?: string;
 }
 
 // 設定項目 1 件の現在値（読み取り結果）。
 export type SettingsFieldValue = boolean | string | number | undefined;
 
+// 設定ファイルを解釈できなかった理由。本文を含まず、コードと位置だけを持つ。
+export type SettingsParseError = ConfigDetail<ConfigParseCode>;
+
 // 設定の読み取り結果（環境ごと）。
-// available=false は実 OS パスに到達できない（WSL コマンドモードで UNC 不可など）。
+// available=false は環境のファイルに届かない。
 export interface SettingsReadResult {
     env: AgentEnvironment;
     label: string;
@@ -425,12 +558,30 @@ export interface SettingsReadResult {
     // 表示・編集対象項目の定義（registry）。レンダラーはこれを使って UI を描くため、
     // os 依存の shared/constants を import する必要がない（schema の単一ソースはメイン側）。
     fields: SettingsFieldSpec[];
-    // 直接編集用: 設定ファイルの生テキスト全体（JSON / TOML）。存在しなければ null。
-    raw: string | null;
+    // 設定ファイルを読めなかった理由（未作成は含まない）。values は未確定で、保存も直接編集もできない。
+    readFailed?: string;
+    // 設定ファイルを読めたが解釈できなかった理由。values は未確定で、直接編集でだけ修正できる。
+    parseError?: SettingsParseError;
     // 項目ごとの注記（key -> i18n キー。<agentId>.settings. からの相対）。値の下に表示する。
     notices?: Record<string, string>;
     // 設定ファイル全体への注記（i18n キー。<agentId>.settings. からの相対）。表の上に表示する。
     fileNotice?: string;
+}
+
+// 直接編集を始めるときに読む、設定ファイルの全文。
+export interface SettingsRawResult {
+    // 設定ファイルの生テキスト全体（JSON / TOML）。BOM は含まない。存在しなければ null か初期内容。
+    raw: string | null;
+    // 読み取った時点の内容の識別子。直接編集の保存で baseRevision として渡す。
+    revision: string;
+    // 先頭に BOM がある。
+    hadBom: boolean;
+    // 主な改行コード。
+    eol: '\n' | '\r\n';
+    // CRLF と LF が混在している（直接編集で保存すると eol へ揃う）。
+    mixedEol: boolean;
+    // 設定ファイルを読めなかった理由（未作成は含まない）。
+    readFailed?: string;
 }
 
 // テーブル編集による設定保存の入力（変更した key -> 値）。
@@ -440,5 +591,11 @@ export type SettingsValues = Record<string, SettingsFieldValue>;
 // 設定保存の結果。
 export interface SettingsWriteResult {
     ok: boolean;
-    message?: string; // エラー詳細（'unavailable' / 'invalid-json' / 'invalid-toml' / 'invalid-value' / 'write-failed' など）
+    // エラー詳細（'read-failed' / 'conflict' / 'invalid-json' / 'invalid-toml' / 'invalid-value' / 'write-failed' など）。
+    // conflict は読み込んだ後にファイルが変わったことを表し、何も書かない。
+    message?: string;
+    // テーブル編集の conflict で、読み込んだ後に値が変わった項目の key。
+    conflictKeys?: string[];
+    // 保存後の内容の識別子（ok のとき）。
+    revision?: string;
 }

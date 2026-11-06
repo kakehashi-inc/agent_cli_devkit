@@ -7,6 +7,7 @@ import type {
     CleanupSelection,
     McpEnvInfo,
     MCPServers,
+    SettingsRawResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
@@ -43,8 +44,9 @@ export interface CleanupApi {
 export interface SettingsApi {
     getEnvironments(refresh?: boolean): Promise<{ env: AgentEnvironment; label: string }[]>;
     read(env: AgentEnvironment): Promise<SettingsReadResult>;
-    write(env: AgentEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
-    writeRaw(env: AgentEnvironment, raw: string): Promise<SettingsWriteResult>;
+    readRaw(env: AgentEnvironment): Promise<SettingsRawResult>;
+    write(env: AgentEnvironment, values: SettingsValues, base: SettingsValues): Promise<SettingsWriteResult>;
+    writeRaw(env: AgentEnvironment, raw: string, baseRevision: string): Promise<SettingsWriteResult>;
 }
 
 export type Notify = (message: string, severity: 'success' | 'error' | 'warning') => void;

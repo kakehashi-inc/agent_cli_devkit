@@ -5,8 +5,8 @@ import { ClaudeCodeManager } from '../../services/claude/ClaudeCodeManager';
 
 export function registerClaudeCodeHandlers(manager: ClaudeCodeManager): void {
     // 環境一覧（native + Claude 入り WSL distro）を取得
-    ipcMain.handle(CLAUDE_CODE_CHANNELS.GET_ENVIRONMENTS, () => {
-        return manager.getEnvironments();
+    ipcMain.handle(CLAUDE_CODE_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) => {
+        return manager.getEnvironments(refresh === true);
     });
 
     // MCP サーバーリストを取得

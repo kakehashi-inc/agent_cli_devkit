@@ -10,10 +10,11 @@ import {
     statSync,
 } from 'fs';
 import { copyFile, cp, lstat } from 'fs/promises';
-import { basename, dirname, extname, isAbsolute, join, resolve } from 'path';
+import { basename, dirname, extname, isAbsolute, join, posix, resolve } from 'path';
 import {
     OPENCODE_CLI_COMMAND,
     OPENCODE_CLI_CONFIG_REL,
+    OPENCODE_CONFIG_CANDIDATES_REL,
     OPENCODE_CONFIG_DIR,
     OPENCODE_CONFIG_SCHEMA_URL,
     OPENCODE_DISABLED_PLUGINS_DIR,
@@ -30,29 +31,69 @@ import type {
     PluginEnvReport,
     PluginOpResult,
 } from '../../../shared/agents/opencode/types';
-import { deleteJsoncProperty, parseJsoncObject, setJsoncProperty } from '../../utils/jsoncEdit';
+import {
+    deleteJsoncProperty,
+    insertJsoncArrayElements,
+    parseJsoncObject,
+    readJsoncArray,
+    removeJsoncArrayElements,
+    setJsoncProperty,
+} from '../../utils/jsoncEdit';
+import { formatConfigDetail } from '../../../shared/agents/configFileFailure';
 import { deepEqualLoose } from '../../utils/nestedValue';
+import { installFiles, type StagedFile } from '../common/assets/stagedInstall';
+import { createCleanupProbe } from '../common/cleanup/CleanupProbe';
 import { AgentCliRunner } from '../common/cli/AgentCliRunner';
+import {
+    commitConfigChanges,
+    fileError,
+    withFinalEol,
+    type ConfigChange,
+    type ConfigFile,
+} from '../common/fs/configFile';
 import { removeTreeBestEffort } from '../common/fs/removeTreeBestEffort';
+import { guardEdit, readJsoncFile, sidecarChange } from '../common/json/jsonConfigFile';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
+import { MISSING_REVISION } from '../../../shared/agents/profile/types';
 import { openCodeCliAvailable } from './openCodeCli';
-import { resolveOpenCodeConfigRel } from './openCodeConfigFile';
+import { candidateRelOf, fileNameOf, resolveOpenCodeConfigRel } from './openCodeConfigFile';
 
 // plugins 配列の要素。指定子の文字列か、オプション付きの { package, options }。
 type PluginItem = string | { package: string; options?: Record<string, unknown> };
 
 interface JsoncState {
-    rel: string;
+    file: ConfigFile;
+    // 編集の起点のテキスト。未作成と空白だけのファイルは空のオブジェクト。
     raw: string;
     // plugins 配列の全要素（解釈できない要素も位置を保って保持する）
     items: unknown[];
+    // items と同じ並びの要素の原文。
+    rawItems: string[];
+    // plugins が配列以外の値で、編集できない。
+    malformed: boolean;
+}
+
+// 配列の要素の値と原文。
+interface PluginElement {
+    value: unknown;
+    raw: string;
 }
 
 interface DisabledState extends JsoncState {
-    // 指定子 → 無効化した時点の plugins 配列の並び（無効化中の他の要素も記録した位置に戻したもの）。
-    // 配列でない値は位置の記録が無いものとして扱う。
+    // 指定子 → 有効化で戻す先の記録。{ origins: PluginOrigin[] } か、元のファイルが分からない無効化した時点の並びの配列。
+    // それ以外の値は記録が無いものとして扱う。
     positions: Record<string, unknown>;
+}
+
+// 無効化した要素の、元のファイルごとの記録。
+interface PluginOrigin {
+    // 設定ファイルの名前。
+    file: string;
+    // そのファイルから退避した要素。
+    items: unknown[];
+    // そのファイルの無効化した時点の並び（無効化中の他の要素も記録した位置に戻したもの）。
+    order: unknown[];
 }
 
 // 実体（ファイル・フォルダー）の識別子と、比較用のパス。
@@ -64,6 +105,7 @@ interface EntryIdentity {
 
 const PLUGINS_KEY = ['plugins'];
 const POSITIONS_KEY = 'positions';
+const ORIGINS_KEY = 'origins';
 const CONFIG_ID_PREFIX = 'config:';
 const TUI_ID_PREFIX = 'cli:';
 const LOCAL_ID_PREFIX = 'local:';
@@ -81,10 +123,6 @@ const INSTALL_TIMEOUT_MS = 5 * 60_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function withTrailingNewline(text: string): string {
-    return text.endsWith('\n') ? text : `${text}\n`;
 }
 
 /**
@@ -129,18 +167,52 @@ function identityChain(path: string): EntryIdentity[] {
     }
 }
 
+// ファイルが使用中か、アクセスが拒否されたため、OS が移動・削除を拒んだことを表すエラーコード。
+const LOCKED_CODES = ['EPERM', 'EBUSY', 'EACCES'];
+
 /** ファイルが使用中か、アクセスが拒否されたため、OS が移動・削除を拒んだことを表すエラーか。 */
 function isLockedError(error: unknown): boolean {
-    const code = (error as NodeJS.ErrnoException).code;
-    return code === 'EPERM' || code === 'EBUSY' || code === 'EACCES';
+    return LOCKED_CODES.includes(String((error as NodeJS.ErrnoException).code));
+}
+
+/** この OS のフォルダーの配下を、name の下に置く取り込みの内容にする。リンクとジャンクションは辿らず、含めない。 */
+function collectLocalPluginFiles(root: string, name: string): StagedFile[] {
+    const files: StagedFile[] = [{ relPath: name, bytes: null, mtimeMs: null }];
+    const walk = (dir: string, rel: string) => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            if (entry.isSymbolicLink()) continue;
+            const path = join(dir, entry.name);
+            const relPath = `${rel}/${entry.name}`;
+            if (entry.isDirectory()) {
+                files.push({ relPath, bytes: null, mtimeMs: null });
+                walk(path, relPath);
+            } else if (entry.isFile()) {
+                files.push({ relPath, bytes: readFileSync(path), mtimeMs: null });
+            }
+        }
+    };
+    walk(root, name);
+    return files;
+}
+
+/** distro の UNC パス（\\wsl.localhost\<distro>\... か \\wsl$\<distro>\...）を distro の中のパスにする。違う形なら null。 */
+function linuxPathOfUnc(path: string, distro: string): string | null {
+    const match = /^\\\\wsl(?:\.localhost|\$)\\([^\\]+)(\\.*)$/i.exec(path);
+    if (!match || match[1].toLowerCase() !== distro.toLowerCase()) return null;
+    return match[2].replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
 /**
  * OpenCode のグローバルプラグインを管理する。
- * - 設定ファイル（opencode.json / opencode.jsonc）の `plugins` 配列のパッケージ指定（npm・Git）とローカルパス指定。
- *   導入は `opencode plugin add` で行い、無効化した要素は opencode-disabled-plugins.json へ退避する
- *   （OpenCode は先頭から評価し後ろの指定が勝つため、有効化では無効化した時点の並びに沿った位置へ戻す。
- *   無効化中の他の要素も並びに含めて記録するため、複数の要素を無効化してから任意の順に有効化しても元の並びに戻る）。
+ * - 設定ファイル（opencode.json と opencode.jsonc）の `plugins` 配列のパッケージ指定（npm・Git）とローカルパス指定。
+ *   OpenCode は両方のファイルを読むので、一覧は両方を読み、指定のあるファイルを definedIn で返す。
+ *   導入は `opencode plugin add` で行い、無効化は指定のあるすべてのファイルから要素を除いて opencode-disabled-plugins.json へ
+ *   退避する（OpenCode は先頭から評価し後ろの指定が勝つため、有効化では元のファイルの無効化した時点の並びに沿った位置へ戻す。
+ *   無効化中の他の要素も並びに含めて記録するため、複数の要素を無効化してから任意の順に有効化しても元の並びに戻る。
+ *   元のファイルの記録がない要素は resolveOpenCodeConfigRel の最初の候補へ戻す）。
+ *   配列は要素の単位で編集し、他の要素の原文とコメントを変えない。要素は原文のまま移すので 2^53 を超える数値も丸めない。
+ *   plugins が配列以外の値で要素の単位で編集できないファイルは書き換えず、操作を失敗にする。
+ *   設定ファイルを読めない場合は一覧も編集も失敗を返し、何も書かない。
  *   退避ファイルが壊れている場合は、一覧では空として扱って警告を添え、退避ファイルを書き換える操作と導入は行わない。
  *   有効化の指示（`-<ID>`・`*`・`<接頭辞>.*`・組み込み ID `opencode.*`）は一覧に出さず、位置を保って残す。
  * - ターミナル UI の設定（cli.json）の `plugins` 配列（`opencode plugin add` が TUI 専用のパッケージを追加する先）:
@@ -258,17 +330,30 @@ export class OpenCodePluginManager {
     }
 
     private async readState(fs: HomeFs, rel: string): Promise<JsoncState> {
-        const text = await fs.readText(rel);
-        const raw = text !== null && text.trim().length > 0 ? text : '{}\n';
-        const plugins = parseJsoncObject(raw).plugins;
-        return { rel, raw, items: Array.isArray(plugins) ? plugins : [] };
+        const { file } = await readJsoncFile(fs, rel);
+        const raw = file.text.trim().length > 0 ? file.text : '{}\n';
+        const scope = readJsoncArray(raw, PLUGINS_KEY);
+        return {
+            file,
+            raw,
+            items: scope.elements.map(element => element.value),
+            rawItems: scope.elements.map(element => element.rawText),
+            malformed: scope.present && !scope.isArray,
+        };
     }
 
-    private async readConfig(fs: HomeFs): Promise<JsoncState> {
-        const state = await this.readState(fs, await resolveOpenCodeConfigRel(fs));
-        // 新規作成するファイルには公式スキーマの参照を入れる。
-        if (state.raw === '{}\n') state.raw = `${JSON.stringify({ $schema: OPENCODE_CONFIG_SCHEMA_URL }, null, 2)}\n`;
-        return state;
+    /** すべての候補を候補順に読む。読めないか解釈できないファイルがあれば例外を投げる。 */
+    private async readConfigs(fs: HomeFs): Promise<JsoncState[]> {
+        const states: JsoncState[] = [];
+        for (const rel of OPENCODE_CONFIG_CANDIDATES_REL) {
+            const state = await this.readState(fs, rel);
+            // 新規作成するファイルには公式スキーマの参照を入れる。
+            if (state.file.text.trim().length === 0) {
+                state.raw = `${JSON.stringify({ $schema: OPENCODE_CONFIG_SCHEMA_URL }, null, 2)}\n`;
+            }
+            states.push(state);
+        }
+        return states;
     }
 
     /** 退避ファイルを読む。JSONC として読めない場合は null。 */
@@ -293,35 +378,75 @@ export class OpenCodePluginManager {
         }
     }
 
-    /** plugins 配列を置き換えたテキストを返す。空になった場合は plugins を削除する。 */
-    private withItems(raw: string, items: unknown[]): string {
-        return items.length === 0 ? deleteJsoncProperty(raw, PLUGINS_KEY) : setJsoncProperty(raw, PLUGINS_KEY, items);
+    /** plugins を要素の単位で編集できるか確かめる。配列以外の値は書き換えず、編集を止める。 */
+    private assertEditable(state: JsoncState): void {
+        if (state.malformed) {
+            throw fileError('edit-failed', state.file.rel, formatConfigDetail({ code: 'plugins-not-array' }));
+        }
     }
 
-    private async writeConfig(fs: HomeFs, state: JsoncState, items: unknown[]): Promise<void> {
-        await fs.writeText(state.rel, withTrailingNewline(this.withItems(state.raw, items)));
+    /** target の要素の位置の一覧。 */
+    private indexesOf(state: JsoncState, target: string): number[] {
+        return state.items.flatMap((item, index) => (this.matches(item, target) ? [index] : []));
+    }
+
+    /** target の要素の値と原文。 */
+    private elementsOf(state: JsoncState, target: string): PluginElement[] {
+        return this.indexesOf(state, target).map(index => ({ value: state.items[index], raw: state.rawItems[index] }));
+    }
+
+    /** target の要素だけを除く設定ファイルの変更を返す。他の要素とコメントの原文は変えない。 */
+    private removalChange(state: JsoncState, target: string): ConfigChange {
+        this.assertEditable(state);
+        const next = guardEdit(state.file.rel, () =>
+            removeJsoncArrayElements(state.raw, PLUGINS_KEY, this.indexesOf(state, target))
+        );
+        return { file: state.file, next: withFinalEol(next, state.file.eol) };
     }
 
     /**
-     * 退避ファイルを書き換える。位置の記録は退避中の要素の分だけを残し、
-     * 中身が空のオブジェクトになったらファイルごと削除する。
+     * 退避ファイルの変更を組み立てる。target の要素を除くか、element を末尾へ原文のまま足す。
+     * 位置の記録は退避中の要素の分だけを残し、中身が空のオブジェクトになったらファイルごと削除する。
      */
-    private async writeDisabled(
-        fs: HomeFs,
+    private disabledChange(
         state: DisabledState,
-        items: unknown[],
+        edit: { remove?: string; append?: PluginElement[] },
         positions: Record<string, unknown>
-    ): Promise<void> {
+    ): ConfigChange {
+        this.assertEditable(state);
+        const removed = edit.remove === undefined ? [] : this.indexesOf(state, edit.remove);
+        const appended = edit.append ?? [];
+        const items = [
+            ...state.items.filter((_, index) => !removed.includes(index)),
+            ...appended.map(element => element.value),
+        ];
         const kept = Object.fromEntries(
             Object.entries(positions).filter(([target]) => items.some(item => this.matches(item, target)))
         );
-        const withItems = this.withItems(state.raw, items);
-        const next =
-            Object.keys(kept).length === 0
+        const next = guardEdit(state.file.rel, () => {
+            const withoutRemoved = removeJsoncArrayElements(state.raw, PLUGINS_KEY, removed);
+            const withItems = insertJsoncArrayElements(
+                withoutRemoved,
+                PLUGINS_KEY,
+                appended.map(element => ({ index: state.items.length - removed.length, rawText: element.raw }))
+            );
+            return Object.keys(kept).length === 0
                 ? deleteJsoncProperty(withItems, [POSITIONS_KEY])
                 : setJsoncProperty(withItems, [POSITIONS_KEY], kept);
-        if (Object.keys(parseJsoncObject(next)).length === 0) await fs.deleteFile(state.rel);
-        else await fs.writeText(state.rel, withTrailingNewline(next));
+        });
+        return sidecarChange(state.file, withFinalEol(next, state.file.eol));
+    }
+
+    /** 位置の記録のうち、元のファイルの記録を返す。形の合わない記録と、候補に無いファイルの記録は含めない。 */
+    private originsOf(record: unknown): PluginOrigin[] {
+        if (!isRecord(record) || !Array.isArray(record[ORIGINS_KEY])) return [];
+        return record[ORIGINS_KEY].filter(
+            (origin): origin is PluginOrigin =>
+                isRecord(origin) &&
+                candidateRelOf(origin.file) !== undefined &&
+                Array.isArray(origin.items) &&
+                Array.isArray(origin.order)
+        );
     }
 
     /** 指定子が target の要素か（指示や解釈できない要素は対象外）。 */
@@ -338,7 +463,20 @@ export class OpenCodePluginManager {
      * moving が多い分は、order の最後の target の要素と同じ位置へ続ける。
      */
     private insertByOrder(current: unknown[], moving: unknown[], order: unknown, target: string): unknown[] {
-        if (!Array.isArray(order)) return [...current, ...moving];
+        const points = this.insertionPoints(current, moving, order, target);
+        const result: unknown[] = [];
+        for (let i = 0; i <= current.length; i++) {
+            moving.forEach((item, m) => {
+                if (points[m] === i) result.push(item);
+            });
+            if (i < current.length) result.push(current[i]);
+        }
+        return result;
+    }
+
+    /** moving の各要素の挿入位置（current の何番目の要素の直前か）を返す。求め方は insertByOrder のとおり。 */
+    private insertionPoints(current: unknown[], moving: unknown[], order: unknown, target: string): number[] {
+        if (!Array.isArray(order)) return moving.map(() => current.length);
         // order の各要素に対応する current の位置（target の要素と、current に残っていない要素は -1）
         const matched: number[] = [];
         let from = 0;
@@ -358,31 +496,30 @@ export class OpenCodePluginManager {
             else if (order.slice(0, k).every(other => this.matches(other, target))) points.push(0);
             else points.push(matched.slice(k + 1).find(index => index >= 0) ?? current.length);
         });
-        const pointOf = (i: number) => points[Math.min(i, points.length - 1)] ?? current.length;
-        const result: unknown[] = [];
-        for (let i = 0; i <= current.length; i++) {
-            moving.forEach((item, m) => {
-                if (pointOf(m) === i) result.push(item);
-            });
-            if (i < current.length) result.push(current[i]);
-        }
-        return result;
+        return moving.map((_, m) => points[Math.min(m, points.length - 1)] ?? current.length);
     }
 
     /**
-     * items に、無効化中の要素をそれぞれの記録した並びに沿って戻した並び（無効化した時点の並びとして記録する）。
-     * 位置の記録が無い要素は、戻す位置が分からないため含めない。
+     * state の要素に、そのファイルから無効化した要素をそれぞれの記録した並びに沿って戻した並び（無効化した時点の並びとして記録する）。
+     * 元のファイルが分からない並びの記録は defaultRel のファイルの分として扱う。位置の記録が無い要素は、戻す位置が分からないため含めない。
      */
-    private mergedOrder(items: unknown[], disabled: DisabledState): unknown[] {
+    private mergedOrder(state: JsoncState, disabled: DisabledState, defaultRel: string): unknown[] {
         const targets = new Set(
             disabled.items.filter((item): item is PluginItem => this.isPluginItem(item)).map(item => this.target(item))
         );
-        let merged = items;
+        const fileName = fileNameOf(state.file.rel);
+        let merged = state.items;
         for (const target of targets) {
-            const order = disabled.positions[target];
-            if (!Array.isArray(order)) continue;
-            const moving = disabled.items.filter(item => this.matches(item, target));
-            merged = this.insertByOrder(merged, moving, order, target);
+            const record = disabled.positions[target];
+            if (Array.isArray(record)) {
+                if (state.file.rel !== defaultRel) continue;
+                const moving = disabled.items.filter(item => this.matches(item, target));
+                merged = this.insertByOrder(merged, moving, record, target);
+                continue;
+            }
+            for (const origin of this.originsOf(record)) {
+                if (origin.file === fileName) merged = this.insertByOrder(merged, origin.items, origin.order, target);
+            }
         }
         return merged;
     }
@@ -460,13 +597,21 @@ export class OpenCodePluginManager {
         if (!cliAvailable) return base;
         try {
             const fs = this.fsFor(env);
-            const config = await this.readConfig(fs);
+            const configs = await this.readConfigs(fs);
             const disabled = await this.readDisabled(fs);
             if (!disabled) base.warningKey = 'opencode.plugins.disabledFileInvalid';
             const tuiItems = await this.readTuiItems(fs);
-            const entries = [
-                ...this.listedItems(config.items).map(item => this.configEntry(item, true)),
-                ...this.listedItems(disabled?.items ?? []).map(item => this.configEntry(item, false)),
+            const entries: PluginEntry[] = [
+                ...configs.flatMap(state =>
+                    this.listedItems(state.items).map(item => ({
+                        ...this.configEntry(item, true),
+                        definedIn: [fileNameOf(state.file.rel)],
+                    }))
+                ),
+                ...this.listedItems(disabled?.items ?? []).map(item => {
+                    const files = this.originsOf(disabled?.positions[this.target(item)]).map(origin => origin.file);
+                    return { ...this.configEntry(item, false), ...(files.length > 0 ? { definedIn: files } : {}) };
+                }),
                 ...this.listedItems(tuiItems).map(item => ({
                     ...this.configEntry(item, true, TUI_ID_PREFIX),
                     uninstallable: false,
@@ -476,10 +621,17 @@ export class OpenCodePluginManager {
                 ...(await this.localEntries(fs, OPENCODE_PLUGINS_DIR, true)),
                 ...(await this.localEntries(fs, OPENCODE_DISABLED_PLUGINS_DIR, false)),
             ];
-            // 同じ指定子が重複していても 1 行にまとめる（先に現れた有効側を残す）。
-            base.plugins = entries.filter(
-                (entry, index) => entries.findIndex(other => other.id === entry.id) === index
-            );
+            // 同じ指定子が重複していても 1 行にまとめる（先に現れた有効側を残し、同じ状態の指定のあるファイルを集める）。
+            const merged = new Map<string, PluginEntry>();
+            for (const entry of entries) {
+                const current = merged.get(entry.id);
+                if (!current) {
+                    merged.set(entry.id, entry);
+                } else if (entry.definedIn && current.enabled === entry.enabled) {
+                    current.definedIn = [...new Set([...(current.definedIn ?? []), ...entry.definedIn])];
+                }
+            }
+            base.plugins = [...merged.values()];
         } catch (error) {
             base.error = String(error);
         }
@@ -505,7 +657,8 @@ export class OpenCodePluginManager {
         const trimmed = source.trim();
         const fs = this.fsFor(env);
         try {
-            if (isAbsolute(trimmed) && existsSync(trimmed)) return await this.installLocal(fs, trimmed);
+            if (env.kind === 'wsl' && trimmed.startsWith('/')) return await this.installDistroPath(env, fs, trimmed);
+            if (isAbsolute(trimmed) && existsSync(trimmed)) return await this.installLocal(env, fs, trimmed);
             if (isAbsolute(trimmed) || this.isPathTarget(trimmed)) return { ok: false, message: 'not-found' };
             if (trimmed.length === 0 || trimmed.startsWith('-') || /\s/.test(trimmed)) {
                 return { ok: false, message: 'invalid-plugin-source' };
@@ -522,12 +675,7 @@ export class OpenCodePluginManager {
             if (!result.ok) return { ok: false, message: (result.stderr || result.stdout).trim() };
             // 無効化して退避していた同じ指定子は、導入により設定へ戻ったため退避先から外す。
             if (disabled.items.some(item => this.matches(item, trimmed))) {
-                await this.writeDisabled(
-                    fs,
-                    disabled,
-                    disabled.items.filter(item => !this.matches(item, trimmed)),
-                    disabled.positions
-                );
+                await commitConfigChanges(fs, [this.disabledChange(disabled, { remove: trimmed }, disabled.positions)]);
             }
             return { ok: true };
         } catch (error) {
@@ -546,7 +694,7 @@ export class OpenCodePluginManager {
      * - コピーは plugins の隣の一時フォルダーに作ってから置き換え、途中で失敗したときは旧版を残す。
      *   使用中などで既存の導入先を移動できなかったときは move-in-use を返す。
      */
-    private async installLocal(fs: HomeFs, sourcePath: string): Promise<PluginOpResult> {
+    private async installLocal(env: OpenCodeEnvironment, fs: HomeFs, sourcePath: string): Promise<PluginOpResult> {
         const name = basename(sourcePath.replace(/[\\/]+$/, ''));
         if (lstatSync(sourcePath).isSymbolicLink()) return { ok: false, message: 'invalid-plugin-source' };
         const isDirectory = statSync(sourcePath).isDirectory();
@@ -554,14 +702,16 @@ export class OpenCodePluginManager {
         if (isDirectory && !PLUGIN_DIRECTORY_MARKERS.some(marker => readdirSync(sourcePath).includes(marker))) {
             return { ok: false, message: 'invalid-plugin-source' };
         }
-        const pluginsAbs = await fs.resolveRealPath(this.localRel(OPENCODE_PLUGINS_DIR));
-        if (pluginsAbs === null) {
-            // WSL のパスへ到達できない（コマンドモード）場合は、ファイルの内容の書き込みだけで導入する。
-            if (isDirectory) return { ok: false, message: 'unavailable' };
-            await fs.writeText(this.localRel(OPENCODE_PLUGINS_DIR, name), readFileSync(sourcePath, 'utf8'));
-            await this.removeLocal(fs, OPENCODE_DISABLED_PLUGINS_DIR, name);
-            return { ok: true };
+        if (fs.usesDistro) {
+            const overlap = await this.distroSourceOverlap(fs, linuxPathOfUnc(sourcePath, env.distro ?? ''), name);
+            if (overlap) return { ok: false, message: overlap };
+            const files = isDirectory
+                ? collectLocalPluginFiles(sourcePath, name)
+                : [{ relPath: name, bytes: readFileSync(sourcePath), mtimeMs: null }];
+            return this.installFilesInDistro(fs, name, files);
         }
+        const pluginsAbs = await fs.resolveRealPath(this.localRel(OPENCODE_PLUGINS_DIR));
+        if (pluginsAbs === null) throw new Error('The plugins folder has no path');
         mkdirSync(pluginsAbs, { recursive: true });
         const pluginsReal = realpathSync.native(pluginsAbs);
         const target = join(pluginsReal, name);
@@ -625,6 +775,63 @@ export class OpenCodePluginManager {
         return { ok: true };
     }
 
+    /**
+     * distro の中のパスのファイルまたはフォルダーを plugins へコピーする。導入の条件はこの OS のパスからの導入と同じで、
+     * 導入元自体がリンクなら導入せず、フォルダーの中のリンクはコピーしない。本文は distro のスクリプトで受け渡す。
+     */
+    private async installDistroPath(env: OpenCodeEnvironment, fs: HomeFs, sourcePath: string): Promise<PluginOpResult> {
+        const source = sourcePath.replace(/\/+$/, '');
+        const name = posix.basename(source);
+        const [self] = await createCleanupProbe(env, this.detector).listNested(source, 0);
+        if (!self) return { ok: false, message: 'not-found' };
+        if (self.type === 'other') return { ok: false, message: 'invalid-plugin-source' };
+        const isDirectory = self.type === 'dir';
+        if (!isDirectory && !this.isLocalPluginFile(name)) return { ok: false, message: 'invalid-plugin-source' };
+        const items = await fs.distroArchiveItems([{ source, name }]);
+        if (
+            isDirectory &&
+            !PLUGIN_DIRECTORY_MARKERS.some(marker => items.some(item => item.name === `${name}/${marker}`))
+        ) {
+            return { ok: false, message: 'invalid-plugin-source' };
+        }
+        const overlap = await this.distroSourceOverlap(fs, source, name);
+        if (overlap) return { ok: false, message: overlap };
+        const files = items.flatMap((item): StagedFile[] =>
+            item.kind === 'link'
+                ? []
+                : [{ relPath: item.name, bytes: item.kind === 'file' ? (item.bytes as Buffer) : null, mtimeMs: null }]
+        );
+        return this.installFilesInDistro(fs, name, files);
+    }
+
+    /** 取り込みの内容を distro の plugins の name へ置き換え、無効化中の同名分を削除する。 */
+    private async installFilesInDistro(fs: HomeFs, name: string, files: StagedFile[]): Promise<PluginOpResult> {
+        await installFiles(fs, this.localRel(OPENCODE_PLUGINS_DIR), [name], new Set([name]), files, {
+            stagingOutsideDest: true,
+            replaceLinks: true,
+        });
+        if (!(await this.removeLocal(fs, OPENCODE_DISABLED_PLUGINS_DIR, name))) {
+            console.warn(`Failed to remove every file of the disabled copy of ${name}`);
+        }
+        return { ok: true };
+    }
+
+    /** distro の中のパスの導入元と、導入先や plugins との重なりを調べる。重ならないか、distro の中のパスでなければ null。 */
+    private async distroSourceOverlap(
+        fs: HomeFs,
+        source: string | null,
+        name: string
+    ): Promise<'already-exists' | 'source-overlaps' | null> {
+        if (source === null) return null;
+        const target = await fs.displayPath(this.localRel(OPENCODE_PLUGINS_DIR, name));
+        const plugins = await fs.displayPath(this.localRel(OPENCODE_PLUGINS_DIR));
+        if (source === target) return 'already-exists';
+        if (plugins === source || plugins.startsWith(`${source}/`) || source.startsWith(`${target}/`)) {
+            return 'source-overlaps';
+        }
+        return null;
+    }
+
     // ---- 削除・有効化 ----
 
     async uninstall(env: OpenCodeEnvironment, id: string): Promise<PluginOpResult> {
@@ -640,27 +847,16 @@ export class OpenCodePluginManager {
             }
             if (!id.startsWith(CONFIG_ID_PREFIX)) return { ok: false, message: 'invalid-id' };
             const target = id.slice(CONFIG_ID_PREFIX.length);
-            const config = await this.readConfig(fs);
+            const configs = await this.readConfigs(fs);
             const disabled = await this.readDisabled(fs);
             if (!disabled) return { ok: false, message: 'invalid-disabled-file' };
-            const inConfig = config.items.some(item => this.matches(item, target));
+            const definers = configs.filter(state => state.items.some(item => this.matches(item, target)));
             const inDisabled = disabled.items.some(item => this.matches(item, target));
-            if (!inConfig && !inDisabled) return { ok: false, message: 'not-found' };
-            if (inConfig) {
-                await this.writeConfig(
-                    fs,
-                    config,
-                    config.items.filter(item => !this.matches(item, target))
-                );
-            }
-            if (inDisabled) {
-                await this.writeDisabled(
-                    fs,
-                    disabled,
-                    disabled.items.filter(item => !this.matches(item, target)),
-                    disabled.positions
-                );
-            }
+            if (definers.length === 0 && !inDisabled) return { ok: false, message: 'not-found' };
+            await commitConfigChanges(fs, [
+                ...definers.map(state => this.removalChange(state, target)),
+                ...(inDisabled ? [this.disabledChange(disabled, { remove: target }, disabled.positions)] : []),
+            ]);
             return { ok: true };
         } catch (error) {
             return { ok: false, message: String(error) };
@@ -674,37 +870,105 @@ export class OpenCodePluginManager {
             if (id.startsWith(LOCAL_ID_PREFIX)) return await this.setLocalEnabled(fs, id, enabled);
             if (!id.startsWith(CONFIG_ID_PREFIX)) return { ok: false, message: 'invalid-id' };
             const target = id.slice(CONFIG_ID_PREFIX.length);
-            const config = await this.readConfig(fs);
+            const configs = await this.readConfigs(fs);
             const disabled = await this.readDisabled(fs);
             if (!disabled) return { ok: false, message: 'invalid-disabled-file' };
-            const from = enabled ? disabled : config;
-            const moving = from.items.filter(item => this.matches(item, target));
-            if (moving.length === 0) {
-                const alreadyThere = (enabled ? config : disabled).items.some(item => this.matches(item, target));
-                return alreadyThere ? { ok: true } : { ok: false, message: 'not-found' };
+            const defaultRel = await resolveOpenCodeConfigRel(fs);
+            const inConfig = configs.some(state => state.items.some(item => this.matches(item, target)));
+            const inDisabled = disabled.items.some(item => this.matches(item, target));
+            if (enabled ? !inDisabled : !inConfig) {
+                return (enabled ? inConfig : inDisabled) ? { ok: true } : { ok: false, message: 'not-found' };
             }
-            const remaining = from.items.filter(item => !this.matches(item, target));
             // 他の要素（有効化の指示を含む）の順序は変えない。無効化ではその時点の並びを記録し、有効化でそれに沿って戻す。
-            if (enabled) {
-                const restored = this.insertByOrder(config.items, moving, disabled.positions[target], target);
-                await this.writeConfig(fs, config, restored);
-                await this.writeDisabled(fs, disabled, remaining, disabled.positions);
-            } else {
-                await this.writeDisabled(fs, disabled, [...disabled.items, ...moving], {
-                    ...disabled.positions,
-                    [target]: this.mergedOrder(config.items, disabled),
-                });
-                await this.writeConfig(fs, config, remaining);
-            }
+            // 移動先のファイルを先に書き込むので、途中で失敗しても要素は消えない。
+            const changes = enabled
+                ? this.enableChanges(configs, disabled, target, defaultRel)
+                : this.disableChanges(configs, disabled, target, defaultRel);
+            await commitConfigChanges(fs, changes);
             return { ok: true };
         } catch (error) {
             return { ok: false, message: String(error) };
         }
     }
 
+    /** 指定のあるすべてのファイルから要素を除き、退避ファイルへ移す変更を返す。 */
+    private disableChanges(
+        configs: JsoncState[],
+        disabled: DisabledState,
+        target: string,
+        defaultRel: string
+    ): ConfigChange[] {
+        const matches = (item: unknown) => this.matches(item, target);
+        const definers = configs.filter(state => state.items.some(matches));
+        const origins: PluginOrigin[] = definers.map(state => ({
+            file: fileNameOf(state.file.rel),
+            items: state.items.filter(matches),
+            order: this.mergedOrder(state, disabled, defaultRel),
+        }));
+        const previous = this.originsOf(disabled.positions[target]);
+        return [
+            this.disabledChange(
+                disabled,
+                { append: definers.flatMap(state => this.elementsOf(state, target)) },
+                {
+                    ...disabled.positions,
+                    [target]: { [ORIGINS_KEY]: [...previous, ...origins] },
+                }
+            ),
+            ...definers.map(state => this.removalChange(state, target)),
+        ];
+    }
+
+    /**
+     * 退避中の要素を記録された元のファイルへ戻す変更を返す。記録のない要素は defaultRel のファイルへ戻す。
+     * 戻す要素は退避ファイルの原文のまま挿入し、戻す先のファイルの他の要素とコメントの原文は変えない。
+     */
+    private enableChanges(
+        configs: JsoncState[],
+        disabled: DisabledState,
+        target: string,
+        defaultRel: string
+    ): ConfigChange[] {
+        const pool = this.elementsOf(disabled, target);
+        const record = disabled.positions[target];
+        const restored = new Map<JsoncState, { items: unknown[]; text: string }>();
+        const restore = (rel: string, elements: PluginElement[], order: unknown) => {
+            const state = configs.find(item => item.file.rel === rel) as JsoncState;
+            this.assertEditable(state);
+            const current = restored.get(state) ?? { items: state.items, text: state.raw };
+            const values = elements.map(element => element.value);
+            const points = this.insertionPoints(current.items, values, order, target);
+            restored.set(state, {
+                items: this.insertByOrder(current.items, values, order, target),
+                text: guardEdit(state.file.rel, () =>
+                    insertJsoncArrayElements(
+                        current.text,
+                        PLUGINS_KEY,
+                        elements.map((element, m) => ({ index: points[m], rawText: element.raw }))
+                    )
+                ),
+            });
+        };
+        for (const origin of this.originsOf(record)) {
+            const elements = origin.items.flatMap(item => {
+                const index = pool.findIndex(candidate => deepEqualLoose(candidate.value, item));
+                return index === -1 ? [] : pool.splice(index, 1);
+            });
+            if (elements.length > 0) restore(candidateRelOf(origin.file) as string, elements, origin.order);
+        }
+        if (pool.length > 0) restore(defaultRel, pool, Array.isArray(record) ? record : undefined);
+        return [
+            ...[...restored].map(([state, { text }]) => ({
+                file: state.file,
+                next: withFinalEol(text, state.file.eol),
+            })),
+            this.disabledChange(disabled, { remove: target }, disabled.positions),
+        ];
+    }
+
     /**
      * ローカルプラグインを plugins と plugins-disabled の間で移動する。
-     * 使用中などで移動できなかったときは move-in-use を返し、移動元を残す。
+     * 使用中などで移動できなかったときは move-in-use を返し、移動元を残す。ファイルはバイト列のまま移す。
      */
     private async setLocalEnabled(fs: HomeFs, id: string, enabled: boolean): Promise<PluginOpResult> {
         const local = this.parseLocalId(id);
@@ -715,27 +979,31 @@ export class OpenCodePluginManager {
         const to = this.localRel(toDir, local.name);
         if (await fs.exists(to)) return { ok: false, message: 'already-exists' };
         if (await this.isLocalFolder(fs, local.dir, local.name)) {
-            const fromAbs = await fs.resolveRealPath(from);
-            const toAbs = await fs.resolveRealPath(to);
-            if (fromAbs === null || toAbs === null) return { ok: false, message: 'unavailable' };
-            mkdirSync(dirname(toAbs), { recursive: true });
-            try {
-                renameSync(fromAbs, toAbs);
-            } catch (error) {
-                if (isLockedError(error)) return { ok: false, message: 'move-in-use' };
-                throw error;
-            }
-            return { ok: true };
+            const moved = await fs.moveEntry(from, to);
+            if (moved.kind === 'ok') return { ok: true };
+            if (moved.kind === 'exists') return { ok: false, message: 'already-exists' };
+            if (moved.kind === 'missing') return { ok: false, message: 'not-found' };
+            if (LOCKED_CODES.includes(moved.code)) return { ok: false, message: 'move-in-use' };
+            throw fileError('write-failed', to, moved.code);
         }
-        const content = await fs.readText(from);
-        if (content === null) return { ok: false, message: 'not-found' };
-        await fs.writeText(to, content);
-        try {
-            await fs.deleteFile(from);
-        } catch (error) {
-            await fs.deleteFile(to);
-            if (isLockedError(error)) return { ok: false, message: 'move-in-use' };
-            throw error;
+        const read = await fs.readTextStrict(from);
+        if (read.kind === 'missing') return { ok: false, message: 'not-found' };
+        if (read.kind === 'dangling-link') {
+            throw fileError('read-failed', from, formatConfigDetail({ code: 'dangling-link' }));
+        }
+        if (read.kind === 'error') throw fileError('read-failed', from, read.code);
+        const written = await fs.writeTextAtomic(to, read.bytes, { expectedRevision: MISSING_REVISION });
+        if (written.kind === 'conflict') return { ok: false, message: 'already-exists' };
+        if (written.kind === 'dangling-link') {
+            throw fileError('write-failed', to, formatConfigDetail({ code: 'dangling-link' }));
+        }
+        if (written.kind === 'error') throw fileError('write-failed', to, written.code);
+        const removed = await fs.deleteStrict(from, read.revision);
+        if (removed.kind === 'conflict' || removed.kind === 'error') {
+            await fs.deleteStrict(to, written.revision);
+            if (removed.kind === 'conflict') throw fileError('conflict', from);
+            if (LOCKED_CODES.includes(removed.code)) return { ok: false, message: 'move-in-use' };
+            throw fileError('write-failed', from, removed.code);
         }
         return { ok: true };
     }

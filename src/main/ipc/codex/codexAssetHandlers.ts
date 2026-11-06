@@ -11,8 +11,8 @@ export function registerCodexAssetHandlers(
     manager: CodexAssetManager,
     getMainWindow: () => BrowserWindow | null
 ): void {
-    ipcMain.handle(CODEX_ASSET_CHANNELS.GET_ENVIRONMENTS, () => {
-        return manager.getEnvironments();
+    ipcMain.handle(CODEX_ASSET_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) => {
+        return manager.getEnvironments(refresh === true);
     });
 
     ipcMain.handle(CODEX_ASSET_CHANNELS.LIST, (_, env: CodexEnvironment, kind: AssetKind) => {

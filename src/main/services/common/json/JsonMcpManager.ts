@@ -4,12 +4,21 @@ import type {
     MCPServerInfo,
     MCPServers,
     McpEnvInfo,
+    McpFileProblem,
     OSType,
 } from '../../../../shared/agents/types';
-import { deleteTopLevelJsoncProperty, parseJsoncObject, setTopLevelJsoncProperty } from '../../../utils/jsoncEdit';
+import { mcpDisplayConfig } from '../../../utils/mcpDisplayConfig';
+import { commitConfigChanges, existsOrUnknown, problemOf } from '../fs/configFile';
 import { HomeFs } from '../wsl/HomeFs';
 import { WslDetector } from '../wsl/WslDetector';
-import { stripBom } from './stripBom';
+import {
+    jsonServerMap,
+    moveJsonEntry,
+    readJsoncFile,
+    reorderJsonEntries,
+    sidecarChange,
+    type JsonFileState,
+} from './jsonConfigFile';
 
 interface Options {
     configRel: string;
@@ -22,8 +31,9 @@ interface Options {
 
 /**
  * JSON / JSONC のトップレベルオブジェクトにある MCP 定義を管理する共通実装。
- * 他 agent（Claude / Codex / Grok）と同じく、無効化はフラグ書き換えではなく
- * エントリごと disabled ファイルへ移動する方式で行う。
+ * 無効化はフラグの書き換えではなく、エントリごと disabled ファイルへ移す。
+ * 編集は対象のエントリの文字列だけに行い、コメント、整形、他のキーを保つ。
+ * 読み取りと解釈に失敗したら何も書かない。一覧は読めなかったファイルを problems で返す。
  */
 export class JsonMcpManager {
     constructor(
@@ -57,129 +67,82 @@ export class JsonMcpManager {
             env,
             label,
             configPath: await fs.displayPath(this.options.configRel),
-            configExists: await fs.exists(this.options.configRel),
+            configExists: await existsOrUnknown(fs, this.options.configRel),
             disabledConfigPath: await fs.displayPath(this.options.disabledRel),
         };
     }
 
-    private async readConfig(env: AgentEnvironment): Promise<{ fs: HomeFs; raw: string }> {
-        const fs = this.fsFor(env);
-        // ファイルなし（null）だけでなく空・空白のみのファイルも空オブジェクト扱いにする
-        // （JSON.parse('') の SyntaxError を防ぐ）。先頭の BOM は除く。
-        const text = stripBom(await fs.readText(this.options.configRel));
-        const raw = text !== null && text.trim().length > 0 ? text : '{}\n';
-        return { fs, raw };
-    }
-
-    private serverMap(root: unknown): Record<string, MCPServerConfig> {
-        if (!root || typeof root !== 'object' || Array.isArray(root)) return {};
-        const value = (root as Record<string, unknown>)[this.options.rootKey];
-        if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-        const result: Record<string, MCPServerConfig> = {};
-        for (const [name, config] of Object.entries(value)) {
-            if (config && typeof config === 'object' && !Array.isArray(config)) {
-                result[name] = config as MCPServerConfig;
-            }
-        }
-        return result;
-    }
-
-    private async readDisabledMap(fs: HomeFs): Promise<Record<string, MCPServerConfig>> {
-        const root = await fs.readJson<Record<string, unknown>>(this.options.disabledRel);
-        return this.serverMap(root);
-    }
-
     private infos(servers: Record<string, MCPServerConfig>, enabled: boolean): MCPServerInfo[] {
-        return Object.entries(servers).map(([name, config]) => ({ name, config, enabled }));
+        return Object.entries(servers).map(([name, config]) => ({ name, config: mcpDisplayConfig(config), enabled }));
+    }
+
+    private entryPath(name: string): string[] {
+        return [this.options.rootKey, name];
     }
 
     async getMCPServers(env: AgentEnvironment): Promise<MCPServers> {
-        try {
-            const { fs, raw } = await this.readConfig(env);
-            return {
-                enabled: this.infos(this.serverMap(parseJsoncObject(raw)), true),
-                disabled: this.infos(await this.readDisabledMap(fs), false),
-            };
-        } catch (error) {
-            console.error(`Failed to read MCP config (${JSON.stringify(env)}):`, error);
-            return { enabled: [], disabled: [] };
-        }
+        const fs = this.fsFor(env);
+        const problems: McpFileProblem[] = [];
+        const load = async (rel: string, enabled: boolean): Promise<MCPServerInfo[]> => {
+            try {
+                const { root } = await readJsoncFile(fs, rel);
+                return this.infos(jsonServerMap(root, [this.options.rootKey]), enabled);
+            } catch (error) {
+                problems.push(problemOf(error, rel));
+                return [];
+            }
+        };
+        const enabled = await load(this.options.configRel, true);
+        const disabled = await load(this.options.disabledRel, false);
+        return { enabled, disabled, ...(problems.length > 0 ? { problems } : {}) };
     }
 
-    /** 設定ファイルの rootKey 配下を丸ごと書き換える（JSONC のコメント・他キーは保持）。 */
-    private async writeConfigServers(fs: HomeFs, raw: string, servers: Record<string, MCPServerConfig>): Promise<void> {
-        const next =
-            Object.keys(servers).length === 0
-                ? deleteTopLevelJsoncProperty(raw, this.options.rootKey)
-                : setTopLevelJsoncProperty(raw, this.options.rootKey, servers);
-        await fs.writeText(this.options.configRel, next.endsWith('\n') ? next : `${next}\n`);
-    }
-
-    /** disabled ファイルを書き換える（空になったらファイルごと削除）。 */
-    private async writeDisabledServers(fs: HomeFs, servers: Record<string, MCPServerConfig>): Promise<void> {
-        if (Object.keys(servers).length === 0) {
-            await fs.deleteFile(this.options.disabledRel);
-        } else {
-            await fs.writeJson(this.options.disabledRel, { [this.options.rootKey]: servers });
-        }
+    private async readBoth(fs: HomeFs): Promise<{ config: JsonFileState; disabled: JsonFileState }> {
+        return {
+            config: await readJsoncFile(fs, this.options.configRel),
+            disabled: await readJsoncFile(fs, this.options.disabledRel),
+        };
     }
 
     /** MCP サーバーを無効化（設定ファイル → disabled ファイルへエントリ移動）。 */
     async disableMCPServer(env: AgentEnvironment, serverName: string): Promise<MCPServers> {
-        const { fs, raw } = await this.readConfig(env);
-        const servers = this.serverMap(parseJsoncObject(raw));
-        const target = servers[serverName];
-        if (!target) throw new Error(`Server "${serverName}" not found in enabled config`);
-        delete servers[serverName];
-        await this.writeConfigServers(fs, raw, servers);
-
-        const disabled = await this.readDisabledMap(fs);
-        disabled[serverName] = target;
-        await this.writeDisabledServers(fs, disabled);
-        return this.getMCPServers(env);
-    }
-
-    /** MCP サーバーを有効化（disabled ファイル → 設定ファイルへエントリ移動）。 */
-    async enableMCPServer(env: AgentEnvironment, serverName: string): Promise<MCPServers> {
-        const { fs, raw } = await this.readConfig(env);
-        const disabled = await this.readDisabledMap(fs);
-        const target = disabled[serverName];
-        if (!target) throw new Error(`Server "${serverName}" not found in disabled config`);
-        delete disabled[serverName];
-
-        const servers = this.serverMap(parseJsoncObject(raw));
-        servers[serverName] = target;
-        await this.writeConfigServers(fs, raw, servers);
-        await this.writeDisabledServers(fs, disabled);
-        return this.getMCPServers(env);
-    }
-
-    /** names の順にエントリを並べ替える（names にないものは末尾に元の順で残す）。 */
-    private orderByNames(servers: Record<string, MCPServerConfig>, names: string[]): Record<string, MCPServerConfig> {
-        const remaining = new Map(Object.entries(servers));
-        const ordered: [string, MCPServerConfig][] = [];
-        for (const name of names) {
-            const config = remaining.get(name);
-            if (config) {
-                ordered.push([name, config]);
-                remaining.delete(name);
-            }
-        }
-        ordered.push(...remaining.entries());
-        return Object.fromEntries(ordered);
-    }
-
-    async reorderMCPServers(env: AgentEnvironment, serverNames: string[]): Promise<MCPServers> {
-        const { fs, raw } = await this.readConfig(env);
-        const servers = this.serverMap(parseJsoncObject(raw));
-        await this.writeConfigServers(fs, raw, this.orderByNames(servers, serverNames));
-        return this.getMCPServers(env);
-    }
-
-    async reorderDisabledMCPServers(env: AgentEnvironment, serverNames: string[]): Promise<MCPServers> {
         const fs = this.fsFor(env);
-        const disabled = await this.readDisabledMap(fs);
-        await this.writeDisabledServers(fs, this.orderByNames(disabled, serverNames));
+        const { config, disabled } = await this.readBoth(fs);
+        const moved = moveJsonEntry(config, disabled, this.entryPath(serverName), { cascade: true });
+        await commitConfigChanges(fs, [
+            { file: disabled.file, next: moved.target },
+            { file: config.file, next: moved.source },
+        ]);
         return this.getMCPServers(env);
+    }
+
+    /** MCP サーバーを有効化（disabled ファイル → 設定ファイルへエントリ移動）。disabled ファイルが空になれば削除する。 */
+    async enableMCPServer(env: AgentEnvironment, serverName: string): Promise<MCPServers> {
+        const fs = this.fsFor(env);
+        const { config, disabled } = await this.readBoth(fs);
+        const moved = moveJsonEntry(disabled, config, this.entryPath(serverName), { cascade: true });
+        await commitConfigChanges(fs, [
+            { file: config.file, next: moved.target },
+            sidecarChange(disabled.file, moved.source),
+        ]);
+        return this.getMCPServers(env);
+    }
+
+    private async reorder(env: AgentEnvironment, rel: string, serverNames: string[]): Promise<MCPServers> {
+        const fs = this.fsFor(env);
+        const state = await readJsoncFile(fs, rel);
+        const next = reorderJsonEntries(state, [this.options.rootKey], serverNames);
+        await commitConfigChanges(fs, [{ file: state.file, next }]);
+        return this.getMCPServers(env);
+    }
+
+    /** names の順にエントリを並べ替える（names にないものは末尾に元の順で残す）。対象がなければ何も書かない。 */
+    reorderMCPServers(env: AgentEnvironment, serverNames: string[]): Promise<MCPServers> {
+        return this.reorder(env, this.options.configRel, serverNames);
+    }
+
+    /** names の順に退避中のエントリを並べ替える。対象がなければ何も書かない。 */
+    reorderDisabledMCPServers(env: AgentEnvironment, serverNames: string[]): Promise<MCPServers> {
+        return this.reorder(env, this.options.disabledRel, serverNames);
     }
 }

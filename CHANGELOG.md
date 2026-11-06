@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-06
+
+### Added
+
+- Settings screens have tabs for hooks, status lines, external commands, permissions, instructions, output styles, rules, and workflows, for the items each CLI supports.
+- The Claude Code, Grok, and OpenCode Agent / Skill screens have a Commands tab.
+- Hooks can be added, edited, and deleted one at a time from a list.
+- Files in these tabs can be created, edited, deleted, and searched, and downloaded or uploaded as ZIP files.
+- Cleanup can delete data by workspace path for every agent, with new rows for project records, memory, approvals, and trusted folders. Codex sessions can be deleted by date or by project.
+- Agent and skill lists show symbolic links, nested skills, and more of the folders each CLI reads.
+- Editors ask before discarding unsaved text.
+- A notice names any commands the app needs that are missing from a WSL distribution.
+- Settings added per agent: Claude +4, Codex +75, Agy +9, Grok +12, OpenCode +9.
+
+### Changed
+
+- Settings labels, descriptions, choices, and defaults follow the latest official references.
+- Deleting a Claude Code project keeps its memory, which has its own Cleanup row.
+- Cleanup shows Claude Code projects and Grok sessions by workspace path.
+- Settings rows for items with their own tab link to that tab.
+- Screen descriptions are shorter.
+- Refresh keeps the selected tab, search text, and unsaved edits.
+- Screens fit the window at its minimum size.
+- Button and tab labels are no longer shown in capitals, long names wrap instead of being cut off, and scrollbars follow the dark theme.
+- Settings file errors are shown in the app's language, with the line and position.
+
+### Removed
+
+- Settings removed per agent: Codex −4, Agy −1, Grok −10, OpenCode −1.
+
+### Fixed
+
+- Files that could not be read are no longer overwritten, and a failed save leaves the file as it was.
+- Saving no longer overwrites changes another program made after you opened the file.
+- Editing keeps a file's byte order mark and line endings.
+- Valid TOML is no longer misread, and very large integers no longer break the Settings screen.
+- A broken settings file shows an error instead of every item as unset.
+- Moving between agents through the title bar always shows the new agent's data.
+- Moving or disabling an MCP server no longer damages the configuration file, and Codex, Grok, and OpenCode list all of their MCP servers.
+- Cleanup reports the items it did not delete instead of reporting success.
+- Deleting Codex sessions and Agy conversations also removes their related data.
+- ZIP uploads ignore system files such as `.DS_Store`, and upload errors state the reason.
+- All features work in WSL even when Windows cannot reach the distribution's files, and large configuration files can be read and saved.
+- The burger menu submenu no longer stays on screen after the menu closes.
+- Clearing a command field closes its suggestion list.
+
 ## [0.6.4] - 2026-10-27
 
 ### Added

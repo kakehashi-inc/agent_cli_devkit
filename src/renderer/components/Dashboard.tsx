@@ -64,7 +64,7 @@ export const Dashboard: React.FC = () => {
                 >
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                         <Typography variant='h6' component='h2'>
-                            {module.dashboardLabel ?? module.label}
+                            {t(module.dashboardLabelKey ?? module.labelKey)}
                         </Typography>
                     </AccordionSummary>
                     <AccordionDetails sx={{ pt: 0 }}>

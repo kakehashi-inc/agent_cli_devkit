@@ -1,5 +1,3 @@
-import type { AssetKind } from '../../../../shared/agents/types';
-
 // 既定ファイル名に含めるエントリ名の最大長（長すぎる名前でパスが伸びるのを防ぐ）。
 const MAX_ENTRY_NAME_LENGTH = 60;
 
@@ -10,7 +8,7 @@ const INVALID_FILENAME_CHARS = /[<>:"/\\|?*]/g;
  * ダウンロード ZIP の既定ファイル名を組み立てる。
  *
  * 形式は `<kind>_<agent>[-<distro>][_<エントリ名>].zip`。
- * 種別（skills / agents）を先頭に置き、ファイル一覧で種別ごとにまとまるようにする。
+ * 種別（skills / agents やファイル一覧の ID）を先頭に置き、ファイル一覧で種別ごとにまとまるようにする。
  * エントリ名は選択が 1 件のときだけ末尾に付ける。
  *
  * 例:
@@ -19,7 +17,7 @@ const INVALID_FILENAME_CHARS = /[<>:"/\\|?*]/g;
  * - agents_grok-Ubuntu-24.04_agent-a.zip  （WSL のエージェントを 1 件選択）
  */
 export function assetArchiveFileName(params: {
-    kind: AssetKind;
+    kind: string;
     agentId: string;
     distro?: string;
     relPaths: string[];

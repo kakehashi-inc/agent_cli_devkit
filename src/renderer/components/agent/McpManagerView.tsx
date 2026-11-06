@@ -23,9 +23,12 @@ import {
     DragIndicator as DragIcon,
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import type { MCPServerInfo, McpEnvInfo } from '@shared/agents/types';
+import type { McpFileProblem, MCPServerInfo, MCPServers, McpEnvInfo } from '@shared/agents/types';
+import { operationErrorText } from '../../utils/configFileFailure';
 import { envId } from '../../utils/format';
+import { McpFileProblems, McpServerNotes } from './McpServerParts';
 import type { McpApi } from './types';
+import { useAgentEnvironments } from './useAgentEnvironments';
 
 interface Props {
     agentId: string;
@@ -37,6 +40,8 @@ interface SectionProps {
     api: McpApi;
     info: McpEnvInfo;
     onNotify(message: string, severity: 'success' | 'error'): void;
+    // 更新のたびに変わる値。変わると一覧を読み直す。
+    reloadNonce: number;
 }
 
 /**
@@ -44,20 +49,25 @@ interface SectionProps {
  * 他 agent（Claude / Codex / Grok）と同じく、有効/無効の 2 テーブル、
  * ドラッグ並べ替え、有効化/無効化トグルを提供する。
  */
-const McpSection: React.FC<SectionProps> = ({ agentId, api, info, onNotify }) => {
+const McpSection: React.FC<SectionProps> = ({ agentId, api, info, onNotify, reloadNonce }) => {
     const { t } = useTranslation();
     const { env } = info;
     const [enabledServers, setEnabledServers] = useState<MCPServerInfo[]>([]);
     const [disabledServers, setDisabledServers] = useState<MCPServerInfo[]>([]);
+    const [problems, setProblems] = useState<McpFileProblem[]>([]);
     const [loading, setLoading] = useState(true);
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
     const [draggedDisabledIndex, setDraggedDisabledIndex] = useState<number | null>(null);
 
+    const applyServers = (servers: MCPServers) => {
+        setEnabledServers(servers.enabled);
+        setDisabledServers(servers.disabled);
+        setProblems(servers.problems ?? []);
+    };
+
     const loadData = async () => {
         try {
-            const servers = await api.getMCPServers(env);
-            setEnabledServers(servers.enabled);
-            setDisabledServers(servers.disabled);
+            applyServers(await api.getMCPServers(env));
         } catch (error) {
             console.error('Failed to load MCP servers:', error);
         } finally {
@@ -68,27 +78,25 @@ const McpSection: React.FC<SectionProps> = ({ agentId, api, info, onNotify }) =>
     useEffect(() => {
         loadData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [info.configPath]);
+    }, [api, info.configPath, reloadNonce]);
 
     const handleDisable = async (serverName: string) => {
         try {
-            const result = await api.disableMCPServer(env, serverName);
-            setEnabledServers(result.enabled);
-            setDisabledServers(result.disabled);
+            applyServers(await api.disableMCPServer(env, serverName));
             onNotify(t('common.success'), 'success');
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : t('common.error'), 'error');
+            onNotify(operationErrorText(t, error), 'error');
+            await loadData();
         }
     };
 
     const handleEnable = async (serverName: string) => {
         try {
-            const result = await api.enableMCPServer(env, serverName);
-            setEnabledServers(result.enabled);
-            setDisabledServers(result.disabled);
+            applyServers(await api.enableMCPServer(env, serverName));
             onNotify(t('common.success'), 'success');
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : t('common.error'), 'error');
+            onNotify(operationErrorText(t, error), 'error');
+            await loadData();
         }
     };
 
@@ -109,10 +117,10 @@ const McpSection: React.FC<SectionProps> = ({ agentId, api, info, onNotify }) =>
         if (draggedIndex === null) return;
         try {
             const names = enabledServers.map(s => s.name);
-            await api.reorderMCPServers(env, names);
+            applyServers(await api.reorderMCPServers(env, names));
             onNotify(t('common.success'), 'success');
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : t('common.error'), 'error');
+            onNotify(operationErrorText(t, error), 'error');
             await loadData();
         } finally {
             setDraggedIndex(null);
@@ -136,10 +144,10 @@ const McpSection: React.FC<SectionProps> = ({ agentId, api, info, onNotify }) =>
         if (draggedDisabledIndex === null) return;
         try {
             const names = disabledServers.map(s => s.name);
-            await api.reorderDisabledMCPServers(env, names);
+            applyServers(await api.reorderDisabledMCPServers(env, names));
             onNotify(t('common.success'), 'success');
         } catch (error) {
-            onNotify(error instanceof Error ? error.message : t('common.error'), 'error');
+            onNotify(operationErrorText(t, error), 'error');
             await loadData();
         } finally {
             setDraggedDisabledIndex(null);
@@ -201,6 +209,7 @@ const McpSection: React.FC<SectionProps> = ({ agentId, api, info, onNotify }) =>
                                 <Typography variant='body2' sx={{ fontWeight: 'medium', wordBreak: 'break-all' }}>
                                     {server.name}
                                 </Typography>
+                                <McpServerNotes server={server} />
                             </TableCell>
                             <TableCell>
                                 {variant === 'enabled' ? (
@@ -252,6 +261,8 @@ const McpSection: React.FC<SectionProps> = ({ agentId, api, info, onNotify }) =>
                     {t(`${agentId}.mcp.disabledConfigPath`)}: {info.disabledConfigPath}
                 </Typography>
             </Paper>
+
+            <McpFileProblems problems={problems} />
 
             {loading ? (
                 <Typography sx={{ px: 1 }}>{t('common.loading')}</Typography>
@@ -312,30 +323,17 @@ const McpSection: React.FC<SectionProps> = ({ agentId, api, info, onNotify }) =>
 
 export const McpManagerView: React.FC<Props> = ({ agentId, api }) => {
     const { t } = useTranslation();
-    const [environments, setEnvironments] = useState<McpEnvInfo[]>([]);
-    const [loading, setLoading] = useState(true);
+    // 更新中は環境セクションを表示したまま読み直す。
+    const { environments, loading, refreshing, reloadNonce, load } = useAgentEnvironments<McpEnvInfo>(
+        agentId,
+        api,
+        'Failed to load MCP environments:'
+    );
     const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
         open: false,
         message: '',
         severity: 'success',
     });
-
-    const load = async (refresh = false) => {
-        setLoading(true);
-        try {
-            setEnvironments(await api.getEnvironments(refresh));
-        } catch (error) {
-            console.error('Failed to load MCP environments:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        void load();
-        // api is a stable preload bridge.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     const notify = (message: string, severity: 'success' | 'error') => {
         setSnackbar({ open: true, message, severity });
@@ -361,8 +359,8 @@ export const McpManagerView: React.FC<Props> = ({ agentId, api }) => {
                 <Button
                     variant='outlined'
                     startIcon={<RefreshIcon />}
+                    disabled={refreshing}
                     onClick={() => void load(true)}
-                    sx={{ textTransform: 'none' }}
                 >
                     {t('common.refresh')}
                 </Button>
@@ -374,11 +372,11 @@ export const McpManagerView: React.FC<Props> = ({ agentId, api }) => {
                 </Alert>
             )}
             {nativeEnvs.map(info => (
-                <Box key={envId(info.env)}>
+                <Box key={`${agentId}:${envId(info.env)}`}>
                     <Typography variant='h6' sx={{ mb: 1 }}>
                         {info.label}
                     </Typography>
-                    <McpSection agentId={agentId} api={api} info={info} onNotify={notify} />
+                    <McpSection agentId={agentId} api={api} info={info} onNotify={notify} reloadNonce={reloadNonce} />
                 </Box>
             ))}
 
@@ -389,11 +387,17 @@ export const McpManagerView: React.FC<Props> = ({ agentId, api }) => {
                         WSL
                     </Typography>
                     {wslEnvs.map(info => (
-                        <Box key={envId(info.env)}>
+                        <Box key={`${agentId}:${envId(info.env)}`}>
                             <Typography variant='h6' sx={{ mb: 1 }}>
                                 {t(`${agentId}.mcp.wslSection`, { distro: info.label })}
                             </Typography>
-                            <McpSection agentId={agentId} api={api} info={info} onNotify={notify} />
+                            <McpSection
+                                agentId={agentId}
+                                api={api}
+                                info={info}
+                                onNotify={notify}
+                                reloadNonce={reloadNonce}
+                            />
                         </Box>
                     ))}
                 </>

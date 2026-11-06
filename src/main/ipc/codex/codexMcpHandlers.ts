@@ -4,8 +4,8 @@ import { CodexEnvironment } from '../../../shared/agents/codex/types';
 import { CodexMcpManager } from '../../services/codex/CodexMcpManager';
 
 export function registerCodexMcpHandlers(manager: CodexMcpManager): void {
-    ipcMain.handle(CODEX_MCP_CHANNELS.GET_ENVIRONMENTS, () => {
-        return manager.getEnvironments();
+    ipcMain.handle(CODEX_MCP_CHANNELS.GET_ENVIRONMENTS, (_, refresh: unknown) => {
+        return manager.getEnvironments(refresh === true);
     });
 
     ipcMain.handle(CODEX_MCP_CHANNELS.GET_MCP_SERVERS, (_, env: CodexEnvironment) => {

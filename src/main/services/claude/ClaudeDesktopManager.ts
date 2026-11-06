@@ -1,17 +1,39 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
-import { ClaudeDesktopConfig, ClaudeDesktopInfo, MCPServerInfo, OSType } from '../../../shared/agents/claude/types';
+import {
+    ClaudeDesktopInfo,
+    MCPServerInfo,
+    MCPServers,
+    McpFileProblem,
+    OSType,
+} from '../../../shared/agents/claude/types';
 import {
     CLAUDE_CONFIG_PATHS,
     CLAUDE_CONFIG_FILENAME,
     CLAUDE_CONFIG_DISABLED_FILENAME,
     getClaudeExecutablePaths,
 } from '../../../shared/agents/claude/constants';
+import { mcpDisplayConfig } from '../../utils/mcpDisplayConfig';
+import { absolutePathStore, commitConfigChanges, problemOf } from '../common/fs/configFile';
+import {
+    jsonServerMap,
+    moveJsonEntry,
+    readStrictJsonFile,
+    reorderJsonEntries,
+    sidecarChange,
+} from '../common/json/jsonConfigFile';
 
 const execAsync = promisify(exec);
 
+const MCP_SERVERS_KEY = 'mcpServers';
+
+/**
+ * Claude Desktop の MCP サーバーの設定ファイルを管理する。
+ * 編集は mcpServers の該当エントリの文字列だけに行い、他のキーと整形を保つ。
+ * 未作成のファイルだけを空のオブジェクトとして扱い、読み取りと解釈に失敗したら何も書かない。
+ */
 export class ClaudeDesktopManager {
     private platform: OSType;
     private configDir: string;
@@ -47,174 +69,74 @@ export class ClaudeDesktopManager {
     }
 
     /**
-     * 設定ファイルを読み込み
+     * MCPサーバーのリストを取得。環境変数などの値は含めず、一覧に出す項目だけを返す。読めなかったファイルは problems に入れる。
      */
-    private readConfig(path: string): ClaudeDesktopConfig | null {
-        if (!existsSync(path)) {
-            return null;
-        }
-
-        try {
-            const content = readFileSync(path, 'utf-8');
-            return JSON.parse(content) as ClaudeDesktopConfig;
-        } catch (error) {
-            console.error(`Failed to read config from ${path}:`, error);
-            return null;
-        }
+    async getMCPServers(): Promise<MCPServers> {
+        const problems: McpFileProblem[] = [];
+        const load = async (path: string, enabled: boolean): Promise<MCPServerInfo[]> => {
+            try {
+                const { root } = await readStrictJsonFile(absolutePathStore, path);
+                return Object.entries(jsonServerMap(root, [MCP_SERVERS_KEY])).map(([name, config]) => ({
+                    name,
+                    config: mcpDisplayConfig(config),
+                    enabled,
+                }));
+            } catch (error) {
+                problems.push(problemOf(error, path));
+                return [];
+            }
+        };
+        const enabled = await load(this.configPath, true);
+        const disabled = await load(this.disabledConfigPath, false);
+        return { enabled, disabled, ...(problems.length > 0 ? { problems } : {}) };
     }
 
     /**
-     * 設定ファイルに書き込み
+     * MCPサーバーを無効化（移動先を先に書き込む。有効設定の mcpServers は空になっても残す）
      */
-    private writeConfig(path: string, config: ClaudeDesktopConfig): void {
-        const content = JSON.stringify(config, null, 2);
-        writeFileSync(path, content, 'utf-8');
+    async disableMCPServer(serverName: string): Promise<void> {
+        const config = await readStrictJsonFile(absolutePathStore, this.configPath);
+        const disabled = await readStrictJsonFile(absolutePathStore, this.disabledConfigPath);
+        const moved = moveJsonEntry(config, disabled, [MCP_SERVERS_KEY, serverName], { cascade: false });
+        await commitConfigChanges(absolutePathStore, [
+            { file: disabled.file, next: moved.target },
+            { file: config.file, next: moved.source },
+        ]);
     }
 
     /**
-     * MCPサーバーのリストを取得
+     * MCPサーバーを有効化（移動先を先に書き込む。無効設定が空になればファイルを削除する）
      */
-    getMCPServers(): { enabled: MCPServerInfo[]; disabled: MCPServerInfo[] } {
-        const enabledConfig = this.readConfig(this.configPath);
-        const disabledConfig = this.readConfig(this.disabledConfigPath);
+    async enableMCPServer(serverName: string): Promise<void> {
+        const disabled = await readStrictJsonFile(absolutePathStore, this.disabledConfigPath);
+        const config = await readStrictJsonFile(absolutePathStore, this.configPath);
+        const moved = moveJsonEntry(disabled, config, [MCP_SERVERS_KEY, serverName], { cascade: true });
+        await commitConfigChanges(absolutePathStore, [
+            { file: config.file, next: moved.target },
+            sidecarChange(disabled.file, moved.source),
+        ]);
+    }
 
-        const enabled: MCPServerInfo[] = [];
-        const disabled: MCPServerInfo[] = [];
-
-        if (enabledConfig?.mcpServers) {
-            for (const [name, config] of Object.entries(enabledConfig.mcpServers)) {
-                enabled.push({ name, config, enabled: true });
-            }
-        }
-
-        if (disabledConfig?.mcpServers) {
-            for (const [name, config] of Object.entries(disabledConfig.mcpServers)) {
-                disabled.push({ name, config, enabled: false });
-            }
-        }
-
-        return { enabled, disabled };
+    private async reorder(path: string, serverNames: string[]): Promise<void> {
+        const state = await readStrictJsonFile(absolutePathStore, path);
+        const next = reorderJsonEntries(state, [MCP_SERVERS_KEY], serverNames);
+        await commitConfigChanges(absolutePathStore, [{ file: state.file, next }]);
     }
 
     /**
-     * MCPサーバーを無効化
+     * MCPサーバーの順序を変更（有効）。対象がなければ何も書かない。
      */
-    disableMCPServer(serverName: string): void {
-        const enabledConfig = this.readConfig(this.configPath);
-        if (!enabledConfig?.mcpServers || !enabledConfig.mcpServers[serverName]) {
-            throw new Error(`Server "${serverName}" not found in enabled config`);
-        }
-
-        // 無効化設定ファイルに追加
-        let disabledConfig = this.readConfig(this.disabledConfigPath);
-        if (!disabledConfig) {
-            disabledConfig = { mcpServers: {} };
-        }
-        if (!disabledConfig.mcpServers) {
-            disabledConfig.mcpServers = {};
-        }
-
-        disabledConfig.mcpServers[serverName] = enabledConfig.mcpServers[serverName];
-        this.writeConfig(this.disabledConfigPath, disabledConfig);
-
-        // 有効設定から削除
-        delete enabledConfig.mcpServers[serverName];
-        this.writeConfig(this.configPath, enabledConfig);
+    reorderMCPServers(serverNames: string[]): Promise<void> {
+        return this.reorder(this.configPath, serverNames);
     }
 
     /**
-     * MCPサーバーを有効化
+     * MCPサーバーの順序を変更（無効）。対象がなければ何も書かない。
      */
-    enableMCPServer(serverName: string): void {
-        const disabledConfig = this.readConfig(this.disabledConfigPath);
-        if (!disabledConfig?.mcpServers || !disabledConfig.mcpServers[serverName]) {
-            throw new Error(`Server "${serverName}" not found in disabled config`);
-        }
-
-        // 有効設定ファイルに追加
-        let enabledConfig = this.readConfig(this.configPath);
-        if (!enabledConfig) {
-            enabledConfig = { mcpServers: {} };
-        }
-        if (!enabledConfig.mcpServers) {
-            enabledConfig.mcpServers = {};
-        }
-
-        enabledConfig.mcpServers[serverName] = disabledConfig.mcpServers[serverName];
-        this.writeConfig(this.configPath, enabledConfig);
-
-        // 無効設定から削除
-        delete disabledConfig.mcpServers[serverName];
-
-        // 無効設定が空になった場合はファイルを削除
-        if (Object.keys(disabledConfig.mcpServers).length === 0) {
-            if (existsSync(this.disabledConfigPath)) {
-                unlinkSync(this.disabledConfigPath);
-            }
-        } else {
-            this.writeConfig(this.disabledConfigPath, disabledConfig);
-        }
+    reorderDisabledMCPServers(serverNames: string[]): Promise<void> {
+        return this.reorder(this.disabledConfigPath, serverNames);
     }
 
-    /**
-     * MCPサーバーの順序を変更（有効）
-     */
-    reorderMCPServers(serverNames: string[]): void {
-        const enabledConfig = this.readConfig(this.configPath);
-        if (!enabledConfig?.mcpServers) {
-            throw new Error('No enabled servers found');
-        }
-
-        // 新しい順序でオブジェクトを再構築
-        const reorderedServers: Record<string, (typeof enabledConfig.mcpServers)[string]> = {};
-        for (const name of serverNames) {
-            if (enabledConfig.mcpServers[name]) {
-                reorderedServers[name] = enabledConfig.mcpServers[name];
-            }
-        }
-
-        // 未指定のサーバーがあれば最後に追加
-        for (const [name, config] of Object.entries(enabledConfig.mcpServers)) {
-            if (!reorderedServers[name]) {
-                reorderedServers[name] = config;
-            }
-        }
-
-        enabledConfig.mcpServers = reorderedServers;
-        this.writeConfig(this.configPath, enabledConfig);
-    }
-
-    /**
-     * MCPサーバーの順序を変更（無効）
-     */
-    reorderDisabledMCPServers(serverNames: string[]): void {
-        const disabledConfig = this.readConfig(this.disabledConfigPath);
-        if (!disabledConfig?.mcpServers) {
-            throw new Error('No disabled servers found');
-        }
-
-        // 新しい順序でオブジェクトを再構築
-        const reorderedServers: Record<string, (typeof disabledConfig.mcpServers)[string]> = {};
-        for (const name of serverNames) {
-            if (disabledConfig.mcpServers[name]) {
-                reorderedServers[name] = disabledConfig.mcpServers[name];
-            }
-        }
-
-        // 未指定のサーバーがあれば最後に追加
-        for (const [name, config] of Object.entries(disabledConfig.mcpServers)) {
-            if (!reorderedServers[name]) {
-                reorderedServers[name] = config;
-            }
-        }
-
-        disabledConfig.mcpServers = reorderedServers;
-        this.writeConfig(this.disabledConfigPath, disabledConfig);
-    }
-
-    /**
-     * Claude Desktopプロセスを終了
-     */
     /**
      * Claude Desktopが実行中か確認
      */

@@ -16,10 +16,13 @@ import type {
     SettingsValues,
 } from '../../shared/agents/grok/types';
 import type { GrokIpcApi } from '../../shared/agents/grok/ipc';
+import { profileChannels } from '../../shared/agents/profile/channels';
+import { createProfileApi } from './profileApi';
 
 export const grokApi: GrokIpcApi = {
+    profile: createProfileApi(profileChannels('grok')),
     mcp: {
-        getEnvironments: () => ipcRenderer.invoke(GROK_MCP_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(GROK_MCP_CHANNELS.GET_ENVIRONMENTS, refresh),
         getMCPServers: (env: GrokEnvironment) => ipcRenderer.invoke(GROK_MCP_CHANNELS.GET_MCP_SERVERS, env),
         enableMCPServer: (env: GrokEnvironment, serverName: string) =>
             ipcRenderer.invoke(GROK_MCP_CHANNELS.ENABLE, env, serverName),
@@ -31,7 +34,7 @@ export const grokApi: GrokIpcApi = {
             ipcRenderer.invoke(GROK_MCP_CHANNELS.REORDER_DISABLED, env, serverNames),
     },
     asset: {
-        getEnvironments: () => ipcRenderer.invoke(GROK_ASSET_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(GROK_ASSET_CHANNELS.GET_ENVIRONMENTS, refresh),
         list: (env: GrokEnvironment, kind: AssetKind) => ipcRenderer.invoke(GROK_ASSET_CHANNELS.LIST, env, kind),
         readEntry: (env: GrokEnvironment, kind: AssetKind, relPath: string) =>
             ipcRenderer.invoke(GROK_ASSET_CHANNELS.READ_ENTRY, env, kind, relPath),
@@ -49,7 +52,7 @@ export const grokApi: GrokIpcApi = {
             ipcRenderer.invoke(GROK_ASSET_CHANNELS.DELETE, env, kind, relPaths),
     },
     cleanup: {
-        getEnvironments: () => ipcRenderer.invoke(GROK_CLEANUP_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(GROK_CLEANUP_CHANNELS.GET_ENVIRONMENTS, refresh),
         scan: (env: GrokEnvironment) => ipcRenderer.invoke(GROK_CLEANUP_CHANNELS.SCAN, env),
         delete: (env: GrokEnvironment, selection: CleanupSelection) =>
             ipcRenderer.invoke(GROK_CLEANUP_CHANNELS.DELETE, env, selection),
@@ -59,12 +62,13 @@ export const grokApi: GrokIpcApi = {
             ipcRenderer.invoke(GROK_CLEANUP_CHANNELS.DELETE_OTHER, env, selection),
     },
     config: {
-        getEnvironments: () => ipcRenderer.invoke(GROK_CONFIG_CHANNELS.GET_ENVIRONMENTS),
+        getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(GROK_CONFIG_CHANNELS.GET_ENVIRONMENTS, refresh),
         read: (env: GrokEnvironment) => ipcRenderer.invoke(GROK_CONFIG_CHANNELS.READ, env),
-        write: (env: GrokEnvironment, values: SettingsValues) =>
-            ipcRenderer.invoke(GROK_CONFIG_CHANNELS.WRITE, env, values),
-        writeRaw: (env: GrokEnvironment, rawToml: string) =>
-            ipcRenderer.invoke(GROK_CONFIG_CHANNELS.WRITE_RAW, env, rawToml),
+        readRaw: (env: GrokEnvironment) => ipcRenderer.invoke(GROK_CONFIG_CHANNELS.READ_RAW, env),
+        write: (env: GrokEnvironment, values: SettingsValues, base: SettingsValues) =>
+            ipcRenderer.invoke(GROK_CONFIG_CHANNELS.WRITE, env, values, base),
+        writeRaw: (env: GrokEnvironment, rawToml: string, baseRevision: string) =>
+            ipcRenderer.invoke(GROK_CONFIG_CHANNELS.WRITE_RAW, env, rawToml, baseRevision),
     },
     plugin: {
         getEnvironments: (refresh?: boolean) => ipcRenderer.invoke(GROK_PLUGIN_CHANNELS.GET_ENVIRONMENTS, refresh),

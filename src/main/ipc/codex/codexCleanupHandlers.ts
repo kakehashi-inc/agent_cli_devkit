@@ -4,8 +4,8 @@ import { CodexEnvironment, CleanupSelection, OtherCleanupSelection } from '../..
 import { CodexCleanupManager } from '../../services/codex/CodexCleanupManager';
 
 export function registerCodexCleanupHandlers(manager: CodexCleanupManager): void {
-    ipcMain.handle(CODEX_CLEANUP_CHANNELS.GET_ENVIRONMENTS, () => {
-        return manager.getEnvironments();
+    ipcMain.handle(CODEX_CLEANUP_CHANNELS.GET_ENVIRONMENTS, (_, refresh?: boolean) => {
+        return manager.getEnvironments(refresh === true);
     });
 
     ipcMain.handle(CODEX_CLEANUP_CHANNELS.SCAN, (_, env: CodexEnvironment) => {

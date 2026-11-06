@@ -3,6 +3,7 @@ import { AgentCleanupManager } from '../common/cleanup/AgentCleanupManager';
 import type { AgentCliRunner } from '../common/cli/AgentCliRunner';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { openCodeCliAvailable } from './openCodeCli';
+import { OpenCodeProjectCleanup } from './OpenCodeProjectCleanup';
 import { OpenCodeSessionCleanup } from './OpenCodeSessionCleanup';
 
 export class OpenCodeCleanupManager extends AgentCleanupManager {
@@ -13,7 +14,10 @@ export class OpenCodeCleanupManager extends AgentCleanupManager {
             nativeAvailable: () => openCodeCliAvailable(runner, { kind: 'native' }),
             wslAvailable: env => openCodeCliAvailable(runner, env),
             candidates: CLEANUP_CANDIDATES,
-            handlers: { sessions: new OpenCodeSessionCleanup(runner, detector) },
+            handlers: {
+                sessions: new OpenCodeSessionCleanup(runner, detector),
+                projects: new OpenCodeProjectCleanup(detector),
+            },
         });
     }
 }

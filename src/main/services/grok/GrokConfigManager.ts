@@ -1,4 +1,3 @@
-import { parse } from 'smol-toml';
 import {
     GROK_CONFIG_REL,
     GROK_LEGACY_SHOW_TIMESTAMPS_PATH,
@@ -11,15 +10,29 @@ import {
     OSType,
     SettingsFieldSpec,
     SettingsFieldValue,
+    SettingsRawResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
 } from '../../../shared/agents/grok/types';
 import { settingsValueProblem } from '../../../shared/agents/settingsValue';
+import {
+    conflictResult,
+    failureDetail,
+    rawResultOf,
+    readConfigFile,
+    saveConfigText,
+    saveDirectEdit,
+    saveFailure,
+    staleSettingsKeys,
+    unreadableRawResult,
+    withFinalEol,
+    type ConfigFile,
+} from '../common/fs/configFile';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
-import { stripBom } from '../common/json/stripBom';
 import { deleteScalar, getScalar, setScalar } from '../../utils/tomlEdit';
+import { parseToml, tomlSyntaxProblem } from '../../utils/tomlSubtree';
 import { deepEqualLoose, deleteNestedValue, setNestedValue, withoutEmptyObjects } from '../../utils/nestedValue';
 
 /**
@@ -28,11 +41,12 @@ import { deepEqualLoose, deleteNestedValue, setNestedValue, withoutEmptyObjects 
  * 設計の要点:
  * - 編集対象は SETTINGS_FIELDS（registry）のうち directEdit 以外で宣言した項目のみ。
  *   directEdit は一覧表示専用で、テーブル保存では構造値に一切触れない。
- * - テーブル保存（write）は tomlEdit の行スライスで対象キーだけを更新/削除する。他セクション・
- *   コメント・整形は保持する。
- * - 直接編集（writeRaw）は smol-toml の parse で構文検証後、生テキストをそのまま書き込む。
+ * - テーブル保存（write）は tomlEdit の文の走査で対象キーの範囲だけを更新/削除する。他セクション・
+ *   コメント・整形・改行コード・BOM は保持する。読めないファイルは read-failed、TOML として読めないファイルは
+ *   invalid-existing-toml を返し、何も書かない。
+ * - 直接編集（writeRaw）は、読み込んだ後にファイルが変わっていないことと TOML の構文を確かめて書き込む。
  *
- * native / WSL の両方に対応する（HomeFs が native 絶対パス / WSL UNC / コマンドモードを吸収する）。
+ * native / WSL の両方に対応する（HomeFs が native 絶対パス / WSL の distro 内スクリプトを吸収する）。
  */
 export class GrokConfigManager {
     private readonly detector: WslDetector;
@@ -53,7 +67,8 @@ export class GrokConfigManager {
     }
 
     /** 管理対象の環境一覧（native + Grok 入り WSL distro）。 */
-    async getEnvironments(): Promise<{ env: GrokEnvironment; label: string }[]> {
+    async getEnvironments(refresh = false): Promise<{ env: GrokEnvironment; label: string }[]> {
+        if (refresh) this.detector.invalidate();
         const result: { env: GrokEnvironment; label: string }[] = [];
         result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         const distros = await this.detector.getDistrosWithTest(GROK_WSL_CLI_TEST);
@@ -64,24 +79,47 @@ export class GrokConfigManager {
     }
 
     /**
-     * 指定環境の config.toml を読み、登録項目の現在値と生 TOML（先頭の BOM は除く）を返す。
-     * ファイルが無い場合は exists=false・raw=null・値は未設定（undefined）。
+     * 指定環境の config.toml を読み、登録項目の現在値を返す。ファイルの全文は返さない。
+     * ファイルが無い場合は exists=false・値は未設定（undefined）。
+     * 読めないファイルは readFailed、TOML として読めない内容は parseError を付けて返す。
      */
     async read(env: GrokEnvironment): Promise<SettingsReadResult> {
         const label = env.kind === 'wsl' ? (env.distro ?? '') : this.nativeLabel();
-        const fs = this.fsFor(env);
+        const base = { env, label, available: true, fields: SETTINGS_FIELDS };
 
-        const raw = stripBom(await fs.readText(GROK_CONFIG_REL));
-        const exists = raw !== null;
-        const text = raw ?? '';
+        let file: ConfigFile;
+        try {
+            file = await readConfigFile(this.fsFor(env), GROK_CONFIG_REL);
+        } catch (error) {
+            return { ...base, exists: true, values: this.valuesOf(''), readFailed: failureDetail(error) };
+        }
 
+        const parseError = tomlSyntaxProblem(file.text);
+        return {
+            ...base,
+            exists: file.exists,
+            values: this.valuesOf(file.text),
+            ...(parseError ? { parseError } : {}),
+        };
+    }
+
+    /** 直接編集のために config.toml の全文（先頭の BOM は除く）を読む。ファイルが無ければ raw は null。 */
+    async readRaw(env: GrokEnvironment): Promise<SettingsRawResult> {
+        try {
+            const file = await readConfigFile(this.fsFor(env), GROK_CONFIG_REL);
+            return rawResultOf(file, file.exists ? file.text : null);
+        } catch (error) {
+            return unreadableRawResult(error);
+        }
+    }
+
+    private valuesOf(text: string): Record<string, SettingsFieldValue> {
         const values: Record<string, SettingsFieldValue> = {};
         for (const field of SETTINGS_FIELDS) {
             values[field.key] = this.extractValue(field, text);
         }
         values[GROK_TIMESTAMPS_FIELD_KEY] = this.effectiveTimestamps(text, values[GROK_TIMESTAMPS_FIELD_KEY]);
-
-        return { env, label, available: true, exists, values, fields: SETTINGS_FIELDS, raw: raw };
+        return values;
     }
 
     /**
@@ -125,25 +163,34 @@ export class GrokConfigManager {
     }
 
     /**
-     * テーブル編集の保存。既存 TOML に対し、登録項目だけを行スライスで反映する。
+     * テーブル編集の保存。既存 TOML に対し、登録項目の値の範囲だけを反映する。
      * 値が undefined / 空文字なら削除、それ以外は型に応じて設定する。空でないファイルは改行で終える。
+     * 保存する項目の現在の値が読み込んだ時点の値（base）と違えば、conflict を返して何も書かない。他の項目の変更はそのまま残す。
      *
      * 安全弁: 編集後 TOML の parse 結果が「編集前の parse 結果へ意図した変更を適用した
      * 期待モデル」と deep 一致することを検証し、一致しない場合はファイルを書かずに失敗を返す。
      * （dotted key 記法やインラインテーブルで書かれた既存値との衝突はここで検出される。）
      */
-    async write(env: GrokEnvironment, values: SettingsValues): Promise<SettingsWriteResult> {
+    async write(env: GrokEnvironment, values: SettingsValues, base: SettingsValues): Promise<SettingsWriteResult> {
         const fs = this.fsFor(env);
-        let text = stripBom(await fs.readText(GROK_CONFIG_REL)) ?? '';
+        let file: ConfigFile;
+        try {
+            file = await readConfigFile(fs, GROK_CONFIG_REL);
+        } catch (error) {
+            return saveFailure(error, GROK_CONFIG_REL);
+        }
+        let text = file.text;
 
         const expected: Record<string, unknown> = {};
         if (text.trim().length > 0) {
             try {
-                Object.assign(expected, parse(text));
+                Object.assign(expected, parseToml(text));
             } catch {
                 return { ok: false, message: 'invalid-existing-toml' };
             }
         }
+        const stale = staleSettingsKeys(values, base, this.valuesOf(text));
+        if (stale.length > 0) return conflictResult(stale);
 
         // 受け付けない値があれば何も書かない。
         for (const field of SETTINGS_FIELDS) {
@@ -158,7 +205,7 @@ export class GrokConfigManager {
 
         // 検証: 編集後 TOML が期待モデルと一致しなければ書き込まない（空テーブルは無視して比較）。
         try {
-            if (!deepEqualLoose(withoutEmptyObjects(parse(text)), withoutEmptyObjects(expected))) {
+            if (!deepEqualLoose(withoutEmptyObjects(parseToml(text)), withoutEmptyObjects(expected))) {
                 console.error(`Config edit verification mismatch (${JSON.stringify(env)})`);
                 return { ok: false, message: 'verify-failed' };
             }
@@ -167,13 +214,7 @@ export class GrokConfigManager {
             return { ok: false, message: 'verify-failed' };
         }
 
-        try {
-            await fs.writeText(GROK_CONFIG_REL, text === '' || text.endsWith('\n') ? text : `${text}\n`);
-            return { ok: true };
-        } catch (error) {
-            console.error(`Failed to write config.toml (${JSON.stringify(env)}):`, error);
-            return { ok: false, message: 'write-failed' };
-        }
+        return saveConfigText(fs, file, withFinalEol(text, file.eol));
     }
 
     /**
@@ -249,24 +290,12 @@ export class GrokConfigManager {
     }
 
     /**
-     * 直接編集の保存。生 TOML（先頭の BOM は除く）を構文チェックしてそのまま書き込む。
+     * 直接編集の保存。baseRevision は読み込んだ時点の revision で、ファイルが変わっていれば conflict を返す。
+     * 改行はファイルの改行へ揃え、TOML の構文だけを検証する。
      */
-    async writeRaw(env: GrokEnvironment, input: string): Promise<SettingsWriteResult> {
-        const raw = stripBom(input);
-        try {
-            parse(raw);
-        } catch {
-            return { ok: false, message: 'invalid-toml' };
-        }
-
-        const fs = this.fsFor(env);
-        const content = raw.endsWith('\n') ? raw : `${raw}\n`;
-        try {
-            await fs.writeText(GROK_CONFIG_REL, content);
-            return { ok: true };
-        } catch (error) {
-            console.error(`Failed to write config.toml raw (${JSON.stringify(env)}):`, error);
-            return { ok: false, message: 'write-failed' };
-        }
+    async writeRaw(env: GrokEnvironment, input: string, baseRevision: string): Promise<SettingsWriteResult> {
+        return saveDirectEdit(this.fsFor(env), GROK_CONFIG_REL, input, baseRevision, text =>
+            tomlSyntaxProblem(text) ? 'invalid-toml' : null
+        );
     }
 }

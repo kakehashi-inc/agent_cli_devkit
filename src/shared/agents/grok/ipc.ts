@@ -13,15 +13,18 @@ import type {
     PluginCatalogReport,
     PluginEnvReport,
     PluginOpResult,
+    SettingsRawResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
 } from './types';
+import type { ProfileApi } from '../profile/types';
 
 export type GrokIpcApi = {
+    profile: ProfileApi;
     // Grok MCP 管理
     mcp: {
-        getEnvironments(): Promise<GrokMcpEnvInfo[]>;
+        getEnvironments(refresh?: boolean): Promise<GrokMcpEnvInfo[]>;
         getMCPServers(env: GrokEnvironment): Promise<MCPServers>;
         enableMCPServer(env: GrokEnvironment, serverName: string): Promise<MCPServers>;
         disableMCPServer(env: GrokEnvironment, serverName: string): Promise<MCPServers>;
@@ -30,7 +33,7 @@ export type GrokIpcApi = {
     };
     // Grok Agent・Skill 管理
     asset: {
-        getEnvironments(): Promise<{ env: GrokEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: GrokEnvironment; label: string }[]>;
         list(env: GrokEnvironment, kind: AssetKind): Promise<AssetListReport>;
         readEntry(env: GrokEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
         revealEntry(env: GrokEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
@@ -42,7 +45,7 @@ export type GrokIpcApi = {
     };
     // Grok クリーンアップ
     cleanup: {
-        getEnvironments(): Promise<{ env: GrokEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: GrokEnvironment; label: string }[]>;
         scan(env: GrokEnvironment): Promise<CleanupEnvReport>;
         delete(env: GrokEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport>;
         getOtherEnvironments(): Promise<{ env: GrokEnvironment; label: string }[]>;
@@ -51,10 +54,11 @@ export type GrokIpcApi = {
     };
     // Grok 設定（~/.grok/config.toml）
     config: {
-        getEnvironments(): Promise<{ env: GrokEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: GrokEnvironment; label: string }[]>;
         read(env: GrokEnvironment): Promise<SettingsReadResult>;
-        write(env: GrokEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
-        writeRaw(env: GrokEnvironment, rawToml: string): Promise<SettingsWriteResult>;
+        readRaw(env: GrokEnvironment): Promise<SettingsRawResult>;
+        write(env: GrokEnvironment, values: SettingsValues, base: SettingsValues): Promise<SettingsWriteResult>;
+        writeRaw(env: GrokEnvironment, rawToml: string, baseRevision: string): Promise<SettingsWriteResult>;
     };
     // Grok プラグイン管理（getEnvironments の refresh=true は CLI と WSL distro を検出し直す要求）
     plugin: {

@@ -1,12 +1,13 @@
-import type { AssetKind, CleanupCandidateSpec, PluginCapabilities, SettingsFieldSpec } from '../types';
+import type { CleanupCandidateSpec, PluginCapabilities, SettingsFieldSpec } from '../types';
 import { wslCliTest } from '../wsl';
 
 // 対象は opencode --version が 2.x を返す OpenCode 2。
 export const OPENCODE_CONFIG_DIR = '.config/opencode';
 export const OPENCODE_CONFIG_SCHEMA_URL = 'https://opencode.ai/config.json';
 // グローバル設定ファイルの候補。OpenCode は両方を読み込み、同じ値は opencode.jsonc が優先する。
-// MCP・プラグインの編集対象は `opencode mcp add --global` / `opencode plugin add` と同じく存在する最初の候補、
-// 設定画面の編集対象は OpenCode が値を優先する、存在する最後の候補とし、どちらも無ければ先頭を作成する。
+// MCP とプラグインは両方を読み書きし、新しい内容の追加先は `opencode mcp add --global` / `opencode plugin add` と
+// 同じく存在する最初の候補とする。設定画面の編集対象は OpenCode が値を優先する、存在する最後の候補とし、
+// どちらも無ければ先頭を作成する。
 export const OPENCODE_CONFIG_CANDIDATES_REL = [
     `${OPENCODE_CONFIG_DIR}/opencode.json`,
     `${OPENCODE_CONFIG_DIR}/opencode.jsonc`,
@@ -14,24 +15,25 @@ export const OPENCODE_CONFIG_CANDIDATES_REL = [
 // 設定ファイル内で MCP サーバーを並べるオブジェクトの位置（mcp.servers.<name>）。
 export const OPENCODE_MCP_SERVERS_PATH = ['mcp', 'servers'];
 // 無効化した MCP はエントリごと sidecar ファイルへ退避する（他 agent と同じ方式）。
-// 命名は「<設定ファイル名>-disabled-mcp.<ext>」、中身は設定ファイルと同じ { mcp: { servers: {...} } }。
+// 命名は「<設定ファイル名>-disabled-mcp.<ext>」、中身は設定ファイルと同じ { mcp: { servers: {...} } } と、
+// 有効化で元のファイルへ戻すための { origins: { <名前>: { file, shadowed? } } }。
 export const OPENCODE_DISABLED_MCP_REL = `${OPENCODE_CONFIG_DIR}/opencode-disabled-mcp.json`;
 export const OPENCODE_AGENTS_REL = `${OPENCODE_CONFIG_DIR}/agents`;
+// CLI がエージェントを読む他のルート。mode と modes は直下だけを読み、mode を primary に固定する。
+export const OPENCODE_LEGACY_AGENT_REL = `${OPENCODE_CONFIG_DIR}/agent`;
+export const OPENCODE_LEGACY_MODE_REL = `${OPENCODE_CONFIG_DIR}/mode`;
+export const OPENCODE_LEGACY_MODES_REL = `${OPENCODE_CONFIG_DIR}/modes`;
 export const OPENCODE_SKILLS_REL = `${OPENCODE_CONFIG_DIR}/skills`;
 // ローカルプラグインの配置先。OpenCode は直下の .ts / .js ファイルとプラグインパッケージのフォルダーを読み込む。
 export const OPENCODE_PLUGINS_DIR = 'plugins';
 // 無効化したローカルプラグインの退避先（OpenCode は読み込まない）。
 export const OPENCODE_DISABLED_PLUGINS_DIR = 'plugins-disabled';
 // 無効化した plugins 配列の要素の退避先。中身は設定ファイルと同じ { plugins: [...] } と、
-// 有効化で元の位置へ戻すための無効化した時点の並び { positions: { <指定子>: [...] } }。
+// 有効化で元のファイルの元の位置へ戻すための記録 { positions: { <指定子>: { origins: [{ file, items, order }] } } }。
+// 記録の値が配列なら、元のファイルが分からない無効化した時点の並びとして扱う。
 export const OPENCODE_DISABLED_PLUGINS_REL = `${OPENCODE_CONFIG_DIR}/opencode-disabled-plugins.json`;
 // ターミナル UI の設定。`opencode plugin add` は TUI 専用のプラグインをこのファイルの plugins へ追加する。
 export const OPENCODE_CLI_CONFIG_REL = `${OPENCODE_CONFIG_DIR}/cli.json`;
-
-export const ASSET_PARENT_REL: Record<AssetKind, string> = {
-    agents: OPENCODE_AGENTS_REL,
-    skills: OPENCODE_SKILLS_REL,
-};
 
 // 全 OS でバージョン確認と各操作に使うコマンド名。
 export const OPENCODE_CLI_COMMAND = 'opencode';
@@ -67,6 +69,7 @@ export const OPENCODE_CLEANUP_CHANNELS = {
 export const OPENCODE_SETTINGS_CHANNELS = {
     GET_ENVIRONMENTS: 'opencode-settings:get-environments',
     READ: 'opencode-settings:read',
+    READ_RAW: 'opencode-settings:read-raw',
     WRITE: 'opencode-settings:write',
     WRITE_RAW: 'opencode-settings:write-raw',
 } as const;
@@ -89,12 +92,12 @@ export const OPENCODE_PLUGIN_CAPABILITIES: PluginCapabilities = {
     catalog: false,
     marketplaceManagement: false,
     packageSource: true,
-    sourceHelpKey: 'opencode.plugins.sourceHelp',
 };
 
 // OpenCode の公式 XDG ディレクトリ（cache / data / state）のうち、再生成されるデータと履歴だけを対象にする。
 // データベース（opencode.db*。資格情報と保存済みの権限を含むためファイルごとは消さない）は、
-// セッション履歴だけを OpenCode の CLI（session delete）で消す候補（sessions）として扱う。
+// セッション履歴を OpenCode の CLI（session delete）で消す候補（sessions）と、
+// ワークスペースのパスごとの行をデータベースから直接消す候補（projects）として扱う。
 // ワークツリー（worktree）、
 // サービスの設定と登録（service.json）、永続ターミナル（pty）、ロック（locks。OpenCode が古いものを自動で回収する）、
 // TUI の状態（model.json / session.json / prompt-stash.jsonl）、設定ファイルと資産は対象にしない。
@@ -120,6 +123,14 @@ export const CLEANUP_CANDIDATES: CleanupCandidateSpec[] = [
     { key: 'frecency', path: '.local/state/opencode/frecency.jsonl', kind: 'file', defaultChecked: false },
     // セッション履歴。パスは持たず、CLI で一覧・削除する（子要素 = 親なしのセッション）。
     { key: 'sessions', defaultChecked: false, expandable: true, childKind: 'dir' },
+    // ワークスペースのパスごとの行。パスは持たず、データベースから一覧・削除する（子要素 = パス）。
+    {
+        key: 'projects',
+        defaultChecked: false,
+        expandable: true,
+        childKind: 'dir',
+        confirmWarningKey: 'opencode.cleanup.confirmWarning.projects',
+    },
 ];
 
 // セッション履歴を保存するデータベース（XDG データ領域の opencode.db。OpenCode 2 の正式リリースが使う名前）。
@@ -131,7 +142,7 @@ export const OPENCODE_MODEL_PATTERN = '^[^/#]+/[^#]+(?:#[^#]+)?$';
 
 // OpenCode 2 のグローバル設定ファイル（opencode.json / opencode.jsonc）のキー。
 // 単一スカラーと model はテーブル編集、配列・マップ・オブジェクトとそのほかの union 型は直接編集。
-// enterprise（組織管理）、受け付けるだけで動作に使われないキー（share / username / instructions / lsp）、
+// enterprise（組織管理）、受け付けるだけで動作に使われないキー（share / username / lsp）、
 // TUI 専用の cli.json とバックグラウンドサービスの service.json は対象外。
 export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     // model は provider/model#variant 形式の文字列と { providerID, model, variant } オブジェクトの union。
@@ -154,7 +165,7 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
     },
     { key: 'agents', path: 'agents', group: 'model', type: 'directEdit' },
     { key: 'providers', path: 'providers', group: 'model', type: 'directEdit' },
-    { key: 'shell', path: 'shell', group: 'behavior', type: 'string' },
+    { key: 'shell', path: 'shell', group: 'behavior', type: 'directEdit', linkTab: 'externalCommands' },
     {
         key: 'update',
         path: 'update',
@@ -164,14 +175,16 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         defaultValue: 'notify',
     },
     { key: 'snapshots', path: 'snapshots', group: 'behavior', type: 'boolean', defaultOn: true },
-    // 未設定時はサーバーのデータディレクトリ配下（worktree/<プロジェクト ID>）を使うため既定値を宣言しない。
+    // 未設定時はサーバーのローカルのタイムゾーンを使うため既定値を宣言しない。
+    { key: 'timezone', path: 'timezone', group: 'behavior', type: 'string' },
+    // 未設定時はサーバーのデータディレクトリ配下（worktree/<プロジェクト ID の先頭 6 文字>/<名前>）を使うため既定値を宣言しない。
     { key: 'worktreeDirectory', path: 'worktree.directory', group: 'behavior', type: 'string' },
     { key: 'websearch', path: 'websearch', group: 'behavior', type: 'directEdit' },
     { key: 'warming', path: 'warming', group: 'behavior', type: 'directEdit' },
-    { key: 'formatter', path: 'formatter', group: 'behavior', type: 'directEdit' },
+    { key: 'formatter', path: 'formatter', group: 'behavior', type: 'directEdit', linkTab: 'externalCommands' },
     { key: 'watcherIgnore', path: 'watcher.ignore', group: 'behavior', type: 'directEdit' },
-    { key: 'permissions', path: 'permissions', group: 'permissions', type: 'directEdit' },
-    { key: 'policies', path: 'policies', group: 'permissions', type: 'directEdit' },
+    { key: 'permissions', path: 'permissions', group: 'permissions', type: 'directEdit', linkTab: 'permissions' },
+    { key: 'policies', path: 'policies', group: 'permissions', type: 'directEdit', linkTab: 'permissions' },
     {
         key: 'mcpTimeoutStartup',
         path: 'mcp.timeout.startup',
@@ -262,26 +275,19 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         integer: true,
         defaultValue: 15000,
     },
-    // 未設定時はモデルの上限の 10% のため既定値を宣言しない。
-    {
-        key: 'compactionBuffer',
-        path: 'compaction.buffer',
-        group: 'compaction',
-        type: 'number',
-        min: 0,
-        integer: true,
-    },
+    // compaction.buffer は割合の文字列（"20%" など）とトークン数の union。
+    { key: 'compactionBuffer', path: 'compaction.buffer', group: 'compaction', type: 'directEdit' },
     { key: 'skills', path: 'skills', group: 'extensions', type: 'directEdit' },
-    { key: 'commands', path: 'commands', group: 'extensions', type: 'directEdit' },
+    { key: 'instructions', path: 'instructions', group: 'extensions', type: 'directEdit', linkTab: 'instructions' },
+    {
+        key: 'commands',
+        path: 'commands',
+        group: 'extensions',
+        type: 'directEdit',
+        linkRoute: '/opencode/agent-skill?tab=commands',
+    },
     { key: 'references', path: 'references', group: 'extensions', type: 'directEdit' },
     { key: 'plugins', path: 'plugins', group: 'extensions', type: 'directEdit' },
-    // 未設定時に使う解析器は実行環境によって異なるため既定値を宣言しない。
-    {
-        key: 'experimentalPortableShellScanner',
-        path: 'experimental.portable_shell_scanner',
-        group: 'experimental',
-        type: 'boolean',
-    },
     {
         key: 'experimentalSubagentDepth',
         path: 'experimental.subagent_depth',
@@ -290,5 +296,47 @@ export const SETTINGS_FIELDS: SettingsFieldSpec[] = [
         min: 0,
         integer: true,
         defaultValue: 1,
+    },
+    { key: 'experimentalTodo', path: 'experimental.todo', group: 'experimental', type: 'boolean', defaultOn: false },
+    {
+        key: 'experimentalBackgroundCompaction',
+        path: 'experimental.background_compaction',
+        group: 'experimental',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'experimentalMediaBlob',
+        path: 'experimental.media_blob',
+        group: 'experimental',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'experimentalSchedules',
+        path: 'experimental.schedules',
+        group: 'experimental',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    {
+        key: 'experimentalArtifacts',
+        path: 'experimental.artifacts',
+        group: 'experimental',
+        type: 'boolean',
+        defaultOn: false,
+    },
+    // image_generate は boolean と { model } の union、location_idle_timeout は期間の文字列と false の union。
+    {
+        key: 'experimentalImageGenerate',
+        path: 'experimental.image_generate',
+        group: 'experimental',
+        type: 'directEdit',
+    },
+    {
+        key: 'experimentalLocationIdleTimeout',
+        path: 'experimental.location_idle_timeout',
+        group: 'experimental',
+        type: 'directEdit',
     },
 ];

@@ -10,13 +10,16 @@ import type {
     PluginCatalogReport,
     PluginEnvReport,
     PluginOpResult,
+    SettingsRawResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
 } from './types';
+import type { ProfileApi } from '../profile/types';
 
 // getEnvironments の refresh=true は、WSL distro の検出結果（plugin は CLI の検出結果も）を破棄して検出し直す要求。
 export interface AgyIpcApi {
+    profile: ProfileApi;
     mcp: {
         getEnvironments(refresh?: boolean): Promise<AgyMcpEnvInfo[]>;
         getMCPServers(env: AgyEnvironment): Promise<MCPServers>;
@@ -44,8 +47,9 @@ export interface AgyIpcApi {
     settings: {
         getEnvironments(refresh?: boolean): Promise<{ env: AgyEnvironment; label: string }[]>;
         read(env: AgyEnvironment): Promise<SettingsReadResult>;
-        write(env: AgyEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
-        writeRaw(env: AgyEnvironment, raw: string): Promise<SettingsWriteResult>;
+        readRaw(env: AgyEnvironment): Promise<SettingsRawResult>;
+        write(env: AgyEnvironment, values: SettingsValues, base: SettingsValues): Promise<SettingsWriteResult>;
+        writeRaw(env: AgyEnvironment, raw: string, baseRevision: string): Promise<SettingsWriteResult>;
     };
     plugin: {
         getEnvironments(refresh?: boolean): Promise<{ env: AgyEnvironment; label: string }[]>;

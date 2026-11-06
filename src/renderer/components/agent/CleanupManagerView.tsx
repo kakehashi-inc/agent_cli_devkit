@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Alert,
@@ -6,7 +6,6 @@ import {
     Button,
     Checkbox,
     Chip,
-    Collapse,
     Dialog,
     DialogActions,
     DialogContent,
@@ -38,15 +37,24 @@ import type {
     CleanupSelection,
 } from '@shared/agents/types';
 import { envId, formatBytes, formatCount } from '../../utils/format';
+import { WRAPPING_CHIP_SX } from '../../utils/wrappingChip';
 import {
     ApprovalList,
+    CleanupCandidateNotice,
+    CleanupChildName,
+    CleanupConfirmWarnings,
     FailedPathsDialog,
     applyApprovals,
+    cleanupOutcome,
+    cleanupOutcomeNotice,
+    collectConfirmWarnings,
     collectPendingApprovals,
     isSelectableChild,
     needsApproval,
 } from './CleanupDeleteDialogs';
+import { CleanupChildRegion, CleanupChildTable, CleanupColumns } from './CleanupTableParts';
 import type { CleanupApi, Notify } from './types';
+import { useAgentEnvironments } from './useAgentEnvironments';
 
 interface Props {
     agentId: string;
@@ -62,10 +70,12 @@ export function cleanupWholeCount(candidate: CleanupCandidate): number {
 }
 
 /**
- * 展開可能な候補を表示するか。削除できるファイルがあるか、子要素（中身が 0 件のディレクトリを含む）がある候補を表示する。
+ * 候補を表示するか。この環境で使えない候補は、使えない理由を伝えるために表示する。
+ * それ以外は、削除できるファイルがあるか、子要素（中身が 0 件のディレクトリを含む）がある候補を表示する。
  * 子要素は中身が 0 件でもディレクトリごと削除できるため表示する。
  */
 export function isVisibleCandidate(candidate: CleanupCandidate): boolean {
+    if (candidate.blocked) return true;
     return (
         candidate.exists &&
         (candidate.fileCount > 0 || (candidate.expandable === true && (candidate.children ?? []).length > 0))
@@ -97,15 +107,10 @@ export const CleanupChildRow: React.FC<{
             </TableCell>
             <TableCell sx={{ border: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-                    <Typography
-                        variant='body2'
-                        color={selectable ? undefined : 'text.disabled'}
-                        sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
-                    >
-                        {child.name}
-                    </Typography>
+                    <CleanupChildName child={child} selectable={selectable} />
                     {child.inUse === true && (
                         <Chip
+                            sx={WRAPPING_CHIP_SX}
                             size='small'
                             variant='outlined'
                             color='warning'
@@ -135,13 +140,17 @@ const CleanupSection: React.FC<{
     api: CleanupApi;
     env: AgentEnvironment;
     notify: Notify;
-}> = ({ agentId, api, env, notify }) => {
+    // 更新のたびに変わる値。変わると読み直す（行の展開は保ち、選択は初期状態に戻す）。
+    reloadNonce: number;
+}> = ({ agentId, api, env, notify, reloadNonce }) => {
     const { t } = useTranslation();
     const [report, setReport] = useState<CleanupEnvReport | null>(null);
     const [dirs, setDirs] = useState<Set<string>>(new Set());
     const [children, setChildren] = useState<Record<string, Set<string>>>({});
     const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(true);
+    // 読み直しの間は前の内容を表示したままにし、結果で選択が変わるので削除を始めさせない。
+    const [reloading, setReloading] = useState(false);
     const [busy, setBusy] = useState(false);
     const [confirmOpen, setConfirmOpen] = useState(false);
     // 削除の確認で、利用者が削除を承認した使用中の可能性がある子要素（approvalKey）
@@ -149,10 +158,14 @@ const CleanupSection: React.FC<{
     // 削除できずに残ったパス（空でなければ一覧のダイアログを表示する）
     const [failedPaths, setFailedPaths] = useState<string[]>([]);
 
+    // 最後に始めた読み込みだけを画面に反映する。
+    const loadRequest = useRef(0);
     const load = async () => {
-        setLoading(true);
+        const request = ++loadRequest.current;
+        setReloading(true);
         try {
             const next = await api.scan(env);
+            if (request !== loadRequest.current) return;
             setReport(next);
             setDirs(
                 new Set(
@@ -162,13 +175,18 @@ const CleanupSection: React.FC<{
                 )
             );
             setChildren({});
+        } catch (error) {
+            console.error('Failed to scan cleanup targets:', error);
         } finally {
             setLoading(false);
+            if (request === loadRequest.current) setReloading(false);
         }
     };
     useEffect(() => {
-        void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */
-    }, []);
+        void load();
+        // マウント時と更新のたびと api が変わったときに読み直す。レンダーごとに変わる関数は読み直しのきっかけにしない。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [api, reloadNonce]);
 
     const candidates = (report?.candidates ?? []).filter(isVisibleCandidate);
 
@@ -231,6 +249,9 @@ const CleanupSection: React.FC<{
 
     // 選択したもののうち使用中の可能性があるもの。削除の確認で削除するかを問い合わせる。
     const pending = useMemo(() => collectPendingApprovals(candidates, dirs, children), [candidates, children, dirs]);
+    // 選択したものの注意文。候補全体の選択でも子要素の個別選択でも表示する。
+    const warningKeys = useMemo(() => collectConfirmWarnings(candidates, dirs, children), [candidates, children, dirs]);
+    // 使用中のものについての注意は、ファイルやフォルダーを消すものを選んだときだけ表示する。
 
     const openConfirm = () => {
         setApproved(new Set());
@@ -248,18 +269,30 @@ const CleanupSection: React.FC<{
 
     const remove = async () => {
         setConfirmOpen(false);
+        const labelOf = (candidate: CleanupCandidate) => t(`${agentId}.cleanup.item.${candidate.key}.label`);
+        const successText = t(`${agentId}.cleanup.deleteSuccess`);
+        const effective = applyApprovals(selection, pending, approved);
+        if (effective.dirs.length === 0 && Object.keys(effective.childSelections).length === 0) {
+            // 確認ですべて外されたので、何も消さずに選択を残す。
+            const outcome = cleanupOutcome(candidates, candidates, dirs, children, labelOf);
+            const notice = cleanupOutcomeNotice(t, outcome, false, successText);
+            notify(notice.message, notice.severity);
+            return;
+        }
         setBusy(true);
         try {
-            const next = await api.delete(env, applyApprovals(selection, pending, approved));
+            const next = await api.delete(env, effective);
+            // 削除の前に始めた読み込みの結果は古いので使わない。
+            loadRequest.current += 1;
+            setReloading(false);
             setReport(next);
             setDirs(new Set());
             setChildren({});
-            // 削除しようとして削除できなかったものがある場合だけ警告し、残ったパスは一覧で報告する。
+            // 消えたものと残ったものを伝え、残ったパスは一覧で報告する。
             const failed = (next.skipped?.length ?? 0) > 0 || (next.failedPaths?.length ?? 0) > 0;
-            notify(
-                failed ? t('common.cleanupDeleteFailed') : t(`${agentId}.cleanup.deleteSuccess`),
-                failed ? 'warning' : 'success'
-            );
+            const outcome = cleanupOutcome(candidates, next.candidates, dirs, children, labelOf);
+            const notice = cleanupOutcomeNotice(t, outcome, failed, successText);
+            notify(notice.message, notice.severity);
             setFailedPaths(next.failedPaths ?? []);
         } catch (error) {
             console.error('Cleanup failed:', error);
@@ -281,19 +314,17 @@ const CleanupSection: React.FC<{
                 </Typography>
             );
         return (
-            <Table size='small'>
-                <TableBody>
-                    {childList.map(child => (
-                        <CleanupChildRow
-                            key={child.name}
-                            child={child}
-                            checked={allChecked || !!childSel?.has(child.name)}
-                            disabled={allChecked}
-                            onToggle={() => toggleChild(candidate.key, child.name)}
-                        />
-                    ))}
-                </TableBody>
-            </Table>
+            <CleanupChildTable>
+                {childList.map(child => (
+                    <CleanupChildRow
+                        key={child.name}
+                        child={child}
+                        checked={allChecked || !!childSel?.has(child.name)}
+                        disabled={allChecked}
+                        onToggle={() => toggleChild(candidate.key, child.name)}
+                    />
+                ))}
+            </CleanupChildTable>
         );
     };
 
@@ -309,6 +340,7 @@ const CleanupSection: React.FC<{
                         <Checkbox
                             checked={allChecked}
                             indeterminate={indeterminate}
+                            disabled={candidate.blocked}
                             onChange={() => toggleDir(candidate.key)}
                         />
                     </TableCell>
@@ -326,6 +358,7 @@ const CleanupSection: React.FC<{
                         <Typography variant='body2' color='text.secondary'>
                             {t(`${agentId}.cleanup.item.${candidate.key}.desc`)}
                         </Typography>
+                        <CleanupCandidateNotice candidate={candidate} />
                     </TableCell>
                     <TableCell align='right'>
                         <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
@@ -338,13 +371,7 @@ const CleanupSection: React.FC<{
                         </Typography>
                     </TableCell>
                 </TableRow>
-                <TableRow>
-                    <TableCell sx={{ py: 0, border: 0 }} colSpan={5}>
-                        <Collapse in={isExpanded} timeout='auto' unmountOnExit>
-                            <Box sx={{ pl: 6, py: 1 }}>{renderChildList(candidate, allChecked)}</Box>
-                        </Collapse>
-                    </TableCell>
-                </TableRow>
+                <CleanupChildRegion open={isExpanded}>{renderChildList(candidate, allChecked)}</CleanupChildRegion>
             </React.Fragment>
         );
     };
@@ -352,7 +379,11 @@ const CleanupSection: React.FC<{
     const renderDirRow = (candidate: CleanupCandidate) => (
         <TableRow key={candidate.key} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
             <TableCell padding='checkbox'>
-                <Checkbox checked={dirs.has(candidate.key)} onChange={() => toggleDir(candidate.key)} />
+                <Checkbox
+                    checked={dirs.has(candidate.key)}
+                    disabled={candidate.blocked}
+                    onChange={() => toggleDir(candidate.key)}
+                />
             </TableCell>
             <TableCell>
                 <Typography variant='body2' sx={{ fontWeight: 'medium' }}>
@@ -363,6 +394,7 @@ const CleanupSection: React.FC<{
                 <Typography variant='body2' color='text.secondary'>
                     {t(`${agentId}.cleanup.item.${candidate.key}.desc`)}
                 </Typography>
+                <CleanupCandidateNotice candidate={candidate} />
             </TableCell>
             <TableCell align='right'>
                 <Typography variant='body2' sx={{ fontFamily: 'monospace' }}>
@@ -395,18 +427,15 @@ const CleanupSection: React.FC<{
     return (
         <Box sx={{ mb: 4 }}>
             <TableContainer component={Paper}>
-                <Table>
+                <Table sx={{ tableLayout: 'fixed' }}>
+                    <CleanupColumns />
                     <TableHead>
                         <TableRow>
                             <TableCell padding='checkbox' />
                             <TableCell>{t(`${agentId}.cleanup.name`)}</TableCell>
                             <TableCell>{t(`${agentId}.cleanup.descriptionColumn`)}</TableCell>
-                            <TableCell align='right' width='110'>
-                                {t(`${agentId}.cleanup.files`)}
-                            </TableCell>
-                            <TableCell align='right' width='120'>
-                                {t(`${agentId}.cleanup.size`)}
-                            </TableCell>
+                            <TableCell align='right'>{t(`${agentId}.cleanup.files`)}</TableCell>
+                            <TableCell align='right'>{t(`${agentId}.cleanup.size`)}</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -421,9 +450,8 @@ const CleanupSection: React.FC<{
                     color='error'
                     variant='contained'
                     startIcon={<DeleteIcon />}
-                    disabled={busy || selectedCount === 0}
+                    disabled={busy || reloading || selectedCount === 0}
                     onClick={openConfirm}
-                    sx={{ textTransform: 'none' }}
                 >
                     {t(`${agentId}.cleanup.deleteSelected`)}
                 </Button>
@@ -452,15 +480,11 @@ const CleanupSection: React.FC<{
                             onToggle={toggleApproved}
                         />
                     )}
-                    <Alert severity='info' sx={{ mt: 2 }}>
-                        {t(`${agentId}.cleanup.inUseNotice`)}
-                    </Alert>
+                    <CleanupConfirmWarnings keys={warningKeys} />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setConfirmOpen(false)} sx={{ textTransform: 'none' }}>
-                        {t(`${agentId}.cleanup.cancel`)}
-                    </Button>
-                    <Button color='error' variant='contained' onClick={remove} sx={{ textTransform: 'none' }}>
+                    <Button onClick={() => setConfirmOpen(false)}>{t(`${agentId}.cleanup.cancel`)}</Button>
+                    <Button color='error' variant='contained' onClick={remove}>
                         {t(`${agentId}.cleanup.deleteSelected`)}
                     </Button>
                 </DialogActions>
@@ -472,26 +496,17 @@ const CleanupSection: React.FC<{
 
 export const CleanupManagerView: React.FC<Props> = ({ agentId, api }) => {
     const { t } = useTranslation();
-    const [environments, setEnvironments] = useState<{ env: AgentEnvironment; label: string }[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [reload, setReload] = useState(0);
+    // 更新中は環境セクションを表示したまま読み直し、行の展開を保つ。
+    const { environments, loading, refreshing, reloadNonce, load } = useAgentEnvironments(
+        agentId,
+        api,
+        'Failed to load cleanup environments:'
+    );
     const [snackbar, setSnackbar] = useState<{
         open: boolean;
         message: string;
         severity: 'success' | 'error' | 'warning';
     }>({ open: false, message: '', severity: 'success' });
-    const load = async (refresh = false) => {
-        setLoading(true);
-        try {
-            setEnvironments(await api.getEnvironments(refresh));
-            setReload(value => value + 1);
-        } finally {
-            setLoading(false);
-        }
-    };
-    useEffect(() => {
-        void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */
-    }, []);
     if (loading)
         return (
             <Box sx={{ p: 3 }}>
@@ -515,8 +530,9 @@ export const CleanupManagerView: React.FC<Props> = ({ agentId, api }) => {
                 <Button
                     variant='outlined'
                     startIcon={<RefreshIcon />}
+                    disabled={refreshing}
                     onClick={() => void load(true)}
-                    sx={{ textTransform: 'none', flexShrink: 0 }}
+                    sx={{ flexShrink: 0 }}
                 >
                     {t('common.refresh')}
                 </Button>
@@ -527,11 +543,17 @@ export const CleanupManagerView: React.FC<Props> = ({ agentId, api }) => {
                 </Alert>
             )}
             {native.map(item => (
-                <Box key={`${envId(item.env)}-${reload}`}>
+                <Box key={`${agentId}:${envId(item.env)}`}>
                     <Typography variant='h6' sx={{ mb: 1 }}>
                         {item.label}
                     </Typography>
-                    <CleanupSection agentId={agentId} api={api} env={item.env} notify={notify} />
+                    <CleanupSection
+                        agentId={agentId}
+                        api={api}
+                        env={item.env}
+                        notify={notify}
+                        reloadNonce={reloadNonce}
+                    />
                 </Box>
             ))}
             {wsl.length > 0 && (
@@ -543,11 +565,17 @@ export const CleanupManagerView: React.FC<Props> = ({ agentId, api }) => {
                 </>
             )}
             {wsl.map(item => (
-                <Box key={`${envId(item.env)}-${reload}`}>
+                <Box key={`${agentId}:${envId(item.env)}`}>
                     <Typography variant='h6' sx={{ mb: 1 }}>
                         {t(`${agentId}.cleanup.wslSection`, { distro: item.label })}
                     </Typography>
-                    <CleanupSection agentId={agentId} api={api} env={item.env} notify={notify} />
+                    <CleanupSection
+                        agentId={agentId}
+                        api={api}
+                        env={item.env}
+                        notify={notify}
+                        reloadNonce={reloadNonce}
+                    />
                 </Box>
             ))}
             <Snackbar

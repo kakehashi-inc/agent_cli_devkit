@@ -9,15 +9,29 @@ import {
     OSType,
     SettingsFieldSpec,
     SettingsFieldValue,
+    SettingsParseError,
+    SettingsRawResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
 } from '../../../shared/agents/claude/types';
 import { settingsValueProblem } from '../../../shared/agents/settingsValue';
+import {
+    conflictResult,
+    failureDetail,
+    rawResultOf,
+    readConfigFile,
+    saveConfigText,
+    saveDirectEdit,
+    saveFailure,
+    staleSettingsKeys,
+    unreadableRawResult,
+    withFinalEol,
+    type ConfigFile,
+} from '../common/fs/configFile';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
-import { stripBom } from '../common/json/stripBom';
-import { deleteJsoncProperty, parseJsonc, setJsoncProperty } from '../../utils/jsoncEdit';
+import { deleteJsoncProperty, JSON_ROOT_ERROR, jsonSyntaxProblem, setJsoncProperty } from '../../utils/jsoncEdit';
 import {
     deepEqualLoose,
     deleteNestedValue,
@@ -32,14 +46,15 @@ import {
  * 設計の要点:
  * - 編集対象は SETTINGS_FIELDS（registry）のうち directEdit 以外で宣言した項目のみ。
  *   directEdit は一覧表示専用で、テーブル保存では構造値に一切触れない。
- * - テーブル保存（write）は、既存 JSON を読み込んでから登録項目だけを差分マージで反映する。
+ * - テーブル保存（write）は、既存 JSON を厳密に読み込んでから登録項目だけを差分マージで反映する。
+ *   読めないファイルは read-failed、CLI が読めない内容（コメントや末尾カンマを含む）は invalid-existing-json を返し、何も書かない。
  *   - string / boolean: 値があればキーを設定、未設定（undefined / 空文字）ならキーを削除する。
  *   - envFlag（env 内の特定キー）: ON で env[envKey] = onValue（既定 '1'）を設定、OFF で当該キーを削除する。
  *     env 内の他キーには触れず、env が空になったら env キーごと削除する。
- * - 直接編集（writeRaw）は、構文チェック後に生 JSON テキストをそのまま書き込む（全責任はユーザー）。
+ * - 直接編集（writeRaw）は、読み込んだ後にファイルが変わっていないことと JSON の構文を確かめて書き込む。
+ *   内容の妥当性はユーザー責任とする。
  *
- * native / WSL の両方に対応する（HomeFs が native 絶対パス / WSL UNC / コマンドモードを吸収する）。
- * 実 OS パスへ到達できない WSL コマンドモードでも、readJson/writeText はコマンド経由で動作する。
+ * native / WSL の両方に対応する（HomeFs が native 絶対パス / WSL の distro 内スクリプトを吸収する）。
  */
 export class ClaudeSettingsManager {
     private readonly detector: WslDetector;
@@ -64,8 +79,9 @@ export class ClaudeSettingsManager {
         return `${CLAUDE_DIR}/${CLAUDE_CODE_SETTINGS_FILENAME}`;
     }
 
-    /** 管理対象の環境一覧（native + Claude 入り WSL distro）。AssetManager と同じ並び。 */
-    async getEnvironments(): Promise<{ env: ClaudeEnvironment; label: string }[]> {
+    /** 管理対象の環境一覧（native + Claude 入り WSL distro）。refresh なら WSL distro の検出結果を破棄して検出し直す。 */
+    async getEnvironments(refresh = false): Promise<{ env: ClaudeEnvironment; label: string }[]> {
+        if (refresh) this.detector.invalidate();
         const result: { env: ClaudeEnvironment; label: string }[] = [];
         result.push({ env: { kind: 'native' }, label: this.nativeLabel() });
         const distros = await this.detector.getDistrosWithTest(CLAUDE_WSL_CLI_TEST);
@@ -76,36 +92,64 @@ export class ClaudeSettingsManager {
     }
 
     /**
-     * 指定環境の settings.json を読み、登録項目の現在値と生 JSON（先頭の BOM は除く）を返す。
-     * ファイルが無い場合は exists=false・values は型既定（envMap={}, それ以外 undefined）・raw=null。
+     * 指定環境の settings.json を読み、登録項目の現在値を返す。
+     * ファイルが無い場合は exists=false・values は型既定（envMap={}, それ以外 undefined）。
+     * 読めないファイルは readFailed、CLI が読めない内容（コメントや末尾カンマを含む）は parseError を付けて返す。
      */
     async read(env: ClaudeEnvironment): Promise<SettingsReadResult> {
         const label = env.kind === 'wsl' ? (env.distro ?? '') : this.nativeLabel();
-        const fs = this.fsFor(env);
-        const rel = this.settingsRel();
+        const base = { env, label, available: true, fields: SETTINGS_FIELDS };
 
-        const raw = stripBom(await fs.readText(rel));
-        const exists = raw !== null;
+        let file: ConfigFile;
+        try {
+            file = await readConfigFile(this.fsFor(env), this.settingsRel());
+        } catch (error) {
+            return { ...base, exists: true, values: this.valuesOf({}), readFailed: failureDetail(error) };
+        }
 
         let parsed: Record<string, unknown> = {};
-        if (exists) {
+        let parseError: SettingsParseError | undefined;
+        if (file.text.trim().length > 0) {
             try {
-                const obj = parseJsonc(raw);
-                if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
-                    parsed = obj as Record<string, unknown>;
-                }
-            } catch {
-                // 壊れた JSON の場合は値抽出を諦め、空として扱う（直接編集で修正可能）。
-                parsed = {};
+                parsed = this.parseStrictRoot(file.text);
+            } catch (error) {
+                parseError = jsonSyntaxProblem(error, file.text);
             }
         }
 
+        return {
+            ...base,
+            exists: file.exists,
+            values: this.valuesOf(parsed),
+            ...(parseError ? { parseError } : {}),
+        };
+    }
+
+    /** 直接編集のために settings.json の全文（先頭の BOM は除く）を読む。ファイルが無ければ raw は null。 */
+    async readRaw(env: ClaudeEnvironment): Promise<SettingsRawResult> {
+        try {
+            const file = await readConfigFile(this.fsFor(env), this.settingsRel());
+            return rawResultOf(file, file.exists ? file.text : null);
+        } catch (error) {
+            return unreadableRawResult(error);
+        }
+    }
+
+    /** テキストを厳密な JSON として解釈する。オブジェクト以外のルートは例外を投げる。 */
+    private parseStrictRoot(text: string): Record<string, unknown> {
+        const parsed: unknown = JSON.parse(text);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error(JSON_ROOT_ERROR);
+        }
+        return parsed as Record<string, unknown>;
+    }
+
+    private valuesOf(parsed: Record<string, unknown>): Record<string, SettingsFieldValue> {
         const values: Record<string, SettingsFieldValue> = {};
         for (const field of SETTINGS_FIELDS) {
             values[field.key] = this.extractValue(field, getNestedValue(parsed, field.path.split('.')));
         }
-
-        return { env, label, available: true, exists, values, fields: SETTINGS_FIELDS, raw: raw };
+        return values;
     }
 
     /** registry の定義に応じて settings.json から値を抽出する。 */
@@ -144,33 +188,37 @@ export class ClaudeSettingsManager {
 
     /**
      * テーブル編集の保存。既存テキストへ登録項目だけを外科的に反映して書き戻す。
-     * コメント・空行・インデント・キー順など、対象外の文字列は一切変更しない。
+     * 空行・インデント・キー順・改行コード・BOM など、対象外の文字列は変更しない。
+     * 保存する項目の現在の値が読み込んだ時点の値（base）と違えば、conflict を返して何も書かない。他の項目の変更はそのまま残す。
      *
      * 安全弁: 編集後テキストの parse 結果が「編集前の parse 結果へ意図した変更を適用した
      * 期待モデル」と deep 一致することを検証し、一致しない場合はファイルを書かずに失敗を返す。
      */
-    async write(env: ClaudeEnvironment, values: SettingsValues): Promise<SettingsWriteResult> {
+    async write(env: ClaudeEnvironment, values: SettingsValues, base: SettingsValues): Promise<SettingsWriteResult> {
         const fs = this.fsFor(env);
         const rel = this.settingsRel();
 
-        // 既存ファイルを読み込む（壊れている場合は安全のため上書きを拒否する）。
-        const raw = stripBom(await fs.readText(rel));
-        let text = raw ?? '';
+        // 既存ファイルを読み込む（読めない場合と壊れている場合は安全のため上書きを拒否する）。
+        let file: ConfigFile;
+        try {
+            file = await readConfigFile(fs, rel);
+        } catch (error) {
+            return saveFailure(error, rel);
+        }
+        let text = file.text;
         const expected: Record<string, unknown> = {};
         if (text.trim().length > 0) {
             try {
-                const parsed = parseJsonc(text);
-                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                    return { ok: false, message: 'invalid-existing-json' };
-                }
-                Object.assign(expected, parsed as Record<string, unknown>);
+                Object.assign(expected, this.parseStrictRoot(text));
             } catch (error) {
                 console.error(`Failed to parse existing settings.json (${JSON.stringify(env)}):`, error);
                 return { ok: false, message: 'invalid-existing-json' };
             }
         } else {
-            text = '{}\n';
+            text = `{}${file.eol}`;
         }
+        const stale = staleSettingsKeys(values, base, this.valuesOf(expected));
+        if (stale.length > 0) return conflictResult(stale);
 
         // 登録項目だけをテキストと期待モデルの両方へ反映する。受け付けない値があれば何も書かない。
         for (const field of SETTINGS_FIELDS) {
@@ -185,7 +233,7 @@ export class ClaudeSettingsManager {
         // 検証: 編集後テキストが期待モデルと一致しなければ書き込まない。
         // 空オブジェクトは正規化で無視する（コメントだけが残った親はテキスト側に {} として残るため）。
         try {
-            if (!deepEqualLoose(withoutEmptyObjects(parseJsonc(text)), withoutEmptyObjects(expected))) {
+            if (!deepEqualLoose(withoutEmptyObjects(JSON.parse(text)), withoutEmptyObjects(expected))) {
                 console.error(`Settings edit verification mismatch (${JSON.stringify(env)})`);
                 return { ok: false, message: 'verify-failed' };
             }
@@ -194,13 +242,7 @@ export class ClaudeSettingsManager {
             return { ok: false, message: 'verify-failed' };
         }
 
-        try {
-            await fs.writeText(rel, text.endsWith('\n') ? text : `${text}\n`);
-            return { ok: true };
-        } catch (error) {
-            console.error(`Failed to write settings.json (${JSON.stringify(env)}):`, error);
-            return { ok: false, message: 'write-failed' };
-        }
+        return saveConfigText(fs, file, withFinalEol(text, file.eol));
     }
 
     /**
@@ -267,31 +309,17 @@ export class ClaudeSettingsManager {
     }
 
     /**
-     * 直接編集の保存。生 JSON テキスト（先頭の BOM は除く）を構文チェックしてそのまま書き込む。
-     * 内容の妥当性（登録外項目の整合など）はユーザー責任とし、構文だけ検証する。
+     * 直接編集の保存。baseRevision は読み込んだ時点の revision で、ファイルが変わっていれば conflict を返す。
+     * 改行はファイルの改行へ揃え、厳密な JSON の構文だけを検証する。内容の妥当性（登録外項目の整合など）はユーザー責任とする。
      */
-    async writeRaw(env: ClaudeEnvironment, input: string): Promise<SettingsWriteResult> {
-        const raw = stripBom(input);
-        let parsed: unknown;
-        try {
-            parsed = JSON.parse(raw);
-        } catch {
-            return { ok: false, message: 'invalid-json' };
-        }
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            return { ok: false, message: 'invalid-json' };
-        }
-
-        const fs = this.fsFor(env);
-        const rel = this.settingsRel();
-        // 末尾改行を保証しつつ、ユーザーの整形（インデント等）はそのまま尊重する。
-        const content = raw.endsWith('\n') ? raw : `${raw}\n`;
-        try {
-            await fs.writeText(rel, content);
-            return { ok: true };
-        } catch (error) {
-            console.error(`Failed to write settings.json raw (${JSON.stringify(env)}):`, error);
-            return { ok: false, message: 'write-failed' };
-        }
+    async writeRaw(env: ClaudeEnvironment, input: string, baseRevision: string): Promise<SettingsWriteResult> {
+        return saveDirectEdit(this.fsFor(env), this.settingsRel(), input, baseRevision, text => {
+            try {
+                this.parseStrictRoot(text);
+                return null;
+            } catch {
+                return 'invalid-json';
+            }
+        });
     }
 }

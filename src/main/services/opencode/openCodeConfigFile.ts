@@ -1,8 +1,18 @@
 import { OPENCODE_CONFIG_CANDIDATES_REL } from '../../../shared/agents/opencode/constants';
 import type { HomeFs } from '../common/wsl/HomeFs';
 
+/** 相対パスのファイル名の部分。 */
+export function fileNameOf(rel: string): string {
+    return rel.slice(rel.lastIndexOf('/') + 1);
+}
+
+/** ファイル名に対応する候補の相対パス。候補に無ければ undefined。 */
+export function candidateRelOf(fileName: unknown): string | undefined {
+    return OPENCODE_CONFIG_CANDIDATES_REL.find(rel => fileNameOf(rel) === fileName);
+}
+
 /**
- * 編集対象の OpenCode グローバル設定ファイル（ホーム相対パス）を返す。
+ * 新しく追加する内容の書き込み先の OpenCode グローバル設定ファイル（ホーム相対パス）を返す。
  * opencode.json / opencode.jsonc のうち存在する最初のファイルを選び、どちらも無ければ opencode.json を返す。
  */
 export async function resolveOpenCodeConfigRel(fs: HomeFs): Promise<string> {

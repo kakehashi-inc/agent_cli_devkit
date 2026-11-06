@@ -35,6 +35,10 @@ export const APP_SETTINGS_CHANNELS = {
 } as const;
 
 // システム情報用
+export const WSL_CHANNELS = {
+    GET_MISSING_COMMANDS: 'wsl:get-missing-commands',
+} as const;
+
 export const SYSTEM_CHANNELS = {
     GET_THEME: 'system:get-theme',
     GET_LOCALE: 'system:get-locale',

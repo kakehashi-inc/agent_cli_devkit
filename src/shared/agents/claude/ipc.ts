@@ -14,12 +14,15 @@ import type {
     PluginCatalogReport,
     PluginEnvReport,
     PluginOpResult,
+    SettingsRawResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
 } from './types';
+import type { ProfileApi } from '../profile/types';
 
 export type ClaudeIpcApi = {
+    profile: ProfileApi;
     // Claude Desktop MCP 管理
     desktop: {
         getInfo(): Promise<ClaudeDesktopInfo>;
@@ -32,7 +35,7 @@ export type ClaudeIpcApi = {
     };
     // Claude Code (CLI) MCP 管理
     code: {
-        getEnvironments(): Promise<ClaudeCodeEnvInfo[]>;
+        getEnvironments(refresh?: boolean): Promise<ClaudeCodeEnvInfo[]>;
         getMCPServers(env: ClaudeEnvironment): Promise<MCPServers>;
         enableMCPServer(env: ClaudeEnvironment, serverName: string): Promise<MCPServers>;
         disableMCPServer(env: ClaudeEnvironment, serverName: string): Promise<MCPServers>;
@@ -41,7 +44,7 @@ export type ClaudeIpcApi = {
     };
     // Claude Code クリーンアップ
     cleanup: {
-        getEnvironments(): Promise<{ env: ClaudeEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: ClaudeEnvironment; label: string }[]>;
         scan(env: ClaudeEnvironment): Promise<CleanupEnvReport>;
         delete(env: ClaudeEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport>;
         getOtherEnvironments(): Promise<{ env: ClaudeEnvironment; label: string }[]>;
@@ -50,7 +53,7 @@ export type ClaudeIpcApi = {
     };
     // Claude Code Agent・Skill 管理
     asset: {
-        getEnvironments(): Promise<{ env: ClaudeEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: ClaudeEnvironment; label: string }[]>;
         list(env: ClaudeEnvironment, kind: AssetKind): Promise<AssetListReport>;
         readEntry(env: ClaudeEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
         revealEntry(env: ClaudeEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
@@ -65,10 +68,11 @@ export type ClaudeIpcApi = {
     };
     // Claude Code 設定（~/.claude/settings.json）
     settings: {
-        getEnvironments(): Promise<{ env: ClaudeEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: ClaudeEnvironment; label: string }[]>;
         read(env: ClaudeEnvironment): Promise<SettingsReadResult>;
-        write(env: ClaudeEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
-        writeRaw(env: ClaudeEnvironment, rawJson: string): Promise<SettingsWriteResult>;
+        readRaw(env: ClaudeEnvironment): Promise<SettingsRawResult>;
+        write(env: ClaudeEnvironment, values: SettingsValues, base: SettingsValues): Promise<SettingsWriteResult>;
+        writeRaw(env: ClaudeEnvironment, rawJson: string, baseRevision: string): Promise<SettingsWriteResult>;
     };
     // Claude Code プラグイン管理（getEnvironments の refresh=true は CLI と WSL distro を検出し直す要求）
     plugin: {

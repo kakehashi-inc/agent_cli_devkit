@@ -13,15 +13,18 @@ import type {
     PluginCatalogReport,
     PluginEnvReport,
     PluginOpResult,
+    SettingsRawResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
 } from './types';
+import type { ProfileApi } from '../profile/types';
 
 export type CodexIpcApi = {
+    profile: ProfileApi;
     // Codex MCP 管理
     mcp: {
-        getEnvironments(): Promise<CodexMcpEnvInfo[]>;
+        getEnvironments(refresh?: boolean): Promise<CodexMcpEnvInfo[]>;
         getMCPServers(env: CodexEnvironment): Promise<MCPServers>;
         enableMCPServer(env: CodexEnvironment, serverName: string): Promise<MCPServers>;
         disableMCPServer(env: CodexEnvironment, serverName: string): Promise<MCPServers>;
@@ -30,7 +33,7 @@ export type CodexIpcApi = {
     };
     // Codex Agent・Skill 管理
     asset: {
-        getEnvironments(): Promise<{ env: CodexEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: CodexEnvironment; label: string }[]>;
         list(env: CodexEnvironment, kind: AssetKind): Promise<AssetListReport>;
         readEntry(env: CodexEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
         revealEntry(env: CodexEnvironment, kind: AssetKind, relPath: string): Promise<AssetOpResult>;
@@ -50,7 +53,7 @@ export type CodexIpcApi = {
     };
     // Codex クリーンアップ
     cleanup: {
-        getEnvironments(): Promise<{ env: CodexEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: CodexEnvironment; label: string }[]>;
         scan(env: CodexEnvironment): Promise<CleanupEnvReport>;
         delete(env: CodexEnvironment, selection: CleanupSelection): Promise<CleanupEnvReport>;
         getOtherEnvironments(): Promise<{ env: CodexEnvironment; label: string }[]>;
@@ -59,10 +62,11 @@ export type CodexIpcApi = {
     };
     // Codex 設定（~/.codex/config.toml）
     config: {
-        getEnvironments(): Promise<{ env: CodexEnvironment; label: string }[]>;
+        getEnvironments(refresh?: boolean): Promise<{ env: CodexEnvironment; label: string }[]>;
         read(env: CodexEnvironment): Promise<SettingsReadResult>;
-        write(env: CodexEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
-        writeRaw(env: CodexEnvironment, rawToml: string): Promise<SettingsWriteResult>;
+        readRaw(env: CodexEnvironment): Promise<SettingsRawResult>;
+        write(env: CodexEnvironment, values: SettingsValues, base: SettingsValues): Promise<SettingsWriteResult>;
+        writeRaw(env: CodexEnvironment, rawToml: string, baseRevision: string): Promise<SettingsWriteResult>;
     };
     // Codex プラグイン管理（getEnvironments の refresh=true は CLI と WSL distro を検出し直す要求）
     plugin: {

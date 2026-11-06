@@ -10,13 +10,16 @@ import type {
     PluginCatalogReport,
     PluginEnvReport,
     PluginOpResult,
+    SettingsRawResult,
     SettingsReadResult,
     SettingsValues,
     SettingsWriteResult,
 } from './types';
+import type { ProfileApi } from '../profile/types';
 
 // getEnvironments の refresh=true は、CLI と WSL distro の検出結果を破棄して検出し直す要求。
 export interface OpenCodeIpcApi {
+    profile: ProfileApi;
     mcp: {
         getEnvironments(refresh?: boolean): Promise<OpenCodeMcpEnvInfo[]>;
         getMCPServers(env: OpenCodeEnvironment): Promise<MCPServers>;
@@ -49,8 +52,9 @@ export interface OpenCodeIpcApi {
     settings: {
         getEnvironments(refresh?: boolean): Promise<{ env: OpenCodeEnvironment; label: string }[]>;
         read(env: OpenCodeEnvironment): Promise<SettingsReadResult>;
-        write(env: OpenCodeEnvironment, values: SettingsValues): Promise<SettingsWriteResult>;
-        writeRaw(env: OpenCodeEnvironment, raw: string): Promise<SettingsWriteResult>;
+        readRaw(env: OpenCodeEnvironment): Promise<SettingsRawResult>;
+        write(env: OpenCodeEnvironment, values: SettingsValues, base: SettingsValues): Promise<SettingsWriteResult>;
+        writeRaw(env: OpenCodeEnvironment, raw: string, baseRevision: string): Promise<SettingsWriteResult>;
     };
     plugin: {
         getEnvironments(refresh?: boolean): Promise<{ env: OpenCodeEnvironment; label: string }[]>;

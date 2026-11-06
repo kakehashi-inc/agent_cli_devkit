@@ -1,6 +1,4 @@
-import { promises as nodeFs } from 'fs';
 import { join } from 'path';
-import { parse } from 'smol-toml';
 import {
     CODEX_BUILTIN_MARKETPLACES,
     CODEX_CLI_COMMAND,
@@ -20,11 +18,12 @@ import {
     PluginOpResult,
 } from '../../../shared/agents/codex/types';
 import { AgentCliRunner, validateArg, validateOperand } from '../common/cli/AgentCliRunner';
-import { stripBom } from '../common/json/stripBom';
+import { commitConfigChanges, readConfigFile } from '../common/fs/configFile';
 import { HomeFs } from '../common/wsl/HomeFs';
 import { WslDetector } from '../common/wsl/WslDetector';
 import { deepEqualLoose } from '../../utils/nestedValue';
 import { sameTomlPath, scanTomlStatements } from '../../utils/tomlStatements';
+import { detectTomlEol, isTomlTable, parseToml } from '../../utils/tomlSubtree';
 
 const LIST_TIMEOUT_MS = 60_000;
 const MUTATE_TIMEOUT_MS = 180_000;
@@ -67,15 +66,6 @@ function tomlKey(key: string): string {
         return TOML_KEY_ESCAPES[c] ?? `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`;
     });
     return `"${escaped}"`;
-}
-
-function isTomlTable(value: unknown): value is Record<string, unknown> {
-    return (
-        !!value &&
-        typeof value === 'object' &&
-        !Array.isArray(value) &&
-        Object.getPrototypeOf(value) === Object.prototype
-    );
 }
 
 /**
@@ -294,38 +284,23 @@ export class CodexPluginManager {
         return result;
     }
 
-    /**
-     * プラグイン実体（`source.path`）のマニフェストの読み取り候補パスを返す。
-     * WSL は UNC（\\wsl.localhost / \\wsl$）で読む。
-     */
-    private manifestCandidates(env: CodexEnvironment, sourcePath: string, manifestRel: string): string[] {
-        if (env.kind === 'wsl') {
-            if (!env.distro || !sourcePath.startsWith('/')) {
-                return [];
-            }
-            const winRel = `${sourcePath}/${manifestRel}`.replace(/\//g, '\\');
-            return [`\\\\wsl.localhost\\${env.distro}${winRel}`, `\\\\wsl$\\${env.distro}${winRel}`];
-        }
-        return [join(sourcePath, ...manifestRel.split('/'))];
-    }
-
-    /** マニフェスト JSON を読む。どの候補パスでも読めなければ null。 */
+    /** プラグイン実体（`source.path`）のマニフェスト JSON を環境の中で読む。読めなければ null。 */
     private async readManifest(
         env: CodexEnvironment,
         sourcePath: string,
         manifestRel: string
     ): Promise<Record<string, unknown> | null> {
-        for (const candidate of this.manifestCandidates(env, sourcePath, manifestRel)) {
-            try {
-                const parsed: unknown = JSON.parse(stripBom(await nodeFs.readFile(candidate, 'utf8')));
-                return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-                    ? (parsed as Record<string, unknown>)
-                    : null;
-            } catch {
-                // 候補パスの読み取り失敗は次の候補へ（全滅なら null）。
-            }
+        const path = env.kind === 'wsl' ? `${sourcePath}/${manifestRel}` : join(sourcePath, ...manifestRel.split('/'));
+        const read = await this.fsFor(env).readAbsoluteStrict(path);
+        if (read.kind !== 'ok') return null;
+        try {
+            const parsed: unknown = JSON.parse(read.text);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                ? (parsed as Record<string, unknown>)
+                : null;
+        } catch {
+            return null;
         }
-        return null;
     }
 
     /**
@@ -357,7 +332,7 @@ export class CodexPluginManager {
 
     /**
      * リモートプラグインカタログのキャッシュから、リモート ID → description / homepage の対応を読む。
-     * 対応スキーマ以外・読み取り不可（WSL コマンドモードを含む）は空として扱う（best-effort）。
+     * 対応スキーマ以外・読み取り不可は空として扱う（best-effort）。
      */
     private async readRemoteCatalogMeta(env: CodexEnvironment): Promise<Map<string, PluginMeta>> {
         const result = new Map<string, PluginMeta>();
@@ -365,11 +340,11 @@ export class CodexPluginManager {
         const files = (await fs.listFiles(CODEX_REMOTE_PLUGIN_CATALOG_REL)).filter(name => name.endsWith('.json'));
         for (const file of files) {
             try {
-                const abs = await fs.resolveRealPath(`${CODEX_REMOTE_PLUGIN_CATALOG_REL}/${file}`);
-                if (!abs) {
+                const read = await fs.readTextStrict(`${CODEX_REMOTE_PLUGIN_CATALOG_REL}/${file}`);
+                if (read.kind !== 'ok') {
                     continue;
                 }
-                const cache = this.asRecord(JSON.parse(await nodeFs.readFile(abs, 'utf8')));
+                const cache = this.asRecord(JSON.parse(read.text));
                 if (cache.schema_version !== REMOTE_CATALOG_SCHEMA_VERSION || !Array.isArray(cache.plugins)) {
                     continue;
                 }
@@ -501,8 +476,8 @@ export class CodexPluginManager {
     /**
      * プラグインの有効/無効を切り替える。
      * codex には enable/disable サブコマンドが無いため、config.toml の `plugins."<id>".enabled` の値だけを
-     * 直接編集する（他のセクション・コメント・整形は保持する）。編集結果を parse し、enabled 以外が
-     * 変わっていないことを確かめてから書き込み、確かめられない場合は書き込まずに失敗を返す。
+     * 直接編集する（他のセクション・コメント・整形・改行コード・BOM は保持する）。ファイルを読めない場合は書き込まずに失敗を返す。
+     * 編集結果を parse し、enabled 以外が変わっていないことを確かめてから書き込み、確かめられない場合は書き込まずに失敗を返す。
      * この設定はローカルマーケットプレイスのプラグインにだけ効くため、リモートのプラグインは書き込まずに失敗を返す。
      */
     async setEnabled(env: CodexEnvironment, id: string, enabled: boolean): Promise<PluginOpResult> {
@@ -517,11 +492,8 @@ export class CodexPluginManager {
         }
         try {
             const fs = this.fsFor(env);
-            const raw = stripBom(await fs.readText(CODEX_CONFIG_REL)) ?? '';
-            const next = this.applyEnabled(raw, id, enabled);
-            if (next !== raw) {
-                await fs.writeText(CODEX_CONFIG_REL, next);
-            }
+            const file = await readConfigFile(fs, CODEX_CONFIG_REL);
+            await commitConfigChanges(fs, [{ file, next: this.applyEnabled(file.text, id, enabled) }]);
             return { ok: true };
         } catch (error) {
             console.error('Failed to toggle codex plugin enabled state:', error);
@@ -540,7 +512,7 @@ export class CodexPluginManager {
      * 編集結果が「enabled だけを変えた内容」と一致しない場合は例外を投げる。
      */
     private applyEnabled(toml: string, id: string, enabled: boolean): string {
-        const expected = parse(toml) as Record<string, unknown>;
+        const expected = parseToml(toml) as Record<string, unknown>;
         const plugins = expected.plugins ?? (expected.plugins = {});
         if (!isTomlTable(plugins)) {
             throw new Error('"plugins" is not a table');
@@ -554,7 +526,7 @@ export class CodexPluginManager {
         const layout = scanTomlStatements(toml);
         const target = ['plugins', id];
         const value = String(enabled);
-        const eol = toml.includes('\r\n') ? '\r\n' : '\n';
+        const eol = detectTomlEol(toml);
         // 行の終端に文を差し込む（最終行が改行で終わっていなければ改行を補う）。
         const insertLine = (at: number, line: string) =>
             `${toml.slice(0, at)}${at === toml.length && at > 0 && !toml.endsWith('\n') ? eol : ''}${line}${eol}${toml.slice(at)}`;
@@ -587,7 +559,7 @@ export class CodexPluginManager {
         }
         let written: unknown;
         try {
-            written = parse(next);
+            written = parseToml(next);
         } catch {
             written = undefined;
         }
